@@ -9,7 +9,6 @@ __pycache__/
 *.pyc
 log/
 crashlog/
-output_data/*
-!output_data/.gitkeep
+output_data/
 runtime/
 bin/
