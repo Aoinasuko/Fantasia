@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "description": "Fantasia prompt template overlays. Use default for all managers and managers/<manager>.json for per-manager overrides.",
+  "default": {
+    "schema_instruction_suffix": "思考過程、前置き、Markdownコードブロック、補足説明は出力しないでください。最終出力はJSONオブジェクトだけにしてください。"
+  },
+  "managers": {
+    "check_world_content_violation": {
+      "system_suffix": "安全判定はLLM側だけで行います。ゲーム側の禁止語リストを前提にせず、入力を世界生成へ渡せるかをJSONで返してください。"
+    },
+    "check_illegal_content": {
+      "system_suffix": "安全判定はLLM側だけで行います。ゲーム側の禁止語リストを前提にせず、プレイヤー入力を進行managerへ渡せるかをJSONで返してください。"
+    }
+  }
+}

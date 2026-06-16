@@ -1,0 +1,10 @@
+Fantasia プレイガイド
+
+1. Fantasia.exe を起動してください。
+2. 初回起動時は、設定画面で LLM と画像生成モデルを設定、またはダウンロードしてください。
+3. セーブデータ、ワールド、エクスポートは %LOCALAPPDATA%\BlueEggplant\Fantasia に保存されます。
+4. 実行ログは Fantasia.exe と同じフォルダに自動生成される log フォルダへ保存されます。
+5. クラッシュログは Fantasia.exe と同じフォルダに自動生成される crashlog フォルダへ保存されます。
+
+隠しフォルダ .fantasia_runtime はゲーム本体のランタイムです。
+通常は開いたり移動したりせず、Fantasia.exe から起動してください。

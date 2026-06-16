@@ -1,0 +1,253 @@
+{
+  "version": 0.1,
+  "device_info": {
+    "memory_size": null,
+    "vram_size": null,
+    "gpu_names": [],
+    "is_torch_cuda_usable": null,
+    "is_vulkan_usable": null,
+    "recommended_llm_backend": "llama_cpp_completion_cuda",
+    "recommended_image_backend": "stable_diffusion_cpp"
+  },
+  "setup": {
+    "completed": false,
+    "auto_select_backend": true,
+    "backend_locked": false
+  },
+  "model_catalog": {
+    "local_llm": {
+      "gemma4_medium": {
+        "display_name": "Gemma 4 12B IT Q4_K_M",
+        "filename": "gemma-4-12b-it-Q4_K_M.gguf",
+        "url": "https://huggingface.co/unsloth/gemma-4-12b-it-GGUF/resolve/main/gemma-4-12b-it-Q4_K_M.gguf?download=true",
+        "path": "text/gemma4_medium/gemma-4-12b-it-Q4_K_M.gguf",
+        "min_size": 1073741824,
+        "context_size": 8192,
+        "description": "Medium Gemma-family local GGUF model."
+      },
+      "qwen3_6_medium": {
+        "display_name": "Qwen3.6 27B Q4_K_M",
+        "filename": "Qwen3.6-27B-Q4_K_M.gguf",
+        "url": "https://huggingface.co/unsloth/Qwen3.6-27B-GGUF/resolve/main/Qwen3.6-27B-Q4_K_M.gguf?download=true",
+        "path": "text/qwen3_6_medium/Qwen3.6-27B-Q4_K_M.gguf",
+        "min_size": 1073741824,
+        "context_size": 8192,
+        "description": "Medium Qwen3.6 local GGUF model."
+      }
+    },
+    "sdxl": {
+      "sdxl_base_1_0": {
+        "display_name": "Stable Diffusion XL Base 1.0",
+        "filename": "sd_xl_base_1.0.safetensors",
+        "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors?download=true",
+        "path": "graphic/sdxl_base_1_0/sd_xl_base_1.0.safetensors",
+        "min_size": 1073741824,
+        "description": "Official Stability AI SDXL Base 1.0 checkpoint."
+      },
+      "wai_illustrious_sdxl_v170": {
+        "display_name": "WAI-illustrious-SDXL v17.0",
+        "filename": "waiIllustriousSDXL_v170.safetensors",
+        "url": "https://civitai.com/api/download/models/2883731",
+        "path": "graphic/wai_illustrious_sdxl_v170/waiIllustriousSDXL_v170.safetensors",
+        "min_size": 1073741824,
+        "description": "WAI-illustrious-SDXL v17.0 checkpoint."
+      }
+    }
+  },
+  "ai_setting": {
+    "llm_inference": "local",
+    "prompt_template_path": "assets/prompt_templates",
+    "local_model_setting": {
+      "llm_backend": "llama_cpp_completion_cuda",
+      "image_backend": {
+        "name": "stable_diffusion_cpp",
+        "width": 1024,
+        "height": 1024,
+        "steps": 24,
+        "cfg_scale": 7.0,
+        "quality_preset": "balanced",
+        "quality_presets": {
+          "draft": {
+            "width": 512,
+            "height": 512,
+            "steps": 8,
+            "cfg_scale": 5.5
+          },
+          "balanced": {
+            "width": 1024,
+            "height": 1024,
+            "steps": 24,
+            "cfg_scale": 7.0
+          },
+          "quality": {
+            "width": 1024,
+            "height": 1024,
+            "steps": 32,
+            "cfg_scale": 7.5
+          },
+          "ultra": {
+            "width": 1216,
+            "height": 1216,
+            "steps": 40,
+            "cfg_scale": 8.0
+          }
+        },
+        "seed": -1,
+        "lora_prompt": "",
+        "sampling_method": "dpm++2m",
+        "scheduler": "karras",
+        "timeout_sec": 1800,
+        "startup_timeout_sec": 180,
+        "negative_prompts": {
+          "background": "low quality, worst quality, blurry, text, watermark, logo, signature",
+          "character": "low quality, worst quality, blurry, text, watermark, extra fingers, bad hands, malformed hands, extra limbs",
+          "monster": "low quality, worst quality, blurry, text, watermark, cropped, extra limbs, extra heads, deformed anatomy"
+        }
+      },
+      "local_llm": {
+        "name": "Qwen3.6 27B Q4_K_M",
+        "model_path": "text/qwen3_6_medium/Qwen3.6-27B-Q4_K_M.gguf",
+        "selected_model_id": "qwen3_6_medium",
+        "download_url": "https://huggingface.co/unsloth/Qwen3.6-27B-GGUF/resolve/main/Qwen3.6-27B-Q4_K_M.gguf?download=true",
+        "context_size": 8192,
+        "server_paths": {
+          "cpu": "bin/llama/llama-server.exe",
+          "vulkan": "bin/llama/llama-server.exe",
+          "cuda": "bin/llama-cuda/llama-server.exe"
+        }
+      },
+      "cloud_llm": {
+        "timeout_sec": 180,
+        "openai": {
+          "model": "gpt-5.1-mini",
+          "base_url": "https://api.openai.com/v1",
+          "api_key_env": "OPENAI_API_KEY"
+        },
+        "xai": {
+          "model": "grok-4.3",
+          "base_url": "https://api.x.ai/v1",
+          "api_key_env": "XAI_API_KEY"
+        },
+        "gemini": {
+          "model": "gemini-2.5-flash",
+          "base_url": "https://generativelanguage.googleapis.com/v1beta",
+          "api_key_env": "GEMINI_API_KEY"
+        }
+      },
+      "sdxl": {
+        "model_name": "Stable Diffusion XL Base 1.0",
+        "selected_model_id": "sdxl_base_1_0",
+        "checkpoint_path": "graphic/sdxl_base_1_0/sd_xl_base_1.0.safetensors",
+        "download_url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors?download=true",
+        "sd_server_path": "bin/stable-diffusion.cpp-cuda/sd-server.exe",
+        "sd_cli_path": "bin/stable-diffusion.cpp-cuda/sd-cli.exe",
+        "vae_path": "",
+        "taesd_path": "",
+        "lora_model_dir": ""
+      }
+    },
+    "server_parameters": {
+      "llama_cpp_completion_cpu": "--ctx-size 16384 --temp 0.8 --top-p 0.9 --reasoning off",
+      "llama_cpp_completion_vulkan": "--n-gpu-layers all --ctx-size 16384 --temp 0.8 --top-p 0.9 --reasoning off",
+      "llama_cpp_completion_cuda": "--n-gpu-layers all --ctx-size 16384 --temp 0.8 --top-p 0.9 --reasoning off",
+      "stable_diffusion_cpp": "--backend cuda0 --vae-tiling",
+      "sdwebui_api": "http://127.0.0.1:7860"
+    },
+    "completion_parameters": {
+      "default": {
+        "temperature": 0.9,
+        "top_p": 0.9,
+        "cache_prompt": true
+      },
+      "managers": {
+        "check_world_content_violation": {
+          "temperature": 0.25,
+          "top_p": 0.8,
+          "max_tokens": 350
+        },
+        "check_illegal_content": {
+          "temperature": 0.25,
+          "top_p": 0.8,
+          "max_tokens": 350
+        },
+        "create_world_overview": {
+          "temperature": 0.8,
+          "top_p": 0.9,
+          "max_tokens": 1000
+        },
+        "create_story": {
+          "temperature": 0.85,
+          "top_p": 0.92,
+          "max_tokens": 1000
+        },
+        "narrator_initial": {
+          "temperature": 0.85,
+          "top_p": 0.92,
+          "max_tokens": 700
+        },
+        "master_ai_facilitator": {
+          "temperature": 0.8,
+          "top_p": 0.9,
+          "max_tokens": 900
+        },
+        "conversation_facilitator": {
+          "temperature": 0.75,
+          "top_p": 0.9,
+          "max_tokens": 800
+        },
+        "referee_player_attack_new_new": {
+          "temperature": 0.7,
+          "top_p": 0.88,
+          "max_tokens": 700
+        },
+        "referee_player_any_input_new_new": {
+          "temperature": 0.7,
+          "top_p": 0.88,
+          "max_tokens": 700
+        },
+        "referee_npc": {
+          "temperature": 0.72,
+          "top_p": 0.88,
+          "max_tokens": 800
+        },
+        "referee_npc_rewrite": {
+          "temperature": 0.65,
+          "top_p": 0.85,
+          "max_tokens": 700
+        },
+        "background_image_creator": {
+          "temperature": 0.45,
+          "top_p": 0.8,
+          "max_tokens": 350
+        },
+        "character_image_creator": {
+          "temperature": 0.45,
+          "top_p": 0.8,
+          "max_tokens": 400
+        },
+        "monster_image_creator": {
+          "temperature": 0.45,
+          "top_p": 0.8,
+          "max_tokens": 400
+        }
+      }
+    },
+    "environment_setting": {
+      "OPENAI_API_KEY": "",
+      "XAI_API_KEY": "",
+      "GEMINI_API_KEY": "",
+      "stable_diffusion_cpp": "",
+      "sdwebui_api": ""
+    }
+  },
+  "ui_setting": {
+    "window_size": {
+      "width": 1152,
+      "height": 768
+    },
+    "font_path": "assets/fonts/JF-Dot-MPlus10.ttf",
+    "font_size": 14,
+    "language": "ja",
+    "text_speed": 0.02
+  }
+}

@@ -1,0 +1,4 @@
+nuitka>=2.8
+ordered-set>=4.1.0
+zstandard>=0.23.0
+pillow>=10.0.0
