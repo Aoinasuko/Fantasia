@@ -513,6 +513,27 @@ def _rebase_world_asset_paths(world: WorldData, world_folder: Path) -> None:
         image_path = world_folder / "backgrounds" / _safe_segment(location.name) / "image.png"
         if image_path.is_file():
             location.image_path = str(image_path)
+        facilities = location.extra.get("facilities")
+        if not isinstance(facilities, list):
+            facilities = []
+        for facility in facilities:
+            if not isinstance(facility, dict):
+                continue
+            facility_name = str(facility.get("name") or "").strip()
+            if not facility_name:
+                continue
+            facility_path = world_folder / "backgrounds" / _safe_segment(f"{location.name}__facility__{facility_name}") / "image.png"
+            if facility_path.is_file():
+                facility["image_path"] = str(facility_path)
+        graph = location.extra.get("subnode_graph")
+        nodes = graph.get("nodes") if isinstance(graph, dict) else None
+        if isinstance(nodes, dict):
+            for node_id, node in nodes.items():
+                if not isinstance(node, dict):
+                    continue
+                subnode_path = world_folder / "backgrounds" / _safe_segment(f"{location.name}__subnode__{node_id}") / "image.png"
+                if subnode_path.is_file():
+                    node["image_path"] = str(subnode_path)
 
     for character in world.characters.values():
         folder = world_folder / "characters" / _safe_segment(character.name)

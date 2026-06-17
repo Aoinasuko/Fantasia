@@ -1131,7 +1131,7 @@ def schema_instruction(manager_name: str) -> str:
             "- トップレベルの world_name, overview, structure_description, structure, locations, connections を必ず返してください。\n"
             "- locations はロケーション配列、connections は {from, to, hours} の配列にしてください。\n"
             "- locations の各要素は name, kind, danger, description を持たせてください。\n"
-            "- kind は settlement/wilderness/dungeon/landmark のいずれかを優先してください。街の施設は location にせず、settlement の facilities として扱います。\n"
+            "- kind は settlement/wilderness/dungeon/landmark/road/crossroad/coast/mountain/river/plain のいずれかを優先してください。街の施設は location にせず、settlement の facilities として扱います。\n"
             "- 宿屋、鍛冶屋、ギルド、店、寺院などの街施設を独立したロケーションにしないでください。\n"
             "- 洞窟やダンジョンの入口、内部、奥、深部などは同じ dungeon ロケーション内のサブ地点として扱い、別ロケーションにしないでください。\n"
             "- structure には世界全体の地理ルール、危険度ルール、文化圏、主要テーマなどを入れてください。\n"
@@ -1147,12 +1147,28 @@ def schema_instruction(manager_name: str) -> str:
             "- Generate only the requested 3 to 5 new locations, or fewer when remaining_count is smaller.\n"
             "- All human-readable names and descriptions must be Japanese.\n"
             "- Do not duplicate existing location names, roles, capitals, final temples, unique shrines, unique ruins, or other one-off important places from the provided summary.\n"
-            "- Each location must include name, kind, danger, and description. kind should be settlement, wilderness, dungeon, or landmark.\n"
+            "- Each location must include name, kind, danger, and description. kind should be one of settlement, wilderness, dungeon, landmark, road, crossroad, coast, mountain, river, or plain.\n"
             "- Do not create town facilities as world-map locations. Inns, guilds, blacksmiths, shops, temples, and similar places belong inside a settlement's facilities data.\n"
             "- Do not split a dungeon/cave into separate entrance/interior/depth locations. Keep those as subareas of one dungeon location.\n"
             "- danger is 0-9 and should generally rise with distance from the starting location, while allowing occasional world-appropriate exceptions.\n"
             "- connections must connect each new location to an existing location or another location from this same batch. Use hours=2 unless the prompt explicitly asks otherwise.\n"
             "- Return compact JSON only. Do not add Markdown or commentary.\n"
+        )
+    if manager_name == "create_settlement_detail":
+        instruction += (
+            "\ncreate_settlement_detail専用ルール:\n"
+            "- トップレベルには必ず settlement_structure_description, atmosphere, settlement_structure, facilities, residents, adventurers を置いてください。\n"
+            "- core/spots/districts/landmarks などは settlement_structure の中にだけ入れてください。トップレベルに core/spots だけを返す形式は禁止です。\n"
+            "- residents と adventurers に該当者がいない場合も [] を返してください。facilities も不明なら [] を返してください。\n"
+            "- 次の外枠を崩さず、値だけを拠点に合わせて埋めてください。\n"
+            "{\n"
+            '  "settlement_structure_description": "拠点構造の文章",\n'
+            '  "atmosphere": "拠点の雰囲気",\n'
+            '  "settlement_structure": {"core": "中心施設", "spots": ["施設や広場"]},\n'
+            '  "facilities": [{"name": "施設名", "type": "guild", "description": "説明", "npc_name": "担当者名", "npc_role": "役割"}],\n'
+            '  "residents": [],\n'
+            '  "adventurers": []\n'
+            "}\n"
         )
     return instruction
 
@@ -1211,10 +1227,32 @@ def retry_prompt(manager_name: str, errors: list[str], previous_response: Any) -
 
 
 def _manager_retry_guidance(manager_name: str, errors: list[str], previous_response: Any) -> str:
-    if manager_name != "create_world_overview":
-        return ""
     previous = previous_response if isinstance(previous_response, dict) else {}
     previous_keys = {str(key) for key in previous.keys()} if isinstance(previous, dict) else set()
+    if manager_name == "create_settlement_detail":
+        missing_outer_keys = any(str(error).startswith("missing required key:") for error in errors)
+        if not missing_outer_keys:
+            return ""
+        note = (
+            "create_settlement_detailの修正注意:\n"
+            "- 前回の応答が core/spots だけの場合、それらはトップレベルではなく settlement_structure の中に入れてください。\n"
+            "- トップレベルには必ず settlement_structure_description, atmosphere, settlement_structure, facilities, residents, adventurers を置いてください。\n"
+            "- residents/adventurers/facilities が空でも、キー自体は必ず [] として返してください。\n"
+            "- 次の外枠を崩さず、値だけを拠点設定に合わせて埋めてください。\n"
+            "{\n"
+            '  "settlement_structure_description": "拠点構造の文章",\n'
+            '  "atmosphere": "拠点の雰囲気",\n'
+            '  "settlement_structure": {"core": "中心施設", "spots": ["施設や広場"]},\n'
+            '  "facilities": [],\n'
+            '  "residents": [],\n'
+            '  "adventurers": []\n'
+            "}\n"
+        )
+        if previous_keys & {"core", "spots", "districts", "landmarks", "places", "buildings"}:
+            note += "- 前回のトップレベルキー " + ", ".join(sorted(previous_keys & {"core", "spots", "districts", "landmarks", "places", "buildings"})) + " は settlement_structure 内へ移動してください。\n"
+        return note
+    if manager_name != "create_world_overview":
+        return ""
     structure_like_keys = {"map_rule", "danger_rule", "themes", "regions", "settlements", "breeding_mechanics", "combat_priority"}
     missing_outer_keys = any(str(error).startswith("missing required key:") for error in errors)
     if not missing_outer_keys:
@@ -1274,6 +1312,8 @@ def _apply_alias(response: dict[str, Any], field: FieldRule) -> None:
 
 
 def _canonicalize_manager_response(manager_name: str, value: Any) -> Any:
+    if manager_name == "create_settlement_detail":
+        return _repair_settlement_detail_response(value)
     if manager_name == "settlement_quest_generator":
         return _wrap_collection_response(
             value,
@@ -1303,6 +1343,149 @@ def _canonicalize_manager_response(manager_name: str, value: Any) -> Any:
             item_keys=("name", "category", "description", "quantity", "value", "rarity", "effects", "llm_effects"),
         )
     return value
+
+
+def _repair_settlement_detail_response(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    response = dict(value)
+    structure_keys = (
+        "core",
+        "spots",
+        "districts",
+        "landmarks",
+        "places",
+        "buildings",
+        "shops",
+        "gates",
+    )
+    has_structure_piece = any(key in response for key in structure_keys)
+    has_settlement_piece = any(
+        key in response
+        for key in (
+            "settlement_structure",
+            "settlement_structure_description",
+            "atmosphere",
+            "facilities",
+            "residents",
+            "adventurers",
+        )
+    )
+    if not has_structure_piece and not has_settlement_piece:
+        return value
+
+    if "settlement_structure" not in response:
+        structure = {key: response[key] for key in structure_keys if key in response}
+        if structure:
+            response["settlement_structure"] = structure
+
+    if not response.get("settlement_structure_description"):
+        response["settlement_structure_description"] = _settlement_structure_summary(response.get("settlement_structure"))
+    if not response.get("atmosphere"):
+        response["atmosphere"] = "人々の生活音と旅人の気配が混ざる、物語の始まりにふさわしい拠点。"
+    if "facilities" not in response or not isinstance(response.get("facilities"), list):
+        response["facilities"] = _settlement_facilities_from_structure(response.get("settlement_structure"))
+    if "residents" not in response or not isinstance(response.get("residents"), list):
+        response["residents"] = []
+    if "adventurers" not in response or not isinstance(response.get("adventurers"), list):
+        response["adventurers"] = []
+    return response
+
+
+def _settlement_structure_summary(structure: Any) -> str:
+    if isinstance(structure, dict):
+        core = str(structure.get("core") or "").strip()
+        spots = [str(item).strip() for item in _list_from_any(structure.get("spots")) if str(item).strip()]
+        if core and spots:
+            return f"{core}を中心に、{', '.join(spots[:6])} が並ぶ拠点。"
+        if core:
+            return f"{core}を中心に人と施設が集まる拠点。"
+        for key in ("districts", "landmarks", "places", "buildings", "shops", "gates"):
+            values = [str(item).strip() for item in _list_from_any(structure.get(key)) if str(item).strip()]
+            if values:
+                return f"{', '.join(values[:6])} が配置された拠点。"
+    if isinstance(structure, list):
+        values = [str(item).strip() for item in structure if str(item).strip()]
+        if values:
+            return f"{', '.join(values[:6])} が配置された拠点。"
+    return "中心施設と生活区、旅人向けの施設がまとまった拠点。"
+
+
+def _settlement_facilities_from_structure(structure: Any) -> list[dict[str, Any]]:
+    names: list[str] = []
+    if isinstance(structure, dict):
+        for key in ("spots", "shops", "buildings", "places", "districts", "landmarks"):
+            names.extend(str(item).strip() for item in _list_from_any(structure.get(key)) if str(item).strip())
+        core = str(structure.get("core") or "").strip()
+        if core:
+            names.append(core)
+    elif isinstance(structure, list):
+        names.extend(str(item).strip() for item in structure if str(item).strip())
+
+    facilities: list[dict[str, Any]] = []
+    for name in names:
+        facility_type = _settlement_facility_type(name)
+        if not facility_type:
+            continue
+        if any(_normalise_text(item.get("name")) == _normalise_text(name) for item in facilities):
+            continue
+        facilities.append(
+            {
+                "name": name,
+                "type": facility_type,
+                "description": f"{name}はこの拠点の内部施設。",
+                "npc_name": "",
+                "npc_role": _settlement_facility_role(facility_type),
+            }
+        )
+    return facilities
+
+
+def _settlement_facility_type(name: str) -> str:
+    text = str(name or "").casefold()
+    mapping = (
+        ("guild", ("guild", "adventurer", "quest board", "ギルド", "冒険者", "依頼掲示板", "掲示板")),
+        ("black_market", ("black market", "闇商店", "闇市")),
+        ("blacksmith", ("blacksmith", "smith", "鍛冶", "武器", "防具", "武具")),
+        ("apothecary", ("apothecary", "potion", "medicine", "薬", "薬品", "治療")),
+        ("food_store", ("food", "grocery", "食料", "食品")),
+        ("material_store", ("material", "素材", "鉱石", "採集")),
+        ("magic_store", ("magic", "scroll", "魔術", "魔法", "巻物")),
+        ("inn", ("inn", "宿", "旅籠")),
+        ("temple", ("temple", "church", "shrine", "神殿", "教会", "寺院", "大聖堂")),
+        ("market", ("market", "shop", "store", "市場", "商店", "通り")),
+    )
+    for facility_type, needles in mapping:
+        if any(needle in text for needle in needles):
+            return facility_type
+    return ""
+
+
+def _settlement_facility_role(facility_type: str) -> str:
+    return {
+        "guild": "ギルド受付",
+        "black_market": "闇商人",
+        "blacksmith": "鍛冶職人",
+        "apothecary": "薬師",
+        "food_store": "食料店主",
+        "material_store": "素材商",
+        "magic_store": "魔術商",
+        "inn": "宿の主人",
+        "temple": "神官",
+        "market": "商人",
+    }.get(facility_type, "施設の担当者")
+
+
+def _list_from_any(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if value in (None, "", {}):
+        return []
+    return [value]
+
+
+def _normalise_text(value: Any) -> str:
+    return "".join(str(value or "").casefold().split())
 
 
 def _wrap_item_response(

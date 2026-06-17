@@ -56,6 +56,62 @@ WORLD_LOCATION_BATCH_MIN = 3
 WORLD_LOCATION_BATCH_MAX = 5
 WORLD_MAP_EDGE_HOURS = 2
 WORLD_MAP_MAX_DYNAMIC_DEGREE = 3
+WORLD_LOCATION_KIND_OPTIONS = (
+    "settlement",
+    "wilderness",
+    "dungeon",
+    "landmark",
+    "road",
+    "crossroad",
+    "coast",
+    "mountain",
+    "river",
+    "plain",
+)
+WORLD_LOCATION_KIND_LABELS = {
+    "settlement": "街/村/拠点",
+    "wilderness": "森/荒野/湿地",
+    "dungeon": "洞窟/遺跡/迷宮",
+    "landmark": "目印/名所",
+    "road": "街道",
+    "crossroad": "分岐路",
+    "coast": "海岸",
+    "mountain": "山",
+    "river": "川",
+    "plain": "平原",
+}
+WORLD_LOCATION_NAME_CANDIDATES = (
+    "白石街道",
+    "雨待ちの分岐路",
+    "風見の海岸",
+    "灰銀山",
+    "藍霧川",
+    "朝露の平原",
+    "灯籠坂",
+    "鈴音の小道",
+    "翡翠の渡し",
+    "月欠け岬",
+    "赤土の丘陵",
+    "星見の台地",
+    "黒松の森道",
+    "琥珀橋",
+    "遠雷の草原",
+    "薄氷の沢",
+    "緑瓦の宿場",
+    "忘れ井戸の辻",
+    "潮騒の岩棚",
+    "白鷺の湿原",
+    "鉄錆びの峠",
+    "花曇りの牧野",
+    "古鐘の野営地",
+    "銀砂の浜辺",
+    "霧笛の河口",
+    "火灯しの尾根",
+    "水鏡の湖畔",
+    "鹿角の分かれ道",
+    "青麦の街道",
+    "眠り樫の古道",
+)
 SUBNODE_GRAPH_KEY = "subnode_graph"
 CURRENT_SUBNODE_FLAG = "current_subnode"
 DEFAULT_SUBNODE_ID = "center"
@@ -286,6 +342,8 @@ class GameEngine:
                     f"希望世界名: {requested_world_name or 'AIに任せる'}\n"
                     f"初期ロケーション数: {target_location_count}\n"
                     f"ゲーム設定: {json.dumps(customization, ensure_ascii=False)}\n"
+                    f"使用可能なロケーション種別: {json.dumps(_world_location_kind_guidance(), ensure_ascii=False)}\n"
+                    f"ロケーション名候補例: {json.dumps(list(WORLD_LOCATION_NAME_CANDIDATES), ensure_ascii=False)}\n"
                     f"次の雰囲気で、新しいRPG世界の初期状態を作ってください: {premise_context}"
                 ),
             },
@@ -297,7 +355,8 @@ class GameEngine:
                     "World map generation is split into small batches. In create_world_overview, do not create all "
                     f"{target_location_count} locations at once. Return only the starting location and 1-3 essential "
                     "anchor locations that define the world. Later managers will generate surrounding locations in "
-                    "3-5 location batches using the overview, existing map summary, neighboring terrain, danger, and world tone."
+                    "3-5 location batches using the overview, existing map summary, neighboring terrain, danger, and world tone. "
+                    "Avoid overusing the same mythic names such as アルテミス; vary naming motifs across nature, roads, weather, terrain, and local culture."
                 ),
             }
         )
@@ -2009,9 +2068,115 @@ class GameEngine:
     def _request_background_if_needed(self, location: str) -> None:
         if not location:
             return
-        location_data = self.state.world_data.ensure_location(location)
-        if not location_data.image_path:
+        target = self._current_background_target(location)
+        self.state.flags["active_background_context"] = _strip_response_metadata(target)
+        image_path = str(target.get("image_path") or "")
+        image_exists = bool(image_path and Path(image_path).is_file())
+        if image_exists:
+            if target.get("kind") == "location":
+                self.state.flags.pop("active_background_image_path", None)
+            else:
+                self.state.flags["active_background_image_path"] = image_path
+            self.state.flags.pop("pending_background_location", None)
+            self.state.flags.pop("pending_background_context", None)
+            return
+
+        if target.get("kind") == "location":
+            self.state.flags.pop("active_background_image_path", None)
+        else:
+            self.state.flags.pop("active_background_image_path", None)
+        if not image_exists:
             self.state.flags["pending_background_location"] = location
+            self.state.flags["pending_background_context"] = _strip_response_metadata(target)
+
+    def _current_background_target(self, location: str) -> dict[str, Any]:
+        world = self.state.world_data
+        location_name = str(location or self.state.current_location or world.starting_location or "unknown").strip()
+        location_data = world.ensure_location(location_name)
+
+        active_facility = self._active_facility_record()
+        if active_facility and _is_settlement_location(location_data):
+            facility_name = str(active_facility.get("name") or "").strip()
+            if facility_name:
+                return {
+                    "kind": "facility",
+                    "location": location_name,
+                    "name": facility_name,
+                    "display_name": f"{location_name} / {facility_name}",
+                    "description": str(active_facility.get("description") or location_data.description or ""),
+                    "facility_type": str(active_facility.get("type") or ""),
+                    "image_path": str(active_facility.get("image_path") or ""),
+                    "storage_key": f"{location_name}__facility__{facility_name}",
+                }
+
+        graph = self._ensure_location_subnode_graph(world, location_name)
+        nodes = graph.get("nodes", {}) if isinstance(graph, dict) else {}
+        subnode_id = self._current_subnode_id(location_name) if nodes else ""
+        subnode = nodes.get(subnode_id) if subnode_id else None
+        if isinstance(subnode, dict):
+            subnode_name = str(subnode.get("name") or subnode_id).strip()
+            specific_subnode = (
+                bool(subnode_id and subnode_id != DEFAULT_SUBNODE_ID)
+                or _is_dungeon_location(location_data)
+                or _world_location_blocks_world_map_departure(location_data)
+            )
+            if subnode_name and specific_subnode:
+                return {
+                    "kind": "subnode",
+                    "location": location_name,
+                    "subnode_id": subnode_id,
+                    "name": subnode_name,
+                    "display_name": f"{location_name} / {subnode_name}",
+                    "description": str(subnode.get("description") or location_data.description or ""),
+                    "subnode_kind": str(subnode.get("kind") or ""),
+                    "image_path": str(subnode.get("image_path") or ""),
+                    "storage_key": f"{location_name}__subnode__{subnode_id}",
+                }
+
+        return {
+            "kind": "location",
+            "location": location_name,
+            "name": location_name,
+            "display_name": location_name,
+            "description": str(location_data.description or location_data.area or ""),
+            "image_path": str(location_data.image_path or ""),
+            "storage_key": location_name,
+        }
+
+    def _apply_background_image_to_target(
+        self,
+        target: dict[str, Any],
+        image_path: Path,
+        prompt_record: dict[str, Any],
+    ) -> None:
+        world = self.state.world_data
+        kind = str(target.get("kind") or "location")
+        location_name = str(target.get("location") or self.state.current_location or world.starting_location or "unknown")
+        saved_path = str(image_path)
+        if kind == "facility":
+            settlement = world.locations.get(location_name)
+            if settlement:
+                facility_name = str(target.get("name") or "")
+                for facility in self._ensure_settlement_facilities(settlement):
+                    if _facility_name_matches(str(facility.get("name") or ""), facility_name):
+                        facility["image_path"] = saved_path
+                        facility["prompts"] = prompt_record
+                        break
+            self.state.flags["active_background_image_path"] = saved_path
+        elif kind == "subnode":
+            graph = self._ensure_location_subnode_graph(world, location_name)
+            nodes = graph.get("nodes", {}) if isinstance(graph, dict) else {}
+            node = nodes.get(str(target.get("subnode_id") or ""))
+            if isinstance(node, dict):
+                node["image_path"] = saved_path
+                node["prompts"] = prompt_record
+            self.state.flags["active_background_image_path"] = saved_path
+        else:
+            location_data = world.ensure_location(location_name)
+            location_data.image_path = saved_path
+            location_data.prompts = prompt_record
+            self.state.flags.pop("active_background_image_path", None)
+        self.state.flags["active_background_context"] = _strip_response_metadata({**target, "image_path": saved_path})
 
     def _current_settlement_location(self) -> LocationData | None:
         current_name = self.state.current_location or self.state.world_data.starting_location
@@ -2344,6 +2509,16 @@ class GameEngine:
         previous_location = self.state.current_location
         facility_name = str(facility.get("name") or "facility")
         location_name = settlement.name
+        narrator_response = self._direct_travel_narrator(
+            action=action,
+            input_type=input_type,
+            travel_kind="facility",
+            source_name=previous_location,
+            destination_location=settlement.name,
+            destination_name=facility_name,
+            destination_description=str(facility.get("description") or settlement.description or ""),
+            route_text=f"{settlement.name}の中にある{facility_name}へ向かう。",
+        )
         facility["location_name"] = settlement.name
         facility["sub_location"] = facility_name
         settlement.flags["settlement"] = True
@@ -2352,16 +2527,90 @@ class GameEngine:
         self._mark_location_visited(self.state.world_data, settlement.name)
         self._set_active_facility(settlement, facility)
         npc = self._ensure_facility_npc(settlement, facility, settlement.name)
-        choices = self._location_default_choices(settlement.name) + _as_str_list((response or {}).get("choices"))
+        choices = self._location_default_choices(settlement.name) + _as_str_list((response or {}).get("choices")) + _as_str_list(narrator_response.get("choices"))
         if npc:
             choices.append(f"{npc.name}に話しかける")
-        narration = str((response or {}).get("narration") or f"{facility_name}へ移動した。")
+        narration = str(narrator_response.get("narration") or (response or {}).get("narration") or f"{facility_name}へ移動した。")
         self._set_player_presence(settlement.name)
         self.state.flags["screen_mode"] = "exploration"
         self.state.append_turn(action, narration, settlement.name, _exploration_choices(choices), input_type=input_type)
-        self._apply_visual_intent(response or {}, "facility_travel", settlement.name, previous_location)
+        visual_response = self._merge_visual_response(response or {}, narrator_response)
+        self._apply_visual_intent(visual_response, "facility_travel", settlement.name, previous_location)
         self.save_game()
         return self.state.log_text(16)
+
+    def _direct_travel_narrator(
+        self,
+        *,
+        action: str,
+        input_type: str,
+        travel_kind: str,
+        source_name: str,
+        destination_location: str,
+        destination_name: str,
+        destination_description: str = "",
+        route_text: str = "",
+        elapsed_hours: int = 0,
+    ) -> dict[str, Any]:
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "あなたはAI駆動RPGの移動描写担当です。"
+                    "ゲーム側で移動可否、移動先、経過時間はすでに確定しています。"
+                    "それらを変更せず、移動後の場面が自然に分かる短い描写と次の選択肢だけを返してください。"
+                    "location は必ず destination_location と同じ文字列にしてください。"
+                    "施設名やサブノード名を location にしないでください。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"世界: {self.state.world_name}\n"
+                    f"移動種別: {travel_kind}\n"
+                    f"入力種別: {input_type}\n"
+                    f"プレイヤー行動: {action}\n"
+                    f"移動元: {source_name}\n"
+                    f"destination_location: {destination_location}\n"
+                    f"移動先表示名: {destination_name}\n"
+                    f"移動先概要: {destination_description}\n"
+                    f"経過時間: {elapsed_hours}時間\n"
+                    f"経路: {route_text}\n"
+                    f"直近ログ:\n{self.state.log_text(6)}\n"
+                    "この直接移動を、現在の物語に合うように描写してください。"
+                    "重要な発見や印象的な場面でない限り display_cg は false にしてください。"
+                ),
+            },
+        ]
+        response = self._chat_json(
+            "narrator",
+            messages,
+            max_tokens=500,
+            world_name=self.state.world_name,
+            player_name=self.state.player_name,
+        )
+        response["location"] = destination_location
+        self.state.world_data.history.append(
+            {
+                "manager": "narrator",
+                "source": "direct_travel",
+                "travel_kind": travel_kind,
+                "action": action,
+                "input_type": input_type,
+                "from": source_name,
+                "to": destination_location,
+                "destination_name": destination_name,
+                "response": _strip_response_metadata(response),
+            }
+        )
+        return response
+
+    def _merge_visual_response(self, base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+        merged = dict(base or {})
+        for key in ("narration", "choices", "display_cg", "cg_prompt", "cg_description"):
+            if key in overlay:
+                merged[key] = overlay[key]
+        return merged
 
     def _ensure_facility_npc(self, settlement: LocationData, facility: dict[str, Any], location_name: str) -> CharacterData | None:
         npc_name = str(facility.get("npc_name") or "").strip()
@@ -2738,6 +2987,8 @@ class GameEngine:
             "generated_summary": self._world_location_generation_summary(world),
             "anchor_names": anchor_names,
             "nearby_locations": [self._world_location_node_context(world, name) for name in anchor_names],
+            "kind_options": _world_location_kind_guidance(),
+            "location_name_candidates": list(WORLD_LOCATION_NAME_CANDIDATES),
             "important_existing_locations": [self._world_location_node_context(world, name) for name in important_names],
             "recent_existing_locations": [
                 self._world_location_node_context(world, name)
@@ -2753,6 +3004,8 @@ class GameEngine:
                 "Every generated location must be connected by a 2-hour edge to an existing or same-batch location.",
                 "Do not generate town facilities as world-map locations.",
                 "Do not split dungeon entrances, interiors, or depths into separate locations.",
+                "Use kind_options. Roads, crossroads, coasts, mountains, rivers, and plains are valid world-map location kinds.",
+                "Use location_name_candidates as naming style inspiration and vary names. Avoid repeatedly using the same mythic motif such as アルテミス.",
                 "If game customization enables crime risk, settlement nodes should include public order cues and may include extra.crime_risk_multiplier between 0.0 and 2.0.",
             ],
         }
@@ -3266,20 +3519,56 @@ class GameEngine:
         ]
         external_nodes: list[dict[str, Any]] = []
         external_edges: list[dict[str, Any]] = []
-        for index, edge in enumerate(self._subnode_external_edges(world, location_name, graph)):
+        external_edges_raw = self._subnode_external_edges(world, location_name, graph)
+        external_node_size = 84
+        external_spacing = 112
+        external_gap = 180
+        external_lane_x = (
+            max((_safe_int(node.get("x"), 80) for node in local_nodes), default=80)
+            + external_gap
+        )
+        occupied_boxes: list[tuple[int, int, int, int]] = []
+        for node in local_nodes:
+            x = _safe_int(node.get("x"), 80)
+            y = _safe_int(node.get("y"), 80)
+            occupied_boxes.append((x - 24, y - 24, x + external_node_size + 24, y + external_node_size + 24))
+
+        def overlaps_existing(x: int, y: int) -> bool:
+            box = (x, y, x + external_node_size, y + external_node_size)
+            for left, top, right, bottom in occupied_boxes:
+                if box[0] < right and box[2] > left and box[1] < bottom and box[3] > top:
+                    return True
+            return False
+
+        source_counts: dict[str, int] = {}
+        source_offsets: dict[str, int] = {}
+        for edge in external_edges_raw:
+            source_id = str(edge.get("from") or "")
+            source_counts[source_id] = source_counts.get(source_id, 0) + 1
+        for index, edge in enumerate(external_edges_raw):
             source = nodes.get(str(edge.get("from") or ""), {})
             source_x = _safe_int(source.get("x") if isinstance(source, dict) else 80, 80)
             source_y = _safe_int(source.get("y") if isinstance(source, dict) else 80, 80)
             node_id = f"{SUBNODE_EXTERNAL_PREFIX}{index}"
             target_location = str(edge.get("target_location") or "")
+            source_id = str(edge.get("from") or "")
+            source_offset = source_offsets.get(source_id, 0)
+            source_offsets[source_id] = source_offset + 1
+            group_count = max(1, source_counts.get(source_id, 1))
+            group_origin_y = source_y - ((group_count - 1) * external_spacing) // 2
+            x = max(external_lane_x, source_x + external_gap)
+            y = max(24, group_origin_y + source_offset * external_spacing)
+            while overlaps_existing(x, y):
+                y += external_spacing
+            occupied_boxes.append((x - 24, y - 24, x + external_node_size + 24, y + external_node_size + 24))
             external_nodes.append(
                 {
                     "id": node_id,
                     "name": target_location,
                     "description": str(edge.get("description") or ""),
                     "kind": "external",
-                    "x": source_x + 170,
-                    "y": source_y - 80 + (index % 3) * 80,
+                    "x": x,
+                    "y": y,
                     "external": True,
                     "target_location": target_location,
                     "target_subnode": str(edge.get("target_subnode") or ""),
@@ -3413,12 +3702,24 @@ class GameEngine:
         graph = self._ensure_location_subnode_graph(self.state.world_data, location_name)
         if movement != "free" and not self._subnode_has_edge(graph, current_id, target_id):
             raise ValueError("その場所へは隣接地点からしか移動できません。")
+        name = str(target.get("name") or target_id)
+        narrator_response = self._direct_travel_narrator(
+            action=f"{name}へ移動",
+            input_type="choice",
+            travel_kind="subnode",
+            source_name=location_name,
+            destination_location=location_name,
+            destination_name=name,
+            destination_description=str(target.get("description") or ""),
+            route_text=f"{location_name}内の{current_id}から{target_id}へ移動する。",
+        )
         self._set_current_subnode(location_name, target_id)
         self._activate_facility_for_subnode(location_name, target)
-        name = str(target.get("name") or target_id)
-        narration = f"{name}\u3078\u79fb\u52d5\u3057\u305f\u3002"
+        narration = str(narrator_response.get("narration") or f"{name}\u3078\u79fb\u52d5\u3057\u305f\u3002")
+        choices = _exploration_choices(_as_str_list(narrator_response.get("choices")) + self._location_default_choices(location_name))
         self.state.flags["screen_mode"] = "exploration"
-        self.state.append_turn("\u30b5\u30d6\u30de\u30c3\u30d7\u79fb\u52d5", narration, location_name, self._location_default_choices(location_name), input_type="choice")
+        self.state.append_turn("\u30b5\u30d6\u30de\u30c3\u30d7\u79fb\u52d5", narration, location_name, choices, input_type="choice")
+        self._apply_visual_intent(narrator_response, "subnode_travel", location_name, location_name)
         self.save_game()
         return self.state.log_text(16)
 
@@ -3429,6 +3730,17 @@ class GameEngine:
             raise ValueError("その移動先はワールドに登録されていません。")
         previous_location = current_location
         hours = max(0, _safe_int(target.get("hours"), WORLD_MAP_EDGE_HOURS))
+        narrator_response = self._direct_travel_narrator(
+            action="\u30b5\u30d6\u30de\u30c3\u30d7\u79fb\u52d5",
+            input_type="choice",
+            travel_kind="subnode_external",
+            source_name=current_location,
+            destination_location=target_location,
+            destination_name=target_location,
+            destination_description=str((world.locations.get(target_location).description if world.locations.get(target_location) else "") or target.get("description") or ""),
+            route_text=f"{current_location}の{source_id}から{target_location}へ続く道を使う。",
+            elapsed_hours=hours,
+        )
         time_event = self._advance_world_time(hours, source="subnode_route", reason="subnode route travel", append_log=False)
         self._clear_active_facility(reset_subnode=False)
         self._mark_location_visited(world, target_location)
@@ -3439,12 +3751,13 @@ class GameEngine:
         self._set_current_subnode(target_location, target_subnode)
         self._set_player_presence(target_location)
         self.state.flags["screen_mode"] = "exploration"
-        narration = f"{previous_location} -> {target_location} \u3078\u79fb\u52d5\u3057\u305f\u3002"
-        self.state.append_turn("\u30b5\u30d6\u30de\u30c3\u30d7\u79fb\u52d5", narration, target_location, self._location_default_choices(target_location), input_type="choice")
+        narration = str(narrator_response.get("narration") or f"{previous_location} -> {target_location} \u3078\u79fb\u52d5\u3057\u305f\u3002")
+        choices = _exploration_choices(_as_str_list(narrator_response.get("choices")) + self._location_default_choices(target_location))
+        self.state.append_turn("\u30b5\u30d6\u30de\u30c3\u30d7\u79fb\u52d5", narration, target_location, choices, input_type="choice")
         if time_event.get("line"):
             self.state.display_log.append(str(time_event["line"]))
         self.state.display_log.extend(str(item) for item in time_event.get("companion_lines", []) if item)
-        self._apply_visual_intent({}, "subnode_travel", target_location, previous_location)
+        self._apply_visual_intent(narrator_response, "subnode_travel", target_location, previous_location)
         self.save_game()
         return self.state.log_text(16)
 
@@ -3507,9 +3820,21 @@ class GameEngine:
         if not path:
             raise ValueError("現在地からその場所までの道が見つかりません。")
         hours = (len(path) - 1) * WORLD_MAP_EDGE_HOURS
+        target_location = world.locations.get(target)
+        narrator_response = self._direct_travel_narrator(
+            action="ワールドマップ移動",
+            input_type="choice",
+            travel_kind="world_map",
+            source_name=current,
+            destination_location=target,
+            destination_name=target,
+            destination_description=str(target_location.description if target_location else ""),
+            route_text=" -> ".join(path),
+            elapsed_hours=hours,
+        )
         time_event = self._advance_world_time(hours, source="world_map_travel", reason="world map travel", append_log=False)
-        narration = f"{' -> '.join(path)} の道をたどって移動した。"
-        choices = self._location_default_choices(target)
+        narration = str(narrator_response.get("narration") or f"{' -> '.join(path)} の道をたどって移動した。")
+        choices = _exploration_choices(_as_str_list(narrator_response.get("choices")) + self._location_default_choices(target))
         self._clear_active_facility(reset_subnode=False)
         self._set_player_presence(target)
         self.state.flags["screen_mode"] = "exploration"
@@ -3521,7 +3846,7 @@ class GameEngine:
         if time_event.get("line"):
             self.state.display_log.append(str(time_event["line"]))
         self.state.display_log.extend(str(item) for item in time_event.get("companion_lines", []) if item)
-        self._apply_visual_intent({}, "world_map_travel", target, current)
+        self._apply_visual_intent(narrator_response, "world_map_travel", target, current)
         self.save_game()
         return self.state.log_text(16)
 
@@ -4546,6 +4871,7 @@ class GameEngine:
                     "Fantasiaのcreate_settlement_detail相当として、"
                     "settlement_structure_description, atmosphere, settlement_structure, facilities, residents, adventurers "
                     "を必ずトップレベルに持つJSONだけを返してください。"
+                    "core や spots は settlement_structure の中だけに入れ、トップレベルに core/spots だけを返すことは禁止です。"
                     "facilities は name, type, description, npc_name, npc_role を持つ施設オブジェクトの配列にしてください。"
                     "施設は街や村の内部施設であり、ワールドマップ上のロケーションにはしないでください。"
                     "店の type は blacksmith, black_market, apothecary, food_store, material_store, general_store, magic_store を使用できます。"
@@ -4559,7 +4885,9 @@ class GameEngine:
                     f"プレイヤー名: {player_name}\n"
                     f"対象拠点: {settlement_name}\n"
                     f"世界データ: {world_payload}\n"
-                    "この拠点の構造、雰囲気、住人、滞在中の冒険者を作ってください。"
+                    "この拠点の構造、雰囲気、住人、滞在中の冒険者を作ってください。\n"
+                    "必ず次の外枠を維持し、値だけを埋めてください: "
+                    "{settlement_structure_description, atmosphere, settlement_structure, facilities, residents, adventurers}"
                 ),
             },
         ]
@@ -5219,7 +5547,15 @@ class GameEngine:
         )
 
     def generate_scene_image(self) -> ImageResult:
-        location = self.state.current_location or self.state.world_data.starting_location or "unknown"
+        pending_target = self.state.flags.get("pending_background_context")
+        if isinstance(pending_target, dict):
+            target = dict(pending_target)
+        else:
+            target = self._current_background_target(self.state.current_location or self.state.world_data.starting_location or "unknown")
+        location = str(target.get("location") or self.state.current_location or self.state.world_data.starting_location or "unknown")
+        display_name = str(target.get("display_name") or target.get("name") or location)
+        target_kind = str(target.get("kind") or "location")
+        target_description = str(target.get("description") or "")
         messages = [
             {
                 "role": "system",
@@ -5233,9 +5569,13 @@ class GameEngine:
                 "role": "user",
                 "content": (
                     f"世界: {self.state.world_name}\n"
-                    f"現在地: {location}\n"
+                    f"ロケーション: {location}\n"
+                    f"表示対象: {display_name}\n"
+                    f"表示対象種別: {target_kind}\n"
+                    f"表示対象概要: {target_description}\n"
                     f"状況: {self.state.log_text(6)}\n"
-                    "現在地を表すファンタジーRPG背景画像のSDXLプロンプトを作ってください。"
+                    "表示対象を表すファンタジーRPG背景画像のSDXLプロンプトを作ってください。"
+                    "人物の立ち絵ではなく、場所の背景として使える構図にしてください。"
                 ),
             },
         ]
@@ -5249,7 +5589,7 @@ class GameEngine:
 
         prompt_parts = _as_str_list(response.get("prompt"))
         if not prompt_parts:
-            prompt_parts = ["fantasy RPG background", location, "detailed environment"]
+            prompt_parts = ["fantasy RPG background", display_name, "detailed environment"]
         prompt = ", ".join(prompt_parts)
         llm_negative_prompt = str(response.get("negative_prompt") or "")
         negative_prompt = self.image_backend.negative_prompt("background", llm_negative_prompt)
@@ -5265,22 +5605,22 @@ class GameEngine:
                 "configured_purpose": "background",
                 "llm_negative_prompt": llm_negative_prompt,
             },
+            "background_target": _strip_response_metadata(target),
             "backend": image.backend,
             "generation_metadata": image.metadata,
             "source_response": _strip_response_metadata(response),
         }
         saved_image = self.save_store.save_background_asset(
             self.state.world_name,
-            location,
+            str(target.get("storage_key") or display_name or location),
             Path(image.path),
             prompt_record,
         )
-        location_data = self.state.world_data.ensure_location(location)
-        location_data.image_path = str(saved_image)
-        location_data.prompts = prompt_record
+        self._apply_background_image_to_target(target, saved_image, prompt_record)
         self.state.last_image_path = str(saved_image)
         if self.state.flags.get("pending_background_location") == location:
             self.state.flags.pop("pending_background_location", None)
+        self.state.flags.pop("pending_background_context", None)
         self.save_game()
         return ImageResult(path=saved_image, backend=image.backend, prompt=image.prompt, metadata=image.metadata)
 
@@ -10940,15 +11280,39 @@ def _infer_world_location_kind(payload: dict[str, Any], name: str, description: 
                 return "dungeon"
             if value in {"facility", "shop", "inn", "guild", "temple", "market"}:
                 return "facility"
+            if value in {"road", "highway", "trail", "path", "route", "街道", "道"}:
+                return "road"
+            if value in {"crossroad", "crossroads", "fork", "junction", "branch", "分岐路", "分かれ道", "辻"}:
+                return "crossroad"
+            if value in {"coast", "beach", "shore", "seaside", "海岸", "浜辺", "岬"}:
+                return "coast"
+            if value in {"mountain", "mountains", "peak", "ridge", "山", "山岳", "峠"}:
+                return "mountain"
+            if value in {"river", "stream", "brook", "ford", "川", "河", "沢", "渡し"}:
+                return "river"
+            if value in {"plain", "plains", "field", "grassland", "meadow", "平原", "草原", "野"}:
+                return "plain"
             return value
     text = f"{name}\n{description}".lower()
     if _looks_like_facility_location_name(name):
         return "facility"
     if any(word in text for word in ("dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair", "洞窟", "迷宮", "遺跡", "鉱山")):
         return "dungeon"
+    if any(word in text for word in ("crossroad", "crossroads", "junction", "fork", "分岐路", "分かれ道", "辻")):
+        return "crossroad"
+    if any(word in text for word in ("road", "highway", "trail", "route", "街道", "古道", "小道")):
+        return "road"
+    if any(word in text for word in ("coast", "beach", "shore", "seaside", "海岸", "浜辺", "岬", "河口")):
+        return "coast"
+    if any(word in text for word in ("mountain", "mountains", "peak", "ridge", "山", "山岳", "峠", "尾根")):
+        return "mountain"
+    if any(word in text for word in ("river", "stream", "brook", "ford", "川", "河", "沢", "渡し")):
+        return "river"
+    if any(word in text for word in ("plain", "plains", "field", "grassland", "meadow", "平原", "草原", "牧野")):
+        return "plain"
     if any(word in text for word in ("town", "village", "city", "settlement", "村", "街", "町", "都市", "宿場")):
         return "settlement"
-    if any(word in text for word in ("forest", "swamp", "mountain", "plain", "wilderness", "森", "沼", "山", "荒野", "平原")):
+    if any(word in text for word in ("forest", "swamp", "wilderness", "森", "沼", "荒野")):
         return "wilderness"
     return "landmark"
 
@@ -11091,28 +11455,62 @@ def _crime_delta_from_payload(value: Any) -> int:
 def _fallback_world_location_kind(rng: random.Random, index: int) -> str:
     if index == 0:
         return "settlement"
-    return rng.choice(("wilderness", "landmark", "dungeon", "settlement", "wilderness"))
+    return rng.choice(
+        (
+            "wilderness",
+            "landmark",
+            "dungeon",
+            "settlement",
+            "road",
+            "crossroad",
+            "coast",
+            "mountain",
+            "river",
+            "plain",
+            "wilderness",
+        )
+    )
 
 
 def _fallback_world_location_name(kind: str, index: int) -> str:
-    prefix = {
-        "settlement": "Settlement",
-        "dungeon": "Dungeon",
-        "wilderness": "Wilds",
-        "landmark": "Landmark",
-        "facility": "Facility",
-    }.get(kind, "Location")
-    return f"{prefix} {index:02d}"
+    by_kind = {
+        "road": ("白石街道", "灯籠坂", "黒松の森道", "青麦の街道", "眠り樫の古道"),
+        "crossroad": ("雨待ちの分岐路", "忘れ井戸の辻", "鹿角の分かれ道", "鈴音の小道"),
+        "coast": ("風見の海岸", "月欠け岬", "銀砂の浜辺", "潮騒の岩棚"),
+        "mountain": ("灰銀山", "鉄錆びの峠", "火灯しの尾根", "赤土の丘陵"),
+        "river": ("藍霧川", "翡翠の渡し", "薄氷の沢", "霧笛の河口"),
+        "plain": ("朝露の平原", "遠雷の草原", "花曇りの牧野", "青麦の野"),
+        "settlement": ("緑瓦の宿場", "古鐘の野営地", "水鏡の湖畔"),
+        "dungeon": ("沈黙の坑道", "白骨の洞穴", "黒曜の廃砦"),
+        "wilderness": ("白鷺の湿原", "眠り樫の森", "霧渡りの荒野"),
+        "landmark": ("星見の台地", "琥珀橋", "古鐘の石標"),
+    }
+    candidates = by_kind.get(str(kind or "").strip().lower()) or WORLD_LOCATION_NAME_CANDIDATES
+    base = candidates[(max(1, int(index)) - 1) % len(candidates)]
+    return str(base)
 
 
 def _fallback_world_location_description(kind: str, danger: int) -> str:
     labels = {
-        "settlement": "A settled place connected to the local roads.",
-        "dungeon": "A dangerous site where stronger threats may appear.",
-        "wilderness": "Open wilderness between safer places.",
-        "landmark": "A notable place on the road.",
+        "settlement": "人々が暮らす拠点。道や周辺地形とつながっている。",
+        "dungeon": "危険な探索地。内部はサブノードとして扱われる。",
+        "wilderness": "安全地帯の間に広がる野外地形。",
+        "landmark": "道中の目印になる特徴的な場所。",
+        "road": "別の場所へ続く街道。",
+        "crossroad": "複数の道が交わる分岐路。",
+        "coast": "海に面した開けた地形。",
+        "mountain": "険しい山や峠道を含む地形。",
+        "river": "川沿いや渡し場を含む地形。",
+        "plain": "見通しのよい平原や草原。",
     }
-    return f"{labels.get(kind, 'A location in the world.')} Danger {danger}."
+    return f"{labels.get(kind, '世界地図上の地点。')} 危険度 {danger}。"
+
+
+def _world_location_kind_guidance() -> list[dict[str, str]]:
+    return [
+        {"id": kind, "label": WORLD_LOCATION_KIND_LABELS.get(kind, kind)}
+        for kind in WORLD_LOCATION_KIND_OPTIONS
+    ]
 
 
 def _unique_world_location_name(world: WorldData, base: str) -> str:
@@ -11133,6 +11531,12 @@ def _nearby_dynamic_location_requested(action: str, proposed_location: str) -> b
         "cave",
         "ruin",
         "forest",
+        "road",
+        "crossroad",
+        "coast",
+        "mountain",
+        "river",
+        "plain",
         "tower",
         "mine",
         "村",
@@ -11141,6 +11545,15 @@ def _nearby_dynamic_location_requested(action: str, proposed_location: str) -> b
         "洞窟",
         "迷宮",
         "森",
+        "街道",
+        "分岐路",
+        "分かれ道",
+        "海岸",
+        "浜辺",
+        "山",
+        "川",
+        "平原",
+        "草原",
         "塔",
         "遺跡",
         "鉱山",

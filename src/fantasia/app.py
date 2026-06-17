@@ -30,7 +30,7 @@ from .game import (
 )
 from .generation_log import append_task_event, format_generation_log_detail, list_generation_logs
 from .i18n import ELEMENT_IDS, tr_enum, tr_enum_format
-from .imagegen import QUALITY_PRESETS, MockSdxlBackend, create_image_backend
+from .imagegen import DEFAULT_NEGATIVE_PROMPTS, QUALITY_PRESETS, MockSdxlBackend, create_image_backend
 from .items import (
     add_item_stack,
     can_add_item_stack,
@@ -334,10 +334,10 @@ class FantasiaApp(tk.Tk):
         self.image_vae_path_var = tk.StringVar(value=str(sdxl_config.get("vae_path", "")))
         self.image_taesd_path_var = tk.StringVar(value=str(sdxl_config.get("taesd_path", "")))
         self.image_lora_dir_var = tk.StringVar(value=str(sdxl_config.get("lora_model_dir", "")))
-        self.image_negative_background_var = tk.StringVar(value=str(negative_prompts.get("background", "")))
-        self.image_negative_character_var = tk.StringVar(value=str(negative_prompts.get("character", "")))
-        self.image_negative_monster_var = tk.StringVar(value=str(negative_prompts.get("monster", "")))
-        self.image_negative_cg_var = tk.StringVar(value=str(negative_prompts.get("cg", "")))
+        self.image_negative_background_var = tk.StringVar(value=str(negative_prompts.get("background", DEFAULT_NEGATIVE_PROMPTS["background"])))
+        self.image_negative_character_var = tk.StringVar(value=str(negative_prompts.get("character", DEFAULT_NEGATIVE_PROMPTS["character"])))
+        self.image_negative_monster_var = tk.StringVar(value=str(negative_prompts.get("monster", DEFAULT_NEGATIVE_PROMPTS["monster"])))
+        self.image_negative_cg_var = tk.StringVar(value=str(negative_prompts.get("cg", DEFAULT_NEGATIVE_PROMPTS["cg"])))
         self.ui_font_var = tk.StringVar(value=_font_label_from_config(self.config_data, self))
         self.ui_font_path_var = tk.StringVar(value=str(self.config_data.font_path))
         self.ui_font_size_var = tk.StringVar(value=str(self.config_data.font_size))
@@ -4402,10 +4402,10 @@ class FantasiaApp(tk.Tk):
         self.image_vae_path_var.set(str(sdxl_config.get("vae_path", "")))
         self.image_taesd_path_var.set(str(sdxl_config.get("taesd_path", "")))
         self.image_lora_dir_var.set(str(sdxl_config.get("lora_model_dir", "")))
-        self.image_negative_background_var.set(str(negative_prompts.get("background", "")))
-        self.image_negative_character_var.set(str(negative_prompts.get("character", "")))
-        self.image_negative_monster_var.set(str(negative_prompts.get("monster", "")))
-        self.image_negative_cg_var.set(str(negative_prompts.get("cg", "")))
+        self.image_negative_background_var.set(str(negative_prompts.get("background", DEFAULT_NEGATIVE_PROMPTS["background"])))
+        self.image_negative_character_var.set(str(negative_prompts.get("character", DEFAULT_NEGATIVE_PROMPTS["character"])))
+        self.image_negative_monster_var.set(str(negative_prompts.get("monster", DEFAULT_NEGATIVE_PROMPTS["monster"])))
+        self.image_negative_cg_var.set(str(negative_prompts.get("cg", DEFAULT_NEGATIVE_PROMPTS["cg"])))
         if hasattr(self, "image_quality_combo"):
             self.image_quality_combo.configure(values=_quality_preset_options(image_config))
         if hasattr(self, "sdxl_model_combo"):
@@ -5269,6 +5269,11 @@ class FantasiaApp(tk.Tk):
 
     def _current_background_image(self) -> Image.Image | None:
         state = self.engine.state
+        active_path = str(state.flags.get("active_background_image_path") or "")
+        if active_path:
+            image = self._load_layer_image(active_path)
+            if image is not None:
+                return image
         location = state.world_data.locations.get(state.current_location)
         if location:
             image = self._load_layer_image(location.image_path)
@@ -5697,6 +5702,7 @@ class FantasiaApp(tk.Tk):
 
     def _on_scene_image_generated(self, path: Path) -> None:
         self.engine.state.flags.pop("pending_background_location", None)
+        self.engine.state.flags.pop("pending_background_context", None)
         self.image_cache.clear()
         self.stage_source_image = None
         self._refresh_status_panel()
@@ -5726,6 +5732,7 @@ class FantasiaApp(tk.Tk):
         if not self._image_generation_enabled():
             state.flags.pop("pending_cg_request", None)
             state.flags.pop("pending_background_location", None)
+            state.flags.pop("pending_background_context", None)
             return
         if state.world_data.world_name == "unknown":
             return
@@ -5739,8 +5746,15 @@ class FantasiaApp(tk.Tk):
 
         current_location = self._current_location_name()
         pending_background = str(state.flags.get("pending_background_location") or "")
+        pending_context = state.flags.get("pending_background_context")
         location_data = state.world_data.locations.get(current_location)
-        if pending_background == current_location or (location_data is not None and not location_data.image_path):
+        active_background_path = str(state.flags.get("active_background_image_path") or "")
+        active_background_exists = bool(active_background_path and Path(active_background_path).is_file())
+        if (
+            isinstance(pending_context, dict)
+            or pending_background == current_location
+            or (not active_background_exists and location_data is not None and not location_data.image_path)
+        ):
             self._run_task(
                 _ui_text(self.config_data, "task_generating_scene_image"),
                 self.engine.generate_scene_image,
