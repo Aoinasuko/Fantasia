@@ -45,6 +45,8 @@ PLAYER_MAX_EXP_TO_NEXT = 100_000_000
 MAX_EXPLORATION_CHOICES = 5
 WORLD_LOCATION_COUNT_OPTIONS = {"small": 30, "normal": 60, "many": 90}
 DEFAULT_WORLD_LOCATION_COUNT = WORLD_LOCATION_COUNT_OPTIONS["normal"]
+WORLD_LOCATION_BATCH_MIN = 3
+WORLD_LOCATION_BATCH_MAX = 5
 WORLD_MAP_EDGE_HOURS = 2
 WORLD_MAP_MAX_DYNAMIC_DEGREE = 3
 REPEATED_INPUT_DEDUPE_SECONDS = 4.0
@@ -268,6 +270,17 @@ class GameEngine:
                 ),
             },
         ]
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "World map generation is split into small batches. In create_world_overview, do not create all "
+                    f"{target_location_count} locations at once. Return only the starting location and 1-3 essential "
+                    "anchor locations that define the world. Later managers will generate surrounding locations in "
+                    "3-5 location batches using the overview, existing map summary, neighboring terrain, danger, and world tone."
+                ),
+            }
+        )
         response = self._chat_json(
             "create_world_overview",
             messages,
@@ -1690,7 +1703,12 @@ class GameEngine:
     ) -> dict[str, Any]:
         target_count = _world_location_target_count(target_count)
         graph = world.extra.get("location_graph")
-        if isinstance(graph, dict) and isinstance(graph.get("nodes"), dict) and isinstance(graph.get("edges"), list):
+        if (
+            isinstance(graph, dict)
+            and isinstance(graph.get("nodes"), dict)
+            and isinstance(graph.get("edges"), list)
+            and (response is None or len(graph.get("nodes", {})) >= target_count)
+        ):
             for name, location in world.locations.items():
                 self._set_location_graph_node(world, name, location=location)
             self._recalculate_world_graph_layout(world)
@@ -1749,6 +1767,23 @@ class GameEngine:
             world.ensure_location(world.starting_location)
             self._set_location_graph_node(world, world.starting_location, kind="settlement", danger=0)
 
+        for payload in _world_connection_payloads(response or {}):
+            a = str(payload.get("from") or payload.get("source") or payload.get("a") or "").strip()
+            b = str(payload.get("to") or payload.get("target") or payload.get("b") or "").strip()
+            if a and b and a in nodes and b in nodes:
+                self._connect_world_locations(world, a, b, hours=WORLD_MAP_EDGE_HOURS)
+
+        if len(nodes) < target_count:
+            self._generate_world_location_batches(
+                world,
+                premise,
+                target_count,
+                progress_callback=progress_callback,
+                progress_start=progress_start,
+                progress_end=progress_end,
+                rng=rng,
+            )
+
         fallback_index = 1
         while len(nodes) < target_count:
             kind = _fallback_world_location_kind(rng, len(nodes))
@@ -1793,6 +1828,270 @@ class GameEngine:
         self._recalculate_world_graph_layout(world)
         return world.extra["location_graph"]
 
+    def _generate_world_location_batches(
+        self,
+        world: WorldData,
+        premise: str,
+        target_count: int,
+        *,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        progress_start: int = 0,
+        progress_end: int = 100,
+        rng: random.Random | None = None,
+    ) -> None:
+        if self.llm is None:
+            return
+        rng = rng or random.Random(f"{world.world_name}|location_batches|{target_count}")
+        graph = self._location_graph_for_update(world)
+        nodes = graph.setdefault("nodes", {})
+        batch_history: list[dict[str, Any]] = []
+        failures = 0
+        batch_index = 1
+        max_batches = max(1, ((target_count - len(nodes)) + WORLD_LOCATION_BATCH_MIN - 1) // WORLD_LOCATION_BATCH_MIN + 4)
+        while len(nodes) < target_count and batch_index <= max_batches:
+            remaining = max(0, target_count - len(nodes))
+            batch_size = _world_location_batch_size(remaining)
+            if batch_size <= 0:
+                break
+            context = self._world_location_batch_context(
+                world,
+                premise,
+                target_count=target_count,
+                batch_size=batch_size,
+                batch_index=batch_index,
+            )
+            completed = min(len(nodes), target_count)
+            percent = progress_start + int((progress_end - progress_start) * completed / max(1, target_count))
+            self._emit_world_generation_progress(
+                progress_callback,
+                "location_graph",
+                f"AI location batch {batch_index}: {completed}/{target_count}",
+                percent,
+                100,
+                item_current=completed,
+                item_total=target_count,
+            )
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You expand Fantasia's world map in small batches. Generate only the requested nearby "
+                        "locations and connections. Preserve the existing world tone, terrain, danger curve, and "
+                        "unique important locations. Return JSON only."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": _ai_json(context),
+                },
+            ]
+            try:
+                response = self._chat_json(
+                    "create_world_location_batch",
+                    messages,
+                    max_tokens=_world_location_batch_max_tokens(batch_size),
+                    world_name=world.world_name,
+                    player_name="world_builder",
+                    retries=1,
+                )
+            except Exception as exc:
+                failures += 1
+                errors = world.extra.setdefault("location_generation_errors", [])
+                if isinstance(errors, list):
+                    errors.append({"batch": batch_index, "error": str(exc)})
+                if failures >= 2:
+                    break
+                batch_index += 1
+                continue
+            added_names = self._apply_world_location_batch(
+                world,
+                response,
+                target_count=target_count,
+                anchor_names=[str(item) for item in context.get("anchor_names", [])],
+            )
+            if not added_names:
+                failures += 1
+                if failures >= 2:
+                    break
+            else:
+                failures = 0
+                batch_history.append(
+                    {
+                        "batch": batch_index,
+                        "added_locations": added_names,
+                        "response": _strip_response_metadata(response),
+                    }
+                )
+                completed = min(len(nodes), target_count)
+                percent = progress_start + int((progress_end - progress_start) * completed / max(1, target_count))
+                self._emit_world_generation_progress(
+                    progress_callback,
+                    "location_graph",
+                    f"AI location batch {batch_index}: {completed}/{target_count}",
+                    percent,
+                    100,
+                    item_current=completed,
+                    item_total=target_count,
+                )
+            batch_index += 1
+        if batch_history:
+            world.extra["location_generation_batches"] = batch_history
+
+    def _world_location_batch_context(
+        self,
+        world: WorldData,
+        premise: str,
+        *,
+        target_count: int,
+        batch_size: int,
+        batch_index: int,
+    ) -> dict[str, Any]:
+        graph = self._location_graph_for_update(world)
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        anchor_names = self._world_location_batch_anchors(world, limit=6)
+        existing_names = list(nodes.keys())
+        important_names = [
+            name
+            for name, node in nodes.items()
+            if isinstance(node, dict)
+            and (
+                name == world.starting_location
+                or _safe_int(node.get("danger"), 0) >= 6
+                or str(node.get("kind") or "").strip().lower() in {"settlement", "dungeon", "landmark"}
+            )
+        ][:18]
+        return {
+            "world_name": world.world_name,
+            "world_overview": _short_text(world.overview, 900),
+            "structure_description": _short_text(world.structure_description, 900),
+            "world_structure": _compact_value(world.structure, max_chars=1400),
+            "premise": _short_text(premise, 1200),
+            "starting_location": world.starting_location,
+            "target_count": target_count,
+            "generated_count": len(nodes),
+            "remaining_count": max(0, target_count - len(nodes)),
+            "requested_batch_size": batch_size,
+            "batch_index": batch_index,
+            "generated_summary": self._world_location_generation_summary(world),
+            "anchor_names": anchor_names,
+            "nearby_locations": [self._world_location_node_context(world, name) for name in anchor_names],
+            "important_existing_locations": [self._world_location_node_context(world, name) for name in important_names],
+            "recent_existing_locations": [
+                self._world_location_node_context(world, name)
+                for name in existing_names[-24:]
+                if name not in important_names
+            ],
+            "existing_location_names": existing_names[-80:],
+            "rules": [
+                "Generate only new locations. Never reuse existing_location_names.",
+                "Avoid creating multiple versions of unique one-off locations such as the capital, final temple, main shrine, or central dungeon.",
+                "Use nearby_locations as the local terrain and route context.",
+                "Danger should usually increase as generated_count grows, with occasional world-appropriate exceptions.",
+                "Every generated location must be connected by a 2-hour edge to an existing or same-batch location.",
+            ],
+        }
+
+    def _world_location_generation_summary(self, world: WorldData) -> str:
+        graph = self._location_graph_for_update(world)
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        kind_counts: dict[str, int] = {}
+        high_danger: list[str] = []
+        for name, node in nodes.items():
+            if not isinstance(node, dict):
+                continue
+            kind = str(node.get("kind") or "unknown")
+            kind_counts[kind] = kind_counts.get(kind, 0) + 1
+            if _safe_int(node.get("danger"), 0) >= 6:
+                high_danger.append(str(name))
+        parts = [
+            f"generated={len(nodes)}",
+            f"starting_location={world.starting_location}",
+            "kinds=" + ", ".join(f"{kind}:{count}" for kind, count in sorted(kind_counts.items())),
+        ]
+        if high_danger:
+            parts.append("high_danger=" + ", ".join(high_danger[:12]))
+        return "; ".join(parts)
+
+    def _world_location_node_context(self, world: WorldData, name: str) -> dict[str, Any]:
+        graph = self._location_graph_for_update(world)
+        node = graph.get("nodes", {}).get(name, {}) if isinstance(graph.get("nodes"), dict) else {}
+        location = world.locations.get(name)
+        return {
+            "name": name,
+            "kind": node.get("kind") if isinstance(node, dict) else "",
+            "danger": node.get("danger") if isinstance(node, dict) else 0,
+            "description": _short_text((location.description if location else "") or (node.get("description") if isinstance(node, dict) else ""), 220),
+            "neighbors": self._world_neighbors_no_ensure(world, name)[:8],
+        }
+
+    def _world_location_batch_anchors(self, world: WorldData, *, limit: int = 6) -> list[str]:
+        graph = self._location_graph_for_update(world)
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        if not nodes:
+            return [world.starting_location] if world.starting_location else []
+
+        def score(name: str) -> tuple[int, int, int, str]:
+            node = nodes.get(name, {}) if isinstance(nodes, dict) else {}
+            degree = len(self._world_neighbors_no_ensure(world, name))
+            danger = _safe_int(node.get("danger"), 0) if isinstance(node, dict) else 0
+            start_bonus = 0 if name == world.starting_location else 1
+            return (degree, start_bonus, danger, name)
+
+        return sorted([str(name) for name in nodes.keys()], key=score)[:limit]
+
+    def _apply_world_location_batch(
+        self,
+        world: WorldData,
+        response: dict[str, Any],
+        *,
+        target_count: int,
+        anchor_names: list[str],
+    ) -> list[str]:
+        graph = self._location_graph_for_update(world)
+        nodes = graph.setdefault("nodes", {})
+        existing_keys = {_world_location_name_key(name) for name in world.locations.keys()}
+        added_names: list[str] = []
+        payloads = _world_location_payloads({"locations": response.get("locations")})
+        for payload in payloads:
+            if len(nodes) >= target_count:
+                break
+            name = _world_location_name_from_payload(payload)
+            if not name:
+                continue
+            name_key = _world_location_name_key(name)
+            if not name_key or name_key in existing_keys:
+                continue
+            description = _world_location_description_from_payload(payload)
+            kind = _infer_world_location_kind(payload, name, description)
+            danger = _world_location_danger_from_payload(payload)
+            if not any(key in payload for key in ("danger", "danger_level", "threat", "threat_level", "difficulty", "rank")):
+                danger = max(0, min(9, len(nodes) // 8))
+            location = world.ensure_location(name, description)
+            location.extra["location_kind"] = kind
+            location.extra["danger_level"] = danger
+            if _world_kind_is_settlement(kind):
+                location.flags["settlement"] = True
+            self._set_location_graph_node(world, name, kind=kind, danger=danger, location=location)
+            existing_keys.add(name_key)
+            added_names.append(name)
+
+        for payload in _world_connection_payloads(response):
+            a = str(payload.get("from") or payload.get("source") or payload.get("a") or "").strip()
+            b = str(payload.get("to") or payload.get("target") or payload.get("b") or "").strip()
+            if a and b and a in nodes and b in nodes:
+                self._connect_world_locations(world, a, b, hours=WORLD_MAP_EDGE_HOURS)
+
+        anchors = [name for name in anchor_names if name in nodes]
+        if not anchors and world.starting_location in nodes:
+            anchors = [world.starting_location]
+        for index, name in enumerate(added_names):
+            if self._world_neighbors_no_ensure(world, name):
+                continue
+            parent = anchors[index % len(anchors)] if anchors else ""
+            if parent and parent != name:
+                self._connect_world_locations(world, parent, name, hours=WORLD_MAP_EDGE_HOURS)
+        return added_names
+
     def _set_location_graph_node(
         self,
         world: WorldData,
@@ -1830,6 +2129,21 @@ class GameEngine:
         location.extra["danger_level"] = node["danger"]
         return node
 
+    def _location_graph_for_update(self, world: WorldData) -> dict[str, Any]:
+        graph = world.extra.get("location_graph")
+        if isinstance(graph, dict) and isinstance(graph.get("nodes"), dict) and isinstance(graph.get("edges"), list):
+            return graph
+        graph = {
+            "edge_hours": WORLD_MAP_EDGE_HOURS,
+            "target_count": max(len(world.locations), 1),
+            "nodes": {},
+            "edges": [],
+        }
+        world.extra["location_graph"] = graph
+        for name, location in world.locations.items():
+            self._set_location_graph_node(world, name, location=location)
+        return graph
+
     def _connect_world_locations(
         self,
         world: WorldData,
@@ -1843,7 +2157,7 @@ class GameEngine:
         b = str(b or "").strip()
         if not a or not b or a == b:
             return
-        graph = self._ensure_world_location_graph(world, target_count=max(len(world.locations), 1))
+        graph = self._location_graph_for_update(world)
         self._set_location_graph_node(world, a)
         self._set_location_graph_node(world, b)
         edge_key = {a, b}
@@ -1854,7 +2168,7 @@ class GameEngine:
         graph.setdefault("edges", []).append({"from": a, "to": b, "hours": int(hours or WORLD_MAP_EDGE_HOURS), "kind": kind})
 
     def _world_neighbors(self, world: WorldData, location: str) -> list[str]:
-        graph = self._ensure_world_location_graph(world, target_count=max(len(world.locations), 1))
+        graph = self._location_graph_for_update(world)
         name = str(location or "").strip()
         neighbors: list[str] = []
         for edge in graph.get("edges", []):
@@ -8464,7 +8778,23 @@ def _world_location_target_count(value: Any) -> int:
 
 def _world_overview_max_tokens(target_count: Any) -> int:
     count = _world_location_target_count(target_count)
-    return max(1600, min(5200, 800 + count * 45))
+    return max(1400, min(2600, 1000 + count * 12))
+
+
+def _world_location_batch_size(remaining: int) -> int:
+    if remaining <= 0:
+        return 0
+    if remaining < WORLD_LOCATION_BATCH_MIN:
+        return remaining
+    return min(WORLD_LOCATION_BATCH_MAX, remaining)
+
+
+def _world_location_batch_max_tokens(batch_size: int) -> int:
+    return max(700, min(1500, 450 + max(1, int(batch_size)) * 180))
+
+
+def _world_location_name_key(value: Any) -> str:
+    return re.sub(r"\s+", "", str(value or "").strip().lower())
 
 
 def _world_location_payloads(value: Any) -> list[dict[str, Any]]:

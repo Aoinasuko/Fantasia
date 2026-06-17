@@ -81,6 +81,47 @@ class FixtureLlmBackend(BaseLlmBackend):
                 },
                 "starting_location": "灯守りの宿",
             }
+            content["locations"] = [
+                {"name": str(content.get("starting_location") or "開始地点"), "kind": "settlement", "danger": 0, "description": "霧深い森の入口にある宿場町。"},
+                {"name": "月影の森", "kind": "wilderness", "danger": 1, "description": "町の外に広がる静かな森。"},
+            ]
+            content["connections"] = [{"from": str(content.get("starting_location") or "開始地点"), "to": "月影の森", "hours": 2}]
+        elif manager_name == "create_world_location_batch":
+            content = {
+                "batch_summary": "Fixture batch locations.",
+                "locations": [
+                    {"name": "古い祠", "kind": "landmark", "danger": 2, "description": "森の奥に残る小さな祠。"},
+                    {"name": "湿った洞穴", "kind": "dungeon", "danger": 3, "description": "祠の裏手に開いた浅い洞穴。"},
+                    {"name": "苔むした丘", "kind": "wilderness", "danger": 2, "description": "古い道標が埋もれたなだらかな丘。"},
+                ],
+                "connections": [
+                    {"from": "月影の森", "to": "古い祠", "hours": 2},
+                    {"from": "古い祠", "to": "湿った洞穴", "hours": 2},
+                    {"from": "月影の森", "to": "苔むした丘", "hours": 2},
+                ],
+            }
+            try:
+                fixture_context = json.loads(user_text)
+            except Exception:
+                fixture_context = {}
+            batch_index = int(fixture_context.get("batch_index") or 1) if isinstance(fixture_context, dict) else 1
+            anchors = fixture_context.get("anchor_names") if isinstance(fixture_context, dict) else []
+            anchor = str(anchors[0]) if isinstance(anchors, list) and anchors else "月影の森"
+            base = batch_index * 10
+            names = [f"試作街道{base + 1}", f"試作森{base + 2}", f"試作洞窟{base + 3}"]
+            content = {
+                "batch_summary": f"Fixture batch {batch_index}.",
+                "locations": [
+                    {"name": names[0], "kind": "landmark", "danger": min(9, batch_index), "description": "街道沿いの目印になる場所。"},
+                    {"name": names[1], "kind": "wilderness", "danger": min(9, batch_index + 1), "description": "周辺地形に合わせて広がる森。"},
+                    {"name": names[2], "kind": "dungeon", "danger": min(9, batch_index + 2), "description": "探索対象になる小さな洞窟。"},
+                ],
+                "connections": [
+                    {"from": anchor, "to": names[0], "hours": 2},
+                    {"from": names[0], "to": names[1], "hours": 2},
+                    {"from": names[1], "to": names[2], "hours": 2},
+                ],
+            }
         elif manager_name == "check_world_content_violation":
             content = {
                 "content_violation": False,

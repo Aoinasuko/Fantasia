@@ -46,6 +46,18 @@ function Reset-Directory([string]$Path) {
     New-Item -ItemType Directory -Force -Path $Path | Out-Null
 }
 
+function Reset-PublishDirectory([string]$Path) {
+    Assert-PathUnderRoot -Path $Path -RootPath $root
+    if (-not (Test-Path $Path)) {
+        New-Item -ItemType Directory -Force -Path $Path | Out-Null
+        return
+    }
+    Get-ChildItem -LiteralPath $Path -Force | Where-Object { $_.Name -ne "model" } | ForEach-Object {
+        Remove-Item -LiteralPath $_.FullName -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $Path | Out-Null
+}
+
 function Get-CSharpCompiler() {
     $where = Get-Command csc.exe -ErrorAction SilentlyContinue
     if ($where) {
@@ -122,7 +134,7 @@ image.save(
 }
 
 Reset-Directory $buildRoot
-Reset-Directory $publishRoot
+Reset-PublishDirectory $publishRoot
 
 $hasIcon = Convert-PngToIcon -SourcePath $iconSource -TargetPath $iconPath
 

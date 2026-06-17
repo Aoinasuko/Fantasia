@@ -300,6 +300,27 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "connections": [{"from": "灯守りの宿", "to": "硝子森", "hours": 2}],
         },
     ),
+    "create_world_location_batch": ManagerSchema(
+        manager_name="create_world_location_batch",
+        fields=(
+            FieldRule("locations", (list, dict), string_items=False),
+            FieldRule("connections", (list, dict), non_empty=False, string_items=False),
+            FieldRule("batch_summary", (str,), required=False, non_empty=False),
+        ),
+        example={
+            "batch_summary": "The next road segment adds nearby terrain without duplicating one-off important locations.",
+            "locations": [
+                {"name": "月影の森", "kind": "wilderness", "danger": 1, "description": "開始地点の外れに広がる静かな森。"},
+                {"name": "古い祠", "kind": "landmark", "danger": 2, "description": "森の奥に残る小さな祠。"},
+                {"name": "湿った洞穴", "kind": "dungeon", "danger": 3, "description": "祠の裏手に開いた浅い洞穴。"},
+            ],
+            "connections": [
+                {"from": "開始地点", "to": "月影の森", "hours": 2},
+                {"from": "月影の森", "to": "古い祠", "hours": 2},
+                {"from": "古い祠", "to": "湿った洞穴", "hours": 2},
+            ],
+        },
+    ),
     "check_world_content_violation": ManagerSchema(
         manager_name="check_world_content_violation",
         fields=(
@@ -1094,6 +1115,22 @@ def schema_instruction(manager_name: str) -> str:
             "- locations の各要素は name, kind, danger, description を持たせてください。\n"
             "- kind は settlement/wilderness/dungeon/landmark/facility のいずれかを優先してください。\n"
             "- structure には世界全体の地理ルール、危険度ルール、文化圏、主要テーマなどを入れてください。\n"
+        )
+    if manager_name == "create_world_overview":
+        instruction += (
+            "\nAdditional create_world_overview rule:\n"
+            "- Do not generate the full world map here. Return only the starting location and 1-3 essential anchor locations; detailed surrounding locations are generated later in small batches.\n"
+        )
+    if manager_name == "create_world_location_batch":
+        instruction += (
+            "\ncreate_world_location_batch rules:\n"
+            "- Generate only the requested 3 to 5 new locations, or fewer when remaining_count is smaller.\n"
+            "- All human-readable names and descriptions must be Japanese.\n"
+            "- Do not duplicate existing location names, roles, capitals, final temples, unique shrines, unique ruins, or other one-off important places from the provided summary.\n"
+            "- Each location must include name, kind, danger, and description. kind should be settlement, wilderness, dungeon, landmark, or facility.\n"
+            "- danger is 0-9 and should generally rise with distance from the starting location, while allowing occasional world-appropriate exceptions.\n"
+            "- connections must connect each new location to an existing location or another location from this same batch. Use hours=2 unless the prompt explicitly asks otherwise.\n"
+            "- Return compact JSON only. Do not add Markdown or commentary.\n"
         )
     return instruction
 

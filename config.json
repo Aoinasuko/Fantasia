@@ -177,6 +177,11 @@
           "temperature": 0.2,
           "top_p": 0.75
         },
+        "create_world_location_batch": {
+          "temperature": 0.55,
+          "top_p": 0.85,
+          "max_tokens": 1200
+        },
         "create_story": {
           "temperature": 0.85,
           "top_p": 0.92,
