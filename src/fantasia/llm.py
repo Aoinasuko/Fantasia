@@ -122,6 +122,18 @@ class FixtureLlmBackend(BaseLlmBackend):
                     {"from": names[1], "to": names[2], "hours": 2},
                 ],
             }
+        elif manager_name == "craft_item_generator":
+            content = {
+                "narration": "選んだ素材を丁寧に加工し、旅で使える品へ仕上げた。",
+                "item": {
+                    "name": "試作クラフト品",
+                    "category": "tool",
+                    "description": "素材を組み合わせて作った簡素な道具。",
+                    "quantity": 1,
+                    "value": 20,
+                    "rarity": "common",
+                },
+            }
         elif manager_name == "check_world_content_violation":
             content = {
                 "content_violation": False,

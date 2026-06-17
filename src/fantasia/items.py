@@ -11,137 +11,6 @@ from typing import Any
 from .i18n import ELEMENT_IDS, tr_enum
 
 
-FANTASIA_ITEM_CATEGORY_COUNTS: dict[str, int] = {
-    "accessory": 161,
-    "body_armor": 63,
-    "clothing": 89,
-    "creature": 128,
-    "creature_part": 342,
-    "document": 214,
-    "drink": 53,
-    "food": 309,
-    "gauntlets": 53,
-    "gem": 97,
-    "headgear": 180,
-    "large_weapon": 155,
-    "legwear": 151,
-    "leg_armor": 151,
-    "liquid_material": 65,
-    "long_weapon": 76,
-    "magical_material": 89,
-    "medicine": 4,
-    "medium_weapon": 163,
-    "metal": 20,
-    "mushroom": 91,
-    "ore": 63,
-    "other_material": 116,
-    "plant": 237,
-    "potion": 61,
-    "relic": 129,
-    "scrap": 261,
-    "scroll": 60,
-    "shield": 114,
-    "small_weapon": 267,
-    "throwable_weapon": 12,
-    "tool": 214,
-    "treasure": 170,
-}
-
-CATEGORY_LABELS: dict[str, str] = {
-    "accessory": "装飾品",
-    "body_armor": "胴防具",
-    "clothing": "衣服",
-    "creature": "生物",
-    "creature_part": "素材",
-    "document": "文書",
-    "drink": "飲料",
-    "food": "食料",
-    "gauntlets": "腕防具",
-    "gem": "宝石",
-    "headgear": "頭防具",
-    "large_weapon": "大型武器",
-    "legwear": "脚衣",
-    "leg_armor": "脚防具",
-    "liquid_material": "液体素材",
-    "long_weapon": "長柄武器",
-    "magical_material": "魔法素材",
-    "medicine": "薬",
-    "medium_weapon": "武器",
-    "metal": "金属",
-    "mushroom": "茸",
-    "ore": "鉱石",
-    "other_material": "素材",
-    "plant": "植物",
-    "potion": "ポーション",
-    "relic": "遺物",
-    "scrap": "ガラクタ",
-    "scroll": "巻物",
-    "shield": "盾",
-    "small_weapon": "小型武器",
-    "throwable_weapon": "投擲武器",
-    "tool": "道具",
-    "treasure": "財宝",
-}
-
-EQUIPMENT_CATEGORIES = {
-    "accessory",
-    "body_armor",
-    "clothing",
-    "gauntlets",
-    "headgear",
-    "large_weapon",
-    "legwear",
-    "leg_armor",
-    "long_weapon",
-    "medium_weapon",
-    "shield",
-    "small_weapon",
-    "throwable_weapon",
-}
-
-WEAPON_CATEGORIES = {
-    "small_weapon",
-    "medium_weapon",
-    "large_weapon",
-    "long_weapon",
-    "throwable_weapon",
-}
-
-EQUIPMENT_SLOTS = (
-    "weapon",
-    "shield",
-    "body_armor",
-    "headgear",
-    "gauntlets",
-    "leg_armor",
-    "clothing",
-    "legwear",
-    "accessory",
-)
-
-EQUIPMENT_SLOT_LABELS = {
-    "weapon": "武器",
-    "shield": "盾",
-    "body_armor": "胴防具",
-    "headgear": "頭防具",
-    "gauntlets": "腕防具",
-    "leg_armor": "脚防具",
-    "clothing": "衣服",
-    "legwear": "脚衣",
-    "accessory": "アクセサリー",
-}
-
-ARMOR_SLOT_BY_CATEGORY = {
-    "headgear": "headgear",
-    "body_armor": "body_armor",
-    "clothing": "clothing",
-    "gauntlets": "gauntlets",
-    "shield": "shield",
-    "leg_armor": "leg_armor",
-    "legwear": "legwear",
-    "accessory": "accessory",
-}
-
 RARITY_ORDER = ("common", "uncommon", "rare", "epic", "legendary", "artifact")
 RARITY_LABELS = {
     "common": "コモン",
@@ -169,12 +38,14 @@ RARITY_TEXT_COLORS = {
 }
 RARITY_VALUE_MULTIPLIER = {
     "common": 1.0,
-    "uncommon": 1.7,
-    "rare": 3.0,
-    "epic": 5.5,
-    "legendary": 9.0,
-    "artifact": 15.0,
+    "uncommon": 1.2,
+    "rare": 1.5,
+    "epic": 2.0,
+    "legendary": 3.0,
+    "artifact": 5.0,
 }
+ITEM_VALUE_VARIANCE_MIN = 0.95
+ITEM_VALUE_VARIANCE_MAX = 1.05
 RARITY_EFFECT_COUNT = {
     "common": 0,
     "uncommon": 1,
@@ -200,279 +71,399 @@ RARITY_POWER = {
     "artifact": 16,
 }
 
-CATEGORY_ALIASES = {
-    "armor": "body_armor",
-    "armour": "body_armor",
-    "consumable": "potion",
-    "material": "other_material",
-    "weapon": "medium_weapon",
-    "sword": "medium_weapon",
-    "blade": "medium_weapon",
-    "helmet": "headgear",
-    "helm": "headgear",
-    "boots": "leg_armor",
-    "shoes": "legwear",
-    "money": "treasure",
-    "valuable": "treasure",
-    "book": "document",
-    "note": "document",
+# Active item catalog. Old category ids are intentionally not accepted here.
+ITEM_CATEGORY_IDS: tuple[str, ...] = (
+    "food",
+    "drink",
+    "medicine",
+    "potion",
+    "tool",
+    "document",
+    "scroll",
+    "magicrod",
+    "material_common",
+    "material_liquid",
+    "material_plant",
+    "material_ore",
+    "material_metal",
+    "material_gem",
+    "material_creature",
+    "material_magical",
+    "junk",
+    "treasure",
+    "relic",
+    "weapon_small",
+    "weapon_medium",
+    "weapon_large",
+    "weapon_long",
+    "weapon_range",
+    "armor_shield",
+    "armor_head",
+    "armor_body",
+    "armor_arm",
+    "armor_leg",
+    "armor_cloth",
+    "accessory_ring",
+    "accessory_amulet",
+)
+
+FANTASIA_ITEM_CATEGORY_COUNTS = {category: 3 for category in ITEM_CATEGORY_IDS}
+
+CATEGORY_LABELS = {
+    "food": "食料",
+    "drink": "飲料",
+    "medicine": "薬",
+    "potion": "ポーション",
+    "tool": "道具",
+    "document": "文書",
+    "scroll": "巻物",
+    "magicrod": "魔法杖",
+    "material_common": "汎用素材",
+    "material_liquid": "液体素材",
+    "material_plant": "自然素材",
+    "material_ore": "鉱石素材",
+    "material_metal": "金属素材",
+    "material_gem": "宝石素材",
+    "material_creature": "生物素材",
+    "material_magical": "魔法素材",
+    "junk": "ジャンク",
+    "treasure": "宝物",
+    "relic": "レリック",
+    "weapon_small": "小型武器",
+    "weapon_medium": "中型武器",
+    "weapon_large": "大型武器",
+    "weapon_long": "長武器",
+    "weapon_range": "遠距離武器",
+    "armor_shield": "盾",
+    "armor_head": "頭防具",
+    "armor_body": "胴防具",
+    "armor_arm": "腕防具",
+    "armor_leg": "脚防具",
+    "armor_cloth": "服",
+    "accessory_ring": "指輪",
+    "accessory_amulet": "護符",
+}
+
+EQUIPMENT_CATEGORIES = {
+    "weapon_small",
+    "weapon_medium",
+    "weapon_large",
+    "weapon_long",
+    "weapon_range",
+    "armor_shield",
+    "armor_head",
+    "armor_body",
+    "armor_arm",
+    "armor_leg",
+    "armor_cloth",
+    "accessory_ring",
+    "accessory_amulet",
+}
+
+WEAPON_CATEGORIES = {
+    "weapon_small",
+    "weapon_medium",
+    "weapon_large",
+    "weapon_long",
+    "weapon_range",
+}
+
+EQUIPMENT_SLOTS = (
+    "weapon",
+    "armor_shield",
+    "armor_head",
+    "armor_body",
+    "armor_arm",
+    "armor_leg",
+    "armor_cloth",
+    "accessory_ring",
+    "accessory_amulet",
+)
+
+EQUIPMENT_SLOT_LABELS = {
+    "weapon": "武器",
+    "armor_shield": "盾",
+    "armor_head": "頭防具",
+    "armor_body": "胴防具",
+    "armor_arm": "腕防具",
+    "armor_leg": "脚防具",
+    "armor_cloth": "服",
+    "accessory_ring": "指輪",
+    "accessory_amulet": "護符",
+}
+
+ARMOR_SLOT_BY_CATEGORY = {
+    "armor_shield": "armor_shield",
+    "armor_head": "armor_head",
+    "armor_body": "armor_body",
+    "armor_arm": "armor_arm",
+    "armor_leg": "armor_leg",
+    "armor_cloth": "armor_cloth",
+    "accessory_ring": "accessory_ring",
+    "accessory_amulet": "accessory_amulet",
 }
 
 CATEGORY_BASE_VALUE = {
     "food": 5,
     "drink": 4,
     "medicine": 18,
-    "potion": 28,
+    "potion": 30,
     "tool": 12,
-    "scrap": 2,
-    "other_material": 5,
-    "plant": 4,
-    "mushroom": 6,
-    "ore": 10,
-    "metal": 14,
-    "gem": 45,
-    "treasure": 35,
     "document": 10,
     "scroll": 38,
-    "magical_material": 24,
-    "relic": 80,
-    "small_weapon": 30,
-    "medium_weapon": 45,
-    "large_weapon": 70,
-    "long_weapon": 55,
-    "throwable_weapon": 12,
-    "shield": 35,
-    "body_armor": 60,
-    "headgear": 25,
-    "gauntlets": 22,
-    "leg_armor": 35,
-    "clothing": 14,
-    "legwear": 12,
-    "accessory": 35,
-    "creature_part": 8,
-    "liquid_material": 12,
-    "creature": 20,
+    "magicrod": 55,
+    "material_common": 5,
+    "material_liquid": 12,
+    "material_plant": 6,
+    "material_ore": 10,
+    "material_metal": 16,
+    "material_gem": 45,
+    "material_creature": 10,
+    "material_magical": 24,
+    "junk": 2,
+    "treasure": 45,
+    "relic": 90,
+    "weapon_small": 30,
+    "weapon_medium": 45,
+    "weapon_large": 70,
+    "weapon_long": 55,
+    "weapon_range": 50,
+    "armor_shield": 35,
+    "armor_head": 25,
+    "armor_body": 60,
+    "armor_arm": 25,
+    "armor_leg": 35,
+    "armor_cloth": 18,
+    "accessory_ring": 35,
+    "accessory_amulet": 35,
 }
 
-ITEM_TEMPLATES: dict[str, list[tuple[str, str, int]]] = {
+ITEM_TEMPLATES = {
     "food": [
-        ("ドロップフルーツ", "小袋に詰められた小さな飴、おやつに最適。", 1),
-        ("携帯食料", "乾パンなどの長旅に適した食料。", 5),
-        ("ドライフルーツ", "小袋に詰められた干し果物。", 7),
-        ("ジャーキー", "肉の燻製、豪華な保存食。", 10),
+        ("干し肉", "旅で食べやすい保存食。", 5),
+        ("黒パン", "腹持ちのよい素朴なパン。", 10),
+        ("焼き菓子", "甘く焼き固めた携帯食。", 15),
     ],
     "drink": [
-        ("水袋", "飲料水を入れた革袋。", 4),
-        ("エール", "普遍的な酒。", 6),
-        ("ハーブティー", "薬草を使った暖かいお茶。", 8),
+        ("水袋", "きれいな水を入れた革袋。", 5),
+        ("薬草茶", "体を温める香りのよい茶。", 10),
+        ("小瓶のエール", "短い休憩に向いた軽い酒。", 15),
     ],
     "medicine": [
-        ("止血薬", "浅い傷に効く基礎的な薬。", 10),
-        ("治癒促進薬", "傷の治りを早くする薬。", 20),
-        ("解毒薬", "毒や麻痺を治癒する薬。", 30),
+        ("止血薬", "浅い傷の出血を止める薬。", 15),
+        ("解毒薬", "毒やしびれを和らげる薬。", 20),
+        ("鎮痛軟膏", "痛みと腫れを抑える軟膏。", 20),
     ],
     "potion": [
-        ("治癒のポーション", "体力を回復するポーション。", 30),
-        ("強心のポーション", "魔力や活力を回復するポーション。", 30),
-        ("大治癒のポーション", "体力を大きく回復するポーション。", 100),
-        ("大強心のポーション", "魔力や活力を大きく回復するポーション。", 100),
-        ("完治のポーション", "体力を完全に回復するポーション。", 300),
+        ("治癒のポーション", "HPを回復する赤いポーション。", 30),
+        ("活力のポーション", "SPを回復する青いポーション。", 30),
+        ("精神集中のポーション", "集中力を整える澄んだポーション。", 30),
     ],
     "tool": [
-        ("松明", "暗所を照らすための松明。", 10),
-        ("ロープ", "丈夫なロープ。", 5),
-        ("火打ち石", "火を起こすための小道具。", 10),
-        ("携帯ランタン", "油を入れて使う小さなランタン。", 20),
-        ("つるはし", "鉱石を掘るのに使える道具。", 30),
-        ("伐採用の斧", "伐採に使える道具。", 30),
-    ],
-    "scrap": [
-        ("金属のくず", "様々な金属くず。", 2),
-        ("壊れた部品", "古い機械の部品。", 5),
-        ("破れた布切れ", "包帯や詰め物に再利用できそうな布。", 2),
-    ],
-    "other_material": [
-        ("頑丈な紐", "簡単な修理にも使える汎用性の高い紐。", 5),
-        ("獣脂", "灯火や薬の材料になる素材。", 5),
-        ("骨片", "小さな加工素材。", 5),
-        ("木材", "小さな加工素材。", 10),
-        ("石材", "小さな加工素材。", 10),
-    ],
-    "plant": [
-        ("薬草", "薬の材料になる青い草。", 5),
-        ("香草", "食事や薬に香りを加える草。", 5),
-        ("増幅草", "ポーションの効能を高める草。", 10),
-        ("毒草", "毒を含んだ草。", 10),
-    ],
-    "mushroom": [
-        ("フツウタケ", "一般的な食用茸。", 6),
-        ("マヒシメジ", "麻痺効果がある毒茸。", 30),
-        ("ドクリンギ", "毒効果がある毒茸。", 30),
-    ],
-    "ore": [
-        ("銅鉱石", "初心者でも加工しやすい鉱石。", 5),
-        ("鉄鉱石", "一般的な武具の材料になる鉱石。", 10),
-        ("金鉱石", "装飾品の材料として人気の鉱石。", 15),
-        ("黒曜石", "鋭く割れる黒い石。", 20),
-        ("金剛石", "とても頑丈で、強力な武具の材料になる石。", 30),
-    ],
-    "metal": [
-        ("鉄のインゴット", "鍛冶に使う精錬済みの金属。", 15),
-        ("金のインゴット", "換金によく使われる金属。", 30),
-        ("金片", "魔除けなどの材料になる金属片。", 20),
-        ("銀片", "魔除けなどの材料になる金属片。", 15),
-    ],
-    "gem": [
-        ("魔力水晶", "小さな魔力を含んだ水晶。", 35),
-        ("サファイア", "価値のある青い宝石。", 60),
-        ("ルビー", "価値のある赤い宝石。", 60),
-        ("エメラルド", "価値のある緑色の宝石。", 60),
-    ],
-    "treasure": [
-        ("記念硬貨", "何らかの記念に作られた珍しい硬貨。", 20),
-        ("銀の杯", "細工の入った珍しい杯。", 40),
-        ("装飾箱", "煌びやかな装飾が施された箱。", 60),
-        ("宝石の芸術品", "宝石で作られた見事な芸術品。", 80),
+        ("ロープ", "登攀や固定に使える丈夫な縄。", 10),
+        ("ランタン", "暗所を照らす携帯灯。", 20),
+        ("探索用ナイフ", "採取や簡単な作業に使える小刀。", 15),
     ],
     "document": [
-        ("掠れたメモ", "何かが書かれていたようだがもう読めないメモ。", 1),
-        ("破れた手紙", "ところどころ破れている手紙。", 5),
-        ("古い地図片", "周辺の地形等が描かれた紙片。", 20),
-        ("宝の地図", "宝のありかが書かれた地図。", 100),
+        ("古い地図", "周辺の地形が大まかに描かれた地図。", 20),
+        ("依頼書の写し", "依頼の要点がまとめられた紙。", 10),
+        ("旅人の日誌", "道中の噂と記録が書かれた日誌。", 15),
+        ("宝の地図", "恐らく宝のありかが書かれた地図。", 100),
     ],
     "scroll": [
-        ("何かの巻物", "何らかの簡単な魔法が記された巻物。", 20),
-        ("炎の巻物", "炎の弾を飛ばせる使い捨ての巻物。", 30),
-        ("回復の巻物", "読んだものを回復する使い捨ての巻物。", 30),
-        ("結界の巻物", "敵対する存在から身を一時的に護れる使い捨ての巻物。", 40),
+        ("汎用の巻物", "弱いながらもある程度任意の魔法を引き出せる巻物。", 20),
+        ("火花の巻物", "小さな炎を呼ぶ使い捨ての巻物。", 30),
+        ("解錠の巻物", "単純な鍵や封印に働きかける巻物。", 30),
+        ("防護の巻物", "一時的な守りを与える巻物。", 50),
     ],
-    "magical_material": [
-        ("魔力の粉", "ポーションの素材にもなる魔法の粉。", 20),
+    "magicrod": [
+        ("火球の魔法杖", "相手に向かって火球を発射できる短い杖。", 50),
+        ("癒しの魔法杖", "使用者を癒すことが出来る杖。", 70),
+        ("鑑定の魔法杖", "よくわからない物を鑑定することが出来る杖。", 30),
+    ],
+    "material_common": [
+        ("丈夫な糸", "修理や裁縫に使える汎用素材。", 5),
+        ("獣骨片", "加工しやすい小さな骨片。", 10),
+        ("加工木材", "乾燥させて整えた木材。", 15),
+    ],
+    "material_liquid": [
+        ("澄んだ油", "灯りや調合に使える油。", 10),
+        ("薬草エキス", "薬効成分を抽出した液体。", 15),
+        ("魔力インク", "巻物や術式に使う淡く光るインク。", 20),
+    ],
+    "material_plant": [
+        ("薬草", "薬の材料になる野草。", 10),
+        ("香草", "食事や薬に香りを加える草。", 15),
+        ("月光花", "夜に淡く光る希少な花。", 20),
+    ],
+    "material_ore": [
+        ("銅鉱石", "加工しやすい赤みのある鉱石。", 5),
+        ("鉄鉱石", "武具の材料になる鉱石。", 10),
+        ("金鉱石", "装飾品にも使われる鉱石。", 15),
+        ("銀鉱石", "装飾品にも使われる鉱石。", 15),
+        ("黒曜石片", "鋭く割れる黒い石片。", 20),
+        ("金剛石片", "非常に丈夫な石片。", 30),
+    ],
+    "material_metal": [
+        ("銅インゴット", "鍛冶に使う精錬済みの金属。", 10),
+        ("鉄インゴット", "鍛冶に使う精錬済みの金属。", 20),
+        ("金インゴット", "魔術品にも使われる銀の塊。", 30),
+        ("銀インゴット", "魔術品にも使われる銀の塊。", 30),
+        ("強化金属片", "武具を強化できる金属片。", 50),
+    ],
+    "material_gem": [
+        ("水晶片", "魔力を通しやすい透明な欠片。", 35),
+        ("サファイア原石", "青く輝く未加工の宝石。", 60),
+        ("ルビー原石", "赤く輝く未加工の宝石。", 60),
+    ],
+    "material_creature": [
+        ("魔物の爪", "武具や薬の材料になる鋭い爪。", 10),
+        ("獣皮", "防具や服の素材になる皮。", 10),
+        ("透明な翅", "薄く魔力を帯びた生物素材。", 20),
+    ],
+    "material_magical": [
+        ("魔力粉", "術式の触媒になる細かな粉。", 20),
+        ("精霊の雫", "自然魔力を宿した液状の結晶。", 40),
+    ],
+    "junk": [
+        ("錆びた釘", "売るか素材にする程度の古い釘。", 2),
+        ("割れた陶片", "何かの器だった陶器の破片。", 2),
+        ("壊れた歯車", "修理すれば使えるかもしれない部品。", 4),
+    ],
+    "treasure": [
+        ("古貨幣", "今では使われていない古い貨幣。", 40),
+        ("銀の杯", "細工の入った価値ある杯。", 60),
+        ("宝石細工の箱", "小粒の宝石で飾られた箱。", 80),
     ],
     "relic": [
-        ("妖精の石", "妖精が封じられた石。", 50),
-        ("聖なる石", "邪気を払いのけると言われている石。", 75),
+        ("祈りの小像", "古い信仰に使われた小さな像。", 100),
+        ("古代の腕輪", "失われた意匠の腕輪。", 150),
+        ("失われた紋章", "由来の分からない紋章片。", 200),
     ],
-    "small_weapon": [
-        ("短剣", "扱いやすい小型の刃物。", 25),
-        ("狩猟ナイフ", "野外で役立つ刃物。", 20),
+    "weapon_small": [
+        ("短剣", "取り回しのよい小型武器。", 30),
+        ("小型斧", "片手で扱える小さな斧。", 40),
     ],
-    "medium_weapon": [
+    "weapon_medium": [
         ("鉄の剣", "標準的な片手剣。", 45),
-        ("片手斧", "木を割るにも戦うにも使える斧。", 30),
+        ("戦槌", "鎧越しに衝撃を通す鈍器。", 50),
+        ("曲刀", "斬りつけに向いた湾曲した剣。", 60),
     ],
-    "large_weapon": [
-        ("大剣", "両手で扱う重い剣。", 70),
-        ("戦槌", "鎧ごと叩き潰す重い槌。", 60),
+    "weapon_large": [
+        ("大剣", "両手で振るう重い剣。", 70),
+        ("戦斧", "破壊力のある大型斧。", 75),
+        ("重槌", "強烈な打撃を与える大槌。", 75),
     ],
-    "long_weapon": [
-        ("槍", "間合いを取れる長柄武器。", 50),
-        ("古い薙刀", "刃こぼれした長柄武器。", 40),
+    "weapon_long": [
+        ("槍", "間合いを取って突く長武器。", 55),
+        ("薙刀", "斬撃にも突きにも使える長柄武器。", 60),
+        ("長柄斧", "遠い間合いから振るう斧。", 60),
     ],
-    "throwable_weapon": [
-        ("投げナイフ", "軽く投げやすい短い刃。", 15),
-        ("投石袋", "丸石を入れた簡易武器。", 5),
+    "weapon_range": [
+        ("投石袋", "投げるのにちょうどいい石が詰まった袋。", 10),
+        ("弓", "離れた相手を狙える遠距離武器。", 50),
+        ("クロスボウ", "強い弦で矢を撃ち出す武器。", 60),
+        ("投げナイフ束", "複数本を束ねた投擲武器。", 40),
     ],
-    "shield": [
-        ("木の盾", "軽く扱いやすい盾。", 30),
-        ("丸盾", "金属縁の小型盾。", 40),
+    "armor_shield": [
+        ("丸盾", "扱いやすい標準的な盾。", 35),
+        ("鉄盾", "重いが頼れる金属盾。", 50),
+        ("祈祷盾", "簡単な護符を刻んだ盾。", 80),
     ],
-    "body_armor": [
-        ("革鎧", "動きやすい軽装の鎧。", 50),
-        ("鎖帷子", "刃を受け流す鎖の鎧。", 60),
+    "armor_head": [
+        ("革帽子", "軽く頭を守る帽子。", 20),
+        ("鉄兜", "頑丈な金属製の兜。", 30),
+        ("魔除けの頭巾", "不吉な力を避ける刺繍入りの頭巾。", 40),
     ],
-    "headgear": [
-        ("旅人の帽子", "雨風をしのぐ帽子。", 10),
-        ("革の兜", "頭を守る簡素な兜。", 30),
+    "armor_body": [
+        ("革鎧", "動きやすい胴防具。", 55),
+        ("鎖帷子", "刃を受け流す金属鎧。", 65),
+        ("鉄胸甲", "胴をしっかり守る胸当て。", 75),
     ],
-    "gauntlets": [
-        ("革手袋", "手を守る厚手の手袋。", 15),
-        ("鉄の篭手", "前腕まで覆う金属防具。", 30),
+    "armor_arm": [
+        ("革手袋", "手を守る厚手の手袋。", 20),
+        ("鉄籠手", "前腕まで覆う金属防具。", 35),
+        ("祈りの籠手", "守りの祈りが刻まれた腕防具。", 45),
     ],
-    "leg_armor": [
-        ("革の脛当て", "足元を守る軽い防具。", 25),
-        ("鉄の脚甲", "重いが頼れる脚防具。", 40),
+    "armor_leg": [
+        ("革ブーツ", "旅に向いた丈夫なブーツ。", 20),
+        ("鉄脚甲", "脚を守る金属防具。", 40),
+        ("旅人の脚絆", "長旅で足を支える布防具。", 50),
     ],
-    "clothing": [
-        ("旅装束", "埃に強い外套つきの服。", 20),
-        ("町人の服", "目立たない日常着。", 15),
+    "armor_cloth": [
+        ("旅人の服", "動きやすく丈夫な服。", 15),
+        ("厚手の外套", "寒さと小傷を防ぐ外套。", 30),
+        ("魔術師のローブ", "術式の集中を助ける衣。", 45),
     ],
-    "legwear": [
-        ("丈夫な靴下", "長歩きで足を守る布。", 5),
-        ("旅靴", "道歩きに向いた靴。", 20),
+    "accessory_ring": [
+        ("銀の指輪", "簡素な銀製の指輪。", 35),
+        ("守りの指輪", "小さな守護紋を刻んだ指輪。", 55),
+        ("火除けの指輪", "熱を遠ざける赤石付きの指輪。", 70),
     ],
-    "accessory": [
-        ("銀の指輪", "簡素な銀製の指輪。", 30),
-        ("護符", "守りの魔力が込められた飾り。", 30),
-    ],
-    "creature_part": [
-        ("獣の牙", "加工すれば矢じりにもなる牙。", 10),
-        ("硬い鱗", "防具素材になりそうな鱗。", 10),
-        ("魔物の爪", "微かな魔力を帯びた爪。", 15),
-    ],
-    "liquid_material": [
-        ("澄んだ油", "ランタンや調合に使える油。", 10),
-        ("粘つく樹液", "接着や薬の材料になる樹液。", 15),
-    ],
-    "creature": [
-        ("小さな妖精", "周囲を跳ね回るかわいい妖精。", 45),
+    "accessory_amulet": [
+        ("旅人の護符", "旅の安全を願った護符。", 35),
+        ("聖印の首飾り", "祈りの印を下げた首飾り。", 55),
+        ("黒曜石の護符", "闇や呪いを避けるとされる護符。", 70),
     ],
 }
 
-LOOT_PROFILES: dict[str, list[tuple[str, int]]] = {
-    "settlement": [("food", 4), ("drink", 2), ("tool", 3), ("scrap", 4), ("document", 2), ("treasure", 1)],
-    "wilderness": [("plant", 5), ("mushroom", 2), ("creature_part", 2), ("food", 2), ("scrap", 1), ("ore", 1)],
-    "dungeon": [("scrap", 4), ("treasure", 2), ("relic", 1), ("potion", 2), ("scroll", 1), ("creature_part", 2)],
-    "battlefield": [("small_weapon", 2), ("medium_weapon", 2), ("shield", 1), ("scrap", 3), ("medicine", 1), ("body_armor", 1)],
-    "market": [("food", 3), ("drink", 2), ("tool", 3), ("clothing", 2), ("treasure", 1), ("medicine", 1)],
-    "default": [("food", 2), ("tool", 2), ("scrap", 3), ("plant", 2), ("treasure", 1), ("medicine", 1)],
+LOOT_PROFILES = {
+    "settlement": [("food", 4), ("drink", 2), ("tool", 3), ("junk", 4), ("document", 2), ("treasure", 1)],
+    "wilderness": [("material_plant", 5), ("material_creature", 2), ("food", 2), ("drink", 1), ("material_common", 2), ("junk", 1), ("material_ore", 1)],
+    "dungeon": [("junk", 4), ("treasure", 2), ("relic", 1), ("potion", 2), ("scroll", 1), ("material_creature", 2), ("material_magical", 1)],
+    "battlefield": [("weapon_small", 2), ("weapon_medium", 2), ("armor_shield", 1), ("junk", 3), ("medicine", 1), ("armor_body", 1), ("material_metal", 1)],
+    "market": [("food", 3), ("drink", 2), ("tool", 3), ("armor_cloth", 2), ("treasure", 1), ("medicine", 1), ("document", 1)],
+    "default": [("food", 2), ("tool", 2), ("junk", 3), ("material_plant", 2), ("treasure", 1), ("medicine", 1), ("material_common", 1)],
 }
 
-VENDOR_PROFILES: dict[str, list[tuple[str, int]]] = {
-    "healer": [("medicine", 5), ("potion", 4), ("plant", 3), ("liquid_material", 2), ("scroll", 1)],
-    "apothecary": [("medicine", 5), ("potion", 5), ("plant", 4), ("mushroom", 2), ("liquid_material", 2)],
+VENDOR_PROFILES = {
+    "healer": [("medicine", 5), ("potion", 4), ("material_plant", 3), ("material_liquid", 2), ("scroll", 1)],
+    "apothecary": [("medicine", 5), ("potion", 5), ("material_plant", 4), ("material_liquid", 2)],
     "blacksmith": [
-        ("small_weapon", 2),
-        ("medium_weapon", 4),
-        ("large_weapon", 2),
-        ("long_weapon", 3),
-        ("throwable_weapon", 1),
-        ("shield", 2),
-        ("body_armor", 2),
-        ("headgear", 1),
-        ("gauntlets", 1),
-        ("leg_armor", 1),
+        ("weapon_small", 2),
+        ("weapon_medium", 4),
+        ("weapon_large", 2),
+        ("weapon_long", 3),
+        ("weapon_range", 1),
+        ("armor_shield", 2),
+        ("armor_body", 2),
+        ("armor_head", 1),
+        ("armor_arm", 1),
+        ("armor_leg", 1),
     ],
     "black_market": [
-        ("small_weapon", 2),
-        ("medium_weapon", 4),
-        ("large_weapon", 2),
-        ("long_weapon", 3),
-        ("throwable_weapon", 1),
-        ("shield", 2),
-        ("body_armor", 2),
-        ("headgear", 2),
-        ("gauntlets", 1),
-        ("leg_armor", 1),
-        ("accessory", 2),
+        ("weapon_small", 2),
+        ("weapon_medium", 4),
+        ("weapon_large", 2),
+        ("weapon_long", 3),
+        ("weapon_range", 2),
+        ("armor_shield", 2),
+        ("armor_body", 2),
+        ("armor_head", 2),
+        ("armor_arm", 1),
+        ("armor_leg", 1),
+        ("armor_cloth", 1),
+        ("accessory_ring", 2),
+        ("accessory_amulet", 2),
+        ("relic", 1),
     ],
-    "food_store": [("food", 6), ("drink", 3), ("mushroom", 1), ("plant", 1)],
+    "food_store": [("food", 6), ("drink", 4), ("material_plant", 1)],
     "material_store": [
-        ("other_material", 4),
-        ("ore", 3),
-        ("metal", 3),
-        ("plant", 2),
-        ("creature_part", 2),
-        ("liquid_material", 2),
-        ("magical_material", 1),
-        ("scrap", 2),
-        ("gem", 1),
+        ("material_common", 4),
+        ("material_ore", 3),
+        ("material_metal", 3),
+        ("material_plant", 2),
+        ("material_creature", 2),
+        ("material_liquid", 2),
+        ("material_magical", 1),
+        ("material_gem", 1),
+        ("junk", 2),
     ],
-    "mage": [("scroll", 4), ("potion", 2), ("magical_material", 4), ("gem", 2), ("relic", 1), ("document", 2)],
-    "magic_store": [("scroll", 5), ("magical_material", 4), ("potion", 2), ("gem", 2), ("relic", 1), ("document", 2), ("accessory", 1)],
+    "mage": [("scroll", 4), ("magicrod", 2), ("potion", 2), ("material_magical", 4), ("material_gem", 2), ("relic", 1), ("document", 2), ("accessory_amulet", 1)],
+    "magic_store": [("scroll", 5), ("magicrod", 2), ("material_magical", 4), ("potion", 2), ("material_gem", 2), ("relic", 1), ("document", 2), ("accessory_ring", 1), ("accessory_amulet", 1)],
     "inn": [("food", 5), ("drink", 4), ("medicine", 1), ("tool", 1)],
-    "general_store": [("food", 3), ("drink", 2), ("tool", 4), ("medicine", 2), ("clothing", 2), ("legwear", 1), ("scrap", 2), ("other_material", 2), ("document", 1)],
-    "general": [("food", 3), ("drink", 2), ("tool", 4), ("medicine", 2), ("clothing", 2), ("scrap", 2)],
+    "general_store": [("food", 3), ("drink", 2), ("tool", 4), ("medicine", 2), ("armor_cloth", 2), ("junk", 2), ("material_common", 2), ("document", 1)],
+    "general": [("food", 3), ("drink", 2), ("tool", 4), ("medicine", 2), ("armor_cloth", 2), ("junk", 2)],
 }
 
 ITEM_CONTAINER_KEYS = {
@@ -529,9 +520,9 @@ GOLD_COST_CONTAINER_KEYS = {
 
 def starter_items() -> list[dict[str, Any]]:
     return [
-        make_item("food", name="旅糧パン", quantity=2, source="starter"),
+        make_item("food", name="黒パン", quantity=2, source="starter"),
         make_item("medicine", name="止血薬", quantity=1, source="starter"),
-        make_item("tool", name="古いロープ", quantity=1, source="starter"),
+        make_item("tool", name="ロープ", quantity=1, source="starter"),
     ]
 
 
@@ -572,8 +563,9 @@ def make_item(
     item_name = cleaned_name or str(template_name)
     explicit_value = value is not None
     item_value = int(value if value is not None else template_value)
-    if category in EQUIPMENT_CATEGORIES and not explicit_value:
-        item_value = max(1, int(item_value * RARITY_VALUE_MULTIPLIER.get(rarity, 1.0)))
+    if not explicit_value:
+        price_rng = _rng("item_price", category, item_name, rarity, source)
+        item_value = _item_value_with_rarity(item_value, rarity, price_rng)
     qty = max(1, int(quantity or 1))
     stackable = category not in EQUIPMENT_CATEGORIES
     item = {
@@ -605,7 +597,7 @@ def make_item(
     return item
 
 
-def normalise_item(raw: Any, source: str = "", fallback_category: str = "scrap") -> dict[str, Any]:
+def normalise_item(raw: Any, source: str = "", fallback_category: str = "junk") -> dict[str, Any]:
     if isinstance(raw, str):
         return make_item(fallback_category, name=_clean_item_name(raw, ""), source=source)
     if not isinstance(raw, dict):
@@ -625,6 +617,7 @@ def normalise_item(raw: Any, source: str = "", fallback_category: str = "scrap")
     if not name:
         name = CATEGORY_LABELS.get(category, "アイテム")
     quantity = _safe_int(data.get("quantity", data.get("count", data.get("amount", 1))), 1)
+    explicit_value = any(key in data for key in ("value", "price", "gold_value"))
     value = _safe_int(data.get("value", data.get("price", data.get("gold_value", CATEGORY_BASE_VALUE.get(category, 5)))), CATEGORY_BASE_VALUE.get(category, 5))
     description = str(data.get("description") or data.get("overview") or data.get("summary") or "")
     rarity = normalise_rarity(data.get("rarity") or "common")
@@ -635,7 +628,7 @@ def normalise_item(raw: Any, source: str = "", fallback_category: str = "scrap")
         name=name,
         description=description or None,
         quantity=quantity,
-        value=value,
+        value=value if explicit_value else None,
         rarity=rarity,
         source=str(data.get("source") or source),
         effects=effects,
@@ -643,7 +636,19 @@ def normalise_item(raw: Any, source: str = "", fallback_category: str = "scrap")
     for key, value in data.items():
         if key not in item and not str(key).startswith("_"):
             item[str(key)] = value
-    for key in ("instance_id", "equipped", "equipment_slot", "attack", "defense", "effects", "llm_effects", "item_uuid", "item_uuids"):
+    for key in (
+        "instance_id",
+        "equipped",
+        "equipment_slot",
+        "attack",
+        "defense",
+        "effects",
+        "llm_effects",
+        "item_uuid",
+        "item_uuids",
+        "_craft_source",
+        "_craft_source_uuid",
+    ):
         if key in data:
             item[key] = deepcopy(data[key])
     if "uuid" in data and not item.get("item_uuid"):
@@ -678,7 +683,46 @@ def normalise_inventory(inventory: list[dict[str, Any]], source: str = "") -> li
     return inventory
 
 
-def add_item_stack(inventory: list[dict[str, Any]], raw: Any, source: str = "", quantity: int | None = None) -> dict[str, Any]:
+def inventory_slot_count(inventory: list[dict[str, Any]]) -> int:
+    return len(inventory)
+
+
+def inventory_free_slots(inventory: list[dict[str, Any]], max_slots: int) -> int:
+    return max(0, int(max_slots) - inventory_slot_count(inventory))
+
+
+def can_add_item_stack(
+    inventory: list[dict[str, Any]],
+    raw: Any,
+    *,
+    max_slots: int | None = None,
+    source: str = "",
+    quantity: int | None = None,
+) -> bool:
+    if max_slots is None:
+        return True
+    item = normalise_item(raw, source=source)
+    if quantity is not None:
+        item["quantity"] = max(1, int(quantity))
+        _ensure_item_uuids(item)
+    key = _stack_key(item)
+    if key:
+        for existing in inventory:
+            existing_item = normalise_item(existing, source=source)
+            if _stack_key(existing_item) == key:
+                return True
+    return inventory_slot_count(inventory) < max(0, int(max_slots))
+
+
+def add_item_stack(
+    inventory: list[dict[str, Any]],
+    raw: Any,
+    source: str = "",
+    quantity: int | None = None,
+    max_slots: int | None = None,
+) -> dict[str, Any] | None:
+    if not can_add_item_stack(inventory, raw, max_slots=max_slots, source=source, quantity=quantity):
+        return None
     item = normalise_item(raw, source=source)
     if quantity is not None:
         item["quantity"] = max(1, int(quantity))
@@ -727,11 +771,22 @@ def transfer_item_stack(
     index: int,
     quantity: int = 1,
     source: str = "",
+    max_target_slots: int | None = None,
 ) -> dict[str, Any] | None:
+    if index < 0 or index >= len(source_inventory):
+        return None
+    candidate = normalise_item(source_inventory[index])
+    candidate["quantity"] = min(max(1, int(quantity)), max(1, _safe_int(candidate.get("quantity", 1), 1)))
+    if not can_add_item_stack(target_inventory, candidate, max_slots=max_target_slots, source=source):
+        return None
     taken = take_item_stack(source_inventory, index, quantity)
     if not taken:
         return None
-    return add_item_stack(target_inventory, taken, source=source)
+    added = add_item_stack(target_inventory, taken, source=source, max_slots=max_target_slots)
+    if not added:
+        add_item_stack(source_inventory, taken, source=source)
+        return None
+    return added
 
 
 def item_value(item: dict[str, Any]) -> int:
@@ -779,7 +834,7 @@ def item_label(item: dict[str, Any], price_mode: str = "", language: str = "ja")
     normalised = normalise_item(item)
     name = str(normalised.get("name") or tr_enum("roster", "unknown", language))
     quantity = max(1, _safe_int(normalised.get("quantity", 1), 1))
-    category_id = str(normalised.get("category") or "scrap")
+    category_id = str(normalised.get("category") or "junk")
     rarity_id = normalise_rarity(normalised.get("rarity"))
     category = tr_enum("item_category", category_id, language, fallback=str(normalised.get("category_label") or category_id))
     rarity = tr_enum("rarity", rarity_id, language, fallback=str(normalised.get("rarity_label") or rarity_id))
@@ -833,7 +888,7 @@ def craft_items(
 
     if equipment:
         base = equipment[0]
-        category = str(base.get("category") or "medium_weapon")
+        category = str(base.get("category") or "weapon_medium")
         base_rarity = max(str(base.get("rarity") or "common"), highest_rarity, key=_rarity_rank)
         rarity = _upgrade_rarity(base_rarity, quality_steps)
         base_name = str(base.get("name") or "装備")
@@ -947,8 +1002,7 @@ def reward_log_lines(items: list[dict[str, Any]], gold: int = 0) -> list[str]:
 
 def normalise_category(category: str) -> str:
     value = str(category or "").strip().lower().replace("-", "_").replace(" ", "_")
-    value = CATEGORY_ALIASES.get(value, value)
-    return value if value in FANTASIA_ITEM_CATEGORY_COUNTS else "scrap"
+    return value if value in FANTASIA_ITEM_CATEGORY_COUNTS else "junk"
 
 
 def category_label(category: str, language: str = "ja") -> str:
@@ -1055,7 +1109,7 @@ def calculate_equipment_summary(equipment: dict[str, Any] | None) -> dict[str, A
 
 def item_tooltip_text(item: dict[str, Any], price_mode: str = "", language: str = "ja") -> str:
     normalised = normalise_item(item)
-    category_id = str(normalised.get("category") or "scrap")
+    category_id = str(normalised.get("category") or "junk")
     rarity_id = normalise_rarity(normalised.get("rarity"))
     category = tr_enum("item_category", category_id, language, fallback=str(normalised.get("category_label") or category_id))
     rarity = tr_enum("rarity", rarity_id, language, fallback=str(normalised.get("rarity_label") or rarity_id))
@@ -1154,20 +1208,22 @@ def _random_item(
 ) -> dict[str, Any]:
     categories, weights = zip(*profile)
     category = rng.choices(categories, weights=weights, k=1)[0]
-    name, description, base_value = rng.choice(ITEM_TEMPLATES.get(category, [(CATEGORY_LABELS.get(category, "アイテム"), "", CATEGORY_BASE_VALUE.get(category, 5))]))
+    name, description, base_value = rng.choice(
+        ITEM_TEMPLATES.get(category, [(CATEGORY_LABELS.get(category, "アイテム"), "", CATEGORY_BASE_VALUE.get(category, 5))])
+    )
     if category in EQUIPMENT_CATEGORIES:
         rarity = _random_equipment_rarity(rng, rarity_profile)
-        multiplier = 1.0
     else:
         rarity = _random_stackable_rarity(rng, rarity_profile)
-        multiplier = {"common": 1.0, "uncommon": 1.5, "rare": 2.3}[rarity]
+    item_value = _item_value_with_rarity(base_value, rarity, rng)
     quantity = _random_quantity(category, rng)
+    loot_description = f"{context}で見つかる品。{description}" if source == "loot" and context else description
     return make_item(
         category,
         name=name,
-        description=f"{context}で見つかる品。{description}" if source == "loot" else description,
+        description=loot_description,
         quantity=quantity,
-        value=max(1, int(base_value * multiplier)),
+        value=item_value,
         rarity=rarity,
         source=source,
     )
@@ -1187,6 +1243,16 @@ def _random_stackable_rarity(rng: random.Random, profile_name: str = "") -> str:
     if profile_name in {"magic_store", "material_store"}:
         return rng.choices(["common", "uncommon", "rare"], weights=[62, 30, 8], k=1)[0]
     return rng.choices(["common", "uncommon", "rare"], weights=[76, 20, 4], k=1)[0]
+
+
+def _item_value_with_rarity(base_value: int, rarity: str, rng: random.Random | None = None) -> int:
+    base = max(1, int(base_value or 1))
+    rarity_key = normalise_rarity(rarity)
+    multiplier = RARITY_VALUE_MULTIPLIER.get(rarity_key, 1.0)
+    variance_rng = rng or random.Random()
+    variance = variance_rng.uniform(ITEM_VALUE_VARIANCE_MIN, ITEM_VALUE_VARIANCE_MAX)
+    rarity_floor = base + _rarity_rank(rarity_key)
+    return max(1, rarity_floor, int(round(base * multiplier * variance)))
 
 
 def _loot_profile_name(text: str) -> str:
@@ -1250,7 +1316,7 @@ def _default_effects(category: str) -> list[dict[str, Any]]:
         return [{"type": "heal", "value": 14}]
     if category in {"food", "drink"}:
         return [{"type": "stamina", "value": 4}]
-    if category == "scroll":
+    if category in {"scroll", "magicrod"}:
         return [{"type": "magic", "value": 1}]
     return []
 
@@ -1361,15 +1427,15 @@ def _craft_quality_message(craft_roll: dict[str, Any] | None) -> str:
 
 def _crafted_consumable_category(items: list[dict[str, Any]]) -> str:
     categories = {normalise_category(str(item.get("category") or "")) for item in items}
-    if categories & {"medicine", "potion", "plant", "mushroom"}:
+    if categories & {"medicine", "potion", "material_plant", "material_liquid"}:
         return "potion"
     if categories & {"food", "drink"}:
         return "food"
-    if categories & {"scroll", "magical_material", "gem", "relic"}:
-        return "magical_material"
-    if categories & {"ore", "metal"}:
-        return "metal"
-    return "other_material"
+    if categories & {"scroll", "magicrod", "material_magical", "material_gem", "relic"}:
+        return "material_magical"
+    if categories & {"material_ore", "material_metal"}:
+        return "material_metal"
+    return "material_common"
 
 
 def _dedupe_effects(values: list[Any]) -> list[Any]:
@@ -1388,11 +1454,11 @@ def _base_equipment_attack(category: str, rarity: str) -> int:
     if category not in WEAPON_CATEGORIES:
         return 0
     base = {
-        "small_weapon": 3,
-        "throwable_weapon": 2,
-        "medium_weapon": 5,
-        "long_weapon": 6,
-        "large_weapon": 8,
+        "weapon_small": 3,
+        "weapon_range": 4,
+        "weapon_medium": 5,
+        "weapon_long": 6,
+        "weapon_large": 8,
     }.get(category, 4)
     return base + RARITY_POWER.get(normalise_rarity(rarity), 1)
 
@@ -1401,14 +1467,14 @@ def _base_equipment_defense(category: str, rarity: str) -> int:
     if category in WEAPON_CATEGORIES:
         return 0
     base = {
-        "headgear": 2,
-        "body_armor": 6,
-        "shield": 5,
-        "clothing": 1,
-        "gauntlets": 2,
-        "leg_armor": 3,
-        "legwear": 1,
-        "accessory": 0,
+        "armor_head": 2,
+        "armor_body": 6,
+        "armor_shield": 5,
+        "armor_cloth": 1,
+        "armor_arm": 2,
+        "armor_leg": 3,
+        "accessory_ring": 0,
+        "accessory_amulet": 0,
     }.get(category, 0)
     return base + max(0, RARITY_POWER.get(normalise_rarity(rarity), 1) // 2)
 
@@ -1589,9 +1655,18 @@ def _icon_hint(category: str, name: str) -> str:
 
 
 def _random_quantity(category: str, rng: random.Random) -> int:
-    if category in EQUIPMENT_CATEGORIES or category in {"relic", "scroll", "gem", "treasure"}:
+    if category in EQUIPMENT_CATEGORIES or category in {"relic", "scroll", "magicrod", "material_gem", "treasure"}:
         return 1
-    if category in {"scrap", "plant", "mushroom", "ore", "creature_part"}:
+    if category in {
+        "junk",
+        "material_common",
+        "material_liquid",
+        "material_plant",
+        "material_ore",
+        "material_metal",
+        "material_creature",
+        "material_magical",
+    }:
         return rng.randint(1, 4)
     if category in {"food", "drink", "tool"}:
         return rng.randint(1, 3)
@@ -1641,8 +1716,8 @@ def _category_from_key(key: str) -> str:
     if key in {"treasure", "reward", "rewards"}:
         return "treasure"
     if "loot" in key or "drop" in key:
-        return "scrap"
-    return "scrap"
+        return "junk"
+    return "junk"
 
 
 def _gold_amount(value: Any) -> int:

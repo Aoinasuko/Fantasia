@@ -82,7 +82,7 @@ class ManagerSchema:
             )
         if any(field.name in {"equip_item", "unequip_item", "equipment_changes"} for field in self.fields):
             lines.append(
-                "- Equipment changes: use equip_item/equip_items to equip a named item or item object, unequip_item/remove_equipment to remove equipment, or equipment_changes with action=equip/unequip and slot/item. Slots are weapon/shield/body_armor/headgear/gauntlets/leg_armor/clothing/legwear/accessory."
+                "- Equipment changes: use equip_item/equip_items to equip a named item or item object, unequip_item/remove_equipment to remove equipment, or equipment_changes with action=equip/unequip and slot/item. Slots are weapon/armor_shield/armor_head/armor_body/armor_arm/armor_leg/armor_cloth/accessory_ring/accessory_amulet."
             )
         if any(field.name == "display_cg" for field in self.fields):
             lines.append(
@@ -111,7 +111,7 @@ class ManagerSchema:
                 "name には (討伐時入手)、(報酬)、drop、loot などの入手条件を書かず、入手条件は description/source/reason に分けてください。"
             )
             lines.append(
-                "- 装備品は category に small_weapon/medium_weapon/large_weapon/long_weapon/throwable_weapon/shield/body_armor/headgear/gauntlets/leg_armor/clothing/legwear/accessory 等を使い、rarity は common/uncommon/rare/epic/legendary/artifact から選べます。拾った物を即装備する場合は equip_item も返してください。"
+                "- 装備品は category に weapon_small/weapon_medium/weapon_large/weapon_long/weapon_range/armor_shield/armor_head/armor_body/armor_arm/armor_leg/armor_cloth/accessory_ring/accessory_amulet 等を使い、rarity は common/uncommon/rare/epic/legendary/artifact から選べます。拾った物を即装備する場合は equip_item も返してください。"
             )
         if any(field.name in {"item_rewards", "items", "rewards", "gold", "lost_items", "stolen_items", "given_items"} for field in self.fields):
             lines.append(
@@ -319,6 +319,24 @@ SCHEMAS: dict[str, ManagerSchema] = {
                 {"from": "月影の森", "to": "古い祠", "hours": 2},
                 {"from": "古い祠", "to": "湿った洞穴", "hours": 2},
             ],
+        },
+    ),
+    "craft_item_generator": ManagerSchema(
+        manager_name="craft_item_generator",
+        fields=(
+            FieldRule("narration", (str,), aliases=("text", "message")),
+            FieldRule("item", (dict,), aliases=("crafted_item", "result"), string_items=False),
+        ),
+        example={
+            "narration": "素材を削り、磨き、旅で使える小さな道具に仕上げた。",
+            "item": {
+                "name": "旅人の補修具",
+                "category": "tool",
+                "description": "壊れた装備や道具を応急修理するための小さな工具。",
+                "quantity": 1,
+                "value": 20,
+                "rarity": "common",
+            },
         },
     ),
     "check_world_content_violation": ManagerSchema(
@@ -1113,7 +1131,9 @@ def schema_instruction(manager_name: str) -> str:
             "- トップレベルの world_name, overview, structure_description, structure, locations, connections を必ず返してください。\n"
             "- locations はロケーション配列、connections は {from, to, hours} の配列にしてください。\n"
             "- locations の各要素は name, kind, danger, description を持たせてください。\n"
-            "- kind は settlement/wilderness/dungeon/landmark/facility のいずれかを優先してください。\n"
+            "- kind は settlement/wilderness/dungeon/landmark のいずれかを優先してください。街の施設は location にせず、settlement の facilities として扱います。\n"
+            "- 宿屋、鍛冶屋、ギルド、店、寺院などの街施設を独立したロケーションにしないでください。\n"
+            "- 洞窟やダンジョンの入口、内部、奥、深部などは同じ dungeon ロケーション内のサブ地点として扱い、別ロケーションにしないでください。\n"
             "- structure には世界全体の地理ルール、危険度ルール、文化圏、主要テーマなどを入れてください。\n"
         )
     if manager_name == "create_world_overview":
@@ -1127,7 +1147,9 @@ def schema_instruction(manager_name: str) -> str:
             "- Generate only the requested 3 to 5 new locations, or fewer when remaining_count is smaller.\n"
             "- All human-readable names and descriptions must be Japanese.\n"
             "- Do not duplicate existing location names, roles, capitals, final temples, unique shrines, unique ruins, or other one-off important places from the provided summary.\n"
-            "- Each location must include name, kind, danger, and description. kind should be settlement, wilderness, dungeon, landmark, or facility.\n"
+            "- Each location must include name, kind, danger, and description. kind should be settlement, wilderness, dungeon, or landmark.\n"
+            "- Do not create town facilities as world-map locations. Inns, guilds, blacksmiths, shops, temples, and similar places belong inside a settlement's facilities data.\n"
+            "- Do not split a dungeon/cave into separate entrance/interior/depth locations. Keep those as subareas of one dungeon location.\n"
             "- danger is 0-9 and should generally rise with distance from the starting location, while allowing occasional world-appropriate exceptions.\n"
             "- connections must connect each new location to an existing location or another location from this same batch. Use hours=2 unless the prompt explicitly asks otherwise.\n"
             "- Return compact JSON only. Do not add Markdown or commentary.\n"
@@ -1273,7 +1295,38 @@ def _canonicalize_manager_response(manager_name: str, value: Any) -> Any:
             aliases=("trait", "generated_trait", "trait_list"),
             item_keys=("name", "description", "severity", "effect"),
         )
+    if manager_name == "craft_item_generator":
+        return _wrap_item_response(
+            value,
+            "item",
+            aliases=("crafted_item", "result", "generated_item"),
+            item_keys=("name", "category", "description", "quantity", "value", "rarity", "effects", "llm_effects"),
+        )
     return value
+
+
+def _wrap_item_response(
+    value: Any,
+    item_key: str,
+    *,
+    aliases: tuple[str, ...],
+    item_keys: tuple[str, ...],
+) -> Any:
+    if not isinstance(value, dict):
+        return value
+    response = dict(value)
+    if item_key in response:
+        return response
+    for alias in aliases:
+        if alias in response:
+            response[item_key] = response[alias]
+            return response
+    if any(key in response for key in item_keys):
+        item = {key: item_value for key, item_value in response.items() if key in item_keys}
+        response = {key: item_value for key, item_value in response.items() if key not in item_keys}
+        response[item_key] = item
+        response.setdefault("narration", str(response.get("text") or response.get("message") or ""))
+    return response
 
 
 def _wrap_collection_response(
