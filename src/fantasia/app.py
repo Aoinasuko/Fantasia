@@ -17,7 +17,7 @@ from .cloud_models import cached_cloud_model_ids, fetch_cloud_model_ids
 from .config import load_config
 from .crashlog import install_crash_logging, install_tk_crash_logging
 from .device import detect_device, device_report
-from .game import DEFAULT_GUILD_NAME, INITIAL_WORLD_TIME_HOURS, GameEngine
+from .game import DEFAULT_GUILD_NAME, DEFAULT_WORLD_LOCATION_COUNT, INITIAL_WORLD_TIME_HOURS, GameEngine
 from .generation_log import append_task_event, format_generation_log_detail, list_generation_logs
 from .i18n import ELEMENT_IDS, tr_enum, tr_enum_format
 from .imagegen import QUALITY_PRESETS, MockSdxlBackend, create_image_backend
@@ -329,6 +329,8 @@ class FantasiaApp(tk.Tk):
         self.character_gold_var = tk.StringVar(value="100")
         self.character_ability_points_var = tk.StringVar(value=f"BP:{CHARACTER_BONUS_POINTS}")
         self.premise_var = tk.StringVar(value="Misty frontier, old magic, exploration")
+        self.world_location_count_var = tk.StringVar(value=_world_location_count_label(DEFAULT_WORLD_LOCATION_COUNT, language))
+        self.world_generation_progress_var = tk.DoubleVar(value=0)
         self.action_var = tk.StringVar(value=tr_enum("initial_choice", "look_around", language))
         self.layer_background_var = tk.BooleanVar(value=True)
         self.layer_characters_var = tk.BooleanVar(value=True)
@@ -474,13 +476,28 @@ class FantasiaApp(tk.Tk):
         self.premise_text.insert("1.0", self.premise_var.get())
         self.premise_text.bind("<KeyRelease>", lambda _event: self.premise_var.set(self.premise_text.get("1.0", "end").strip()))
 
+        tk.Label(panel, text=_ui_text(self.config_data, "world_location_count"), bg="#111722", fg="#b8c0d5").grid(row=6, column=0, sticky="w", pady=(14, 4))
+        ttk.Combobox(
+            panel,
+            textvariable=self.world_location_count_var,
+            values=_world_location_count_options(self.config_data.language),
+            state="readonly",
+        ).grid(row=7, column=0, sticky="ew")
+
         actions = tk.Frame(panel, bg="#111722")
-        actions.grid(row=6, column=0, sticky="ew", pady=(18, 0))
+        actions.grid(row=8, column=0, sticky="ew", pady=(18, 0))
         actions.columnconfigure(0, weight=1)
         self._screen_button(actions, _ui_text(self.config_data, "common_back"), lambda: self._show_screen("title"), 0, column=0, sticky="w")
         tk.Label(actions, textvariable=self.task_status_var, bg="#111722", fg="#b8c0d5").grid(row=0, column=1, sticky="e", padx=(0, 10))
         self.create_world_btn = self._screen_button(actions, _ui_text(self.config_data, "world_generate"), self._start_world_creation, 0, column=2)
         self.task_buttons.append(self.create_world_btn)
+        self.world_generation_progress = ttk.Progressbar(
+            panel,
+            mode="determinate",
+            maximum=100,
+            variable=self.world_generation_progress_var,
+        )
+        self.world_generation_progress.grid(row=9, column=0, sticky="ew", pady=(10, 0))
 
     def _build_character_setup_screen(self) -> None:
         screen = self._create_screen("character_setup")
@@ -1524,20 +1541,25 @@ class FantasiaApp(tk.Tk):
         right_roster.grid(row=0, column=2, rowspan=3, sticky="nsew", padx=(14, 14), pady=(14, 14))
         right_roster.columnconfigure(0, weight=1)
         right_roster.rowconfigure(0, weight=1)
-        right_roster.rowconfigure(1, weight=0, minsize=GAME_STATUS_PANEL_HEIGHT)
-        right_roster.rowconfigure(2, weight=0, minsize=GAME_STATUS_PANEL_HEIGHT)
+        right_roster.rowconfigure(1, weight=0, minsize=UI_PLAYER_SLOT_HEIGHT)
+        right_roster.rowconfigure(2, weight=0, minsize=UI_PLAYER_SLOT_HEIGHT)
+        right_roster.rowconfigure(3, weight=0, minsize=GAME_STATUS_PANEL_HEIGHT)
         self.npc_roster_canvas = tk.Canvas(right_roster, bg=APP_PANEL_BG, highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=2)
         self.npc_roster_canvas.grid(row=0, column=0, sticky="nsew", pady=(0, 14))
         self.npc_roster_canvas.bind("<Configure>", lambda _event: self._render_actor_rosters())
         self.npc_roster_canvas.bind("<Button-1>", self._on_roster_click)
         self.player_roster_canvas = tk.Canvas(right_roster, bg=APP_PANEL_BG, highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=2)
-        self.player_roster_canvas.grid(row=1, column=0, sticky="nsew", pady=(14, 8))
+        self.player_roster_canvas.grid(row=1, column=0, sticky="nsew", pady=(14, 4))
         self.player_roster_canvas.bind("<Configure>", lambda _event: self._render_actor_rosters())
         self.player_roster_canvas.bind("<Button-1>", self._on_roster_click)
+        self.companion_roster_canvas = tk.Canvas(right_roster, bg=APP_PANEL_BG, highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=2)
+        self.companion_roster_canvas.grid(row=2, column=0, sticky="nsew", pady=(4, 8))
+        self.companion_roster_canvas.bind("<Configure>", lambda _event: self._render_actor_rosters())
+        self.companion_roster_canvas.bind("<Button-1>", self._on_roster_click)
         self.info_canvas = tk.Canvas(right_roster, bg=APP_PANEL_BG, highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=2)
-        self.info_canvas.grid(row=2, column=0, sticky="nsew", pady=(8, 0))
+        self.info_canvas.grid(row=3, column=0, sticky="nsew", pady=(8, 0))
         self.info_canvas.bind("<Configure>", lambda _event: self._render_player_info_panel())
-        self.player_roster_canvases = [self.player_roster_canvas]
+        self.player_roster_canvases = [self.player_roster_canvas, self.companion_roster_canvas]
 
         log_panel = tk.Frame(screen, bg=APP_PANEL_BG, highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=2)
         log_panel.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=(14, 14), pady=(6, 6))
@@ -1593,14 +1615,15 @@ class FantasiaApp(tk.Tk):
         self.inventory_btn = self._tool_icon_button(left_tools, "inv", _ui_text(self.config_data, "game_inventory"), self._open_player_inventory)
         self.craft_btn = self._tool_icon_button(left_tools, "craft", _ui_text(self.config_data, "game_craft"), self._open_craft_window)
         self.loot_btn = self._tool_icon_button(left_tools, "loot", _ui_text(self.config_data, "game_loot"), self._open_loot_inventory)
-        for column, button in enumerate((self.inventory_btn, self.craft_btn, self.loot_btn)):
+        self.world_map_btn = self._tool_icon_button(left_tools, "worldmap", _ui_text(self.config_data, "game_world_map"), self._open_world_map_window)
+        for column, button in enumerate((self.inventory_btn, self.craft_btn, self.loot_btn, self.world_map_btn)):
             button.grid(row=0, column=column, padx=(0, 10), pady=0)
 
         self.save_btn = self._tool_icon_button(right_tools, "save", _ui_text(self.config_data, "game_save"), self._save_game)
         self.setting_btn = self._tool_icon_button(right_tools, "setting", _ui_text(self.config_data, "game_setting"), self._open_game_submenu)
         for column, button in enumerate((self.save_btn, self.setting_btn)):
             button.grid(row=0, column=column, padx=(10, 0), pady=0)
-        self.task_buttons.extend([self.inventory_btn, self.craft_btn, self.loot_btn, self.save_btn, self.setting_btn])
+        self.task_buttons.extend([self.inventory_btn, self.craft_btn, self.loot_btn, self.world_map_btn, self.save_btn, self.setting_btn])
 
         self._refresh_choices()
         self._refresh_status_panel()
@@ -2385,7 +2408,7 @@ class FantasiaApp(tk.Tk):
         player_items = self._player_roster_items()
         player_canvases = getattr(self, "player_roster_canvases", [self.player_roster_canvas])
         for index, canvas in enumerate(player_canvases):
-            self._draw_roster_canvas(canvas, player_items[index:index + 1], "PLAYER")
+            self._draw_roster_canvas(canvas, player_items[index:index + 1], "PLAYER" if index == 0 else "ALLY")
 
     def _draw_roster_canvas(self, canvas: tk.Canvas, items: list[dict[str, object]], title: str) -> None:
         canvas.delete("all")
@@ -2394,18 +2417,27 @@ class FantasiaApp(tk.Tk):
         height = max(canvas.winfo_height(), 1)
         canvas.create_rectangle(0, 0, width, height, fill=APP_PANEL_BG, outline="")
         language = self.config_data.language
-        is_player_panel = title == "PLAYER"
+        is_party_panel = title in {"PLAYER", "ALLY"}
         if not items:
+            if title == "ALLY":
+                empty_text = tr_enum(
+                    "roster",
+                    "no_companion",
+                    language,
+                    fallback="No companion" if str(language).lower().startswith("en") else "同行者なし",
+                )
+            else:
+                empty_text = tr_enum("roster", "no_player" if title == "PLAYER" else "no_npc", language)
             canvas.create_text(
                 width // 2,
                 height // 2,
-                text=tr_enum("roster", "no_player" if is_player_panel else "no_npc", language),
+                text=empty_text,
                 fill="#575757",
                 font=self.ui_fonts.bold(-2),
             )
             return
-        visible_items = items[:1] if is_player_panel else items[:3]
-        row_height = height if is_player_panel else max(76, min(128, height // max(1, min(len(items), 3))))
+        visible_items = items[:1] if is_party_panel else items[:3]
+        row_height = height if is_party_panel else max(76, min(128, height // max(1, min(len(items), 3))))
         for index, item in enumerate(visible_items):
             top = index * row_height
             bottom = min(height, top + row_height)
@@ -2413,16 +2445,16 @@ class FantasiaApp(tk.Tk):
             canvas.create_rectangle(0, top, width, bottom, fill=APP_PANEL_BG, outline="#d8d4cf")
             image = item.get("image")
             image_box = min(
-                max(56, int(width * (0.42 if is_player_panel else 0.28))),
+                max(56, int(width * (0.42 if is_party_panel else 0.28))),
                 max(56, row_height - 12),
-                132 if is_player_panel else 96,
+                132 if is_party_panel else 96,
             )
             if isinstance(image, Image.Image):
                 display = _cover_image(image, image_box, image_box)
                 photo = ImageTk.PhotoImage(display)
                 self.roster_image_refs.append(photo)
                 canvas.create_image(8, top + max(6, (row_height - image_box) // 2), image=photo, anchor="nw")
-            elif is_player_panel:
+            elif is_party_panel:
                 canvas.create_rectangle(8, top + max(6, (row_height - image_box) // 2), 8 + image_box, top + max(6, (row_height - image_box) // 2) + image_box, outline="#575757")
                 canvas.create_text(8 + image_box // 2, top + row_height // 2, text=tr_enum("roster", "face", language), fill="#575757", font=self.ui_fonts.bold(-5))
             text_x = image_box + 24 if width > 240 else 74
@@ -2503,9 +2535,12 @@ class FantasiaApp(tk.Tk):
                 return f"{name}\n\n{tr_enum('roster', 'no_monster_data', language)}"
             return _format_monster_status_detail(monster.to_dict(), encounter, language=language)
 
-        if kind in {"player", "character"}:
+        if kind in {"player", "character", "companion"}:
             character = self.engine.state.world_data.characters.get(name)
             data = character.to_dict() if character else {}
+            if kind == "companion":
+                companion = self._companion_character_dict()
+                data = {**data, **companion} if data else companion
             if kind == "player":
                 player = self._player_character_dict()
                 data = {**data, **player} if data else player
@@ -2520,6 +2555,16 @@ class FantasiaApp(tk.Tk):
         state = self.engine.state
         language = self.config_data.language
         items: list[dict[str, object]] = []
+        party_names = {
+            str(item.get("name") or item.get("character_name") or "")
+            for item in state.party[1:]
+            if isinstance(item, dict)
+        }
+        party_uuids = {
+            str(item.get("uuid") or "")
+            for item in state.party[1:]
+            if isinstance(item, dict)
+        }
         active_encounter = state.flags.get("active_encounter")
         if isinstance(active_encounter, dict) and active_encounter.get("status") != "ended":
             name = str(active_encounter.get("opponent_name") or tr_enum("roster", "unknown", language))
@@ -2551,6 +2596,8 @@ class FantasiaApp(tk.Tk):
             name = str(active_conversation.get("character") or "")
             character = state.world_data.characters.get(name)
             if character:
+                if character.name in party_names or str(character.uuid) in party_uuids:
+                    return items
                 items.append(
                     {
                         "name": character.name,
@@ -2565,6 +2612,8 @@ class FantasiaApp(tk.Tk):
         current_location = self._current_location_name()
         for character in state.world_data.characters.values():
             if character.flags.get("is_player"):
+                continue
+            if character.name in party_names or str(character.uuid) in party_uuids:
                 continue
             if not self._character_is_present_at(character, current_location):
                 continue
@@ -2585,28 +2634,58 @@ class FantasiaApp(tk.Tk):
         player = self._player_character_dict()
         if not player:
             return []
+        items = [self._character_roster_item(player, kind="player")]
+        companion = self._companion_character_dict()
+        if companion:
+            items.append(self._character_roster_item(companion, kind="companion"))
+        return items
+
+    def _companion_character_dict(self) -> dict[str, object]:
+        state = self.engine.state
+        if len(state.party) > 1 and isinstance(state.party[1], dict):
+            party_entry = dict(state.party[1])
+            name = str(party_entry.get("name") or party_entry.get("character_name") or "").strip()
+            uuid = str(party_entry.get("uuid") or "").strip()
+            character = state.world_data.characters.get(name) if name else None
+            if not character and uuid:
+                for candidate in state.world_data.characters.values():
+                    if str(candidate.uuid) == uuid:
+                        character = candidate
+                        break
+            if character:
+                data = character.to_dict()
+                data.update(party_entry)
+                return data
+            return party_entry
+        return {}
+
+    def _character_roster_item(self, character_data: dict[str, object], *, kind: str) -> dict[str, object]:
+        player = character_data
         image_paths = player.get("image_paths")
-        player_name = str(player.get("name") or self.engine.state.player_name)
-        if (not isinstance(image_paths, dict) or not _subject_image_path(image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image"))) and player_name:
-            character = self.engine.state.world_data.characters.get(player_name)
+        name = str(player.get("name") or (self.engine.state.player_name if kind == "player" else ""))
+        if (not isinstance(image_paths, dict) or not _subject_image_path(image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image"))) and name:
+            character = self.engine.state.world_data.characters.get(name)
             if character and character.image_paths:
                 image_paths = character.image_paths
         image = self._actor_image_from_paths(image_paths if isinstance(image_paths, dict) else {}, ("face_image", "add_border_image", "no_bg_image", "generated_image"))
         attrs = _character_attributes(player)
-        name = player_name
         extra = player.get("extra")
         extra_level = extra.get("level") if isinstance(extra, dict) else ""
         level = str(player.get("level") or player.get("lv") or extra_level or "")
         encounter = self.engine.state.flags.get("active_encounter")
-        if isinstance(encounter, dict) and encounter.get("status") != "ended":
+        if kind == "player" and isinstance(encounter, dict) and encounter.get("status") != "ended":
             hp = f"{encounter.get('player_hp', '-')}/{encounter.get('player_max_hp', '-')}"
             sp = f"{encounter.get('player_sp', '-')}/{encounter.get('player_max_sp', '-')}"
         else:
             extra_data = extra if isinstance(extra, dict) else {}
-            hp = str(player.get("hp") or player.get("health") or f"{extra_data.get('current_hp', '-')}/{extra_data.get('max_hp', '-')}")
-            sp = str(player.get("sp") or f"{extra_data.get('current_sp', '-')}/{extra_data.get('max_sp', '-')}")
+            current_hp = player.get("current_hp", extra_data.get("current_hp", "-"))
+            max_hp = player.get("max_hp", extra_data.get("max_hp", "-"))
+            current_sp = player.get("current_sp", extra_data.get("current_sp", "-"))
+            max_sp = player.get("max_sp", extra_data.get("max_sp", "-"))
+            hp = str(player.get("hp") or player.get("health") or f"{current_hp}/{max_hp}")
+            sp = str(player.get("sp") or f"{current_sp}/{max_sp}")
         subtitle = f"Lv:{level or '1'}"
-        return [{"name": name, "subtitle": subtitle, "hp": f"HP:{hp}", "sp": f"SP:{sp}", "image": image, "attrs": attrs, "kind": "player"}]
+        return {"name": name, "subtitle": subtitle, "hp": f"HP:{hp}", "sp": f"SP:{sp}", "image": image, "attrs": attrs, "kind": kind}
 
     def _actor_image_from_paths(self, image_paths: dict[str, str], keys: tuple[str, ...]) -> Image.Image | None:
         return self._load_layer_image(_subject_image_path(image_paths, keys))
@@ -2642,10 +2721,115 @@ class FantasiaApp(tk.Tk):
         if any(word in text for word in ("依頼掲示板", "掲示板", "quest board", "request board")):
             self._open_quest_board_window()
             return True
+        if any(word in text for word in ("ワールドマップ", "世界地図", "world map", "worldmap")):
+            self._open_world_map_window()
+            return True
         if any(word in text for word in ("地図", "マップ", "map")):
             self._open_map_window()
             return True
         return False
+
+    def _open_world_map_window(self) -> None:
+        data = self.engine.world_map_data()
+        nodes = [node for node in data.get("nodes", []) if isinstance(node, dict)]
+        edges = [edge for edge in data.get("edges", []) if isinstance(edge, dict)]
+        dialog = self._create_modal_dialog(_ui_text(self.config_data, "world_map_title"), 980, 720)
+        dialog.title(_ui_text(self.config_data, "world_map_title"))
+        dialog.configure(bg=APP_DEEP_BG)
+        dialog.columnconfigure(0, weight=1)
+        dialog.rowconfigure(1, weight=1)
+
+        header = tk.Frame(dialog, bg=APP_DEEP_BG)
+        header.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 8))
+        header.columnconfigure(0, weight=1)
+        tk.Label(header, text=_ui_text(self.config_data, "world_map_title"), bg=APP_DEEP_BG, fg="#f2f2f2", font=self.ui_fonts.bold(2)).grid(row=0, column=0, sticky="w")
+        self._instant_button(header, _ui_text(self.config_data, "character_close"), dialog.destroy).grid(row=0, column=1, sticky="e")
+
+        canvas_frame = tk.Frame(dialog, bg=APP_PANEL_BG, highlightbackground=APP_BUTTON_BORDER, highlightthickness=2)
+        canvas_frame.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 8))
+        canvas_frame.columnconfigure(0, weight=1)
+        canvas_frame.rowconfigure(0, weight=1)
+        canvas = tk.Canvas(canvas_frame, bg="#f7f7f7", highlightthickness=0)
+        canvas.grid(row=0, column=0, sticky="nsew")
+
+        selected_name = tk.StringVar(value="")
+        detail_var = tk.StringVar(value=_ui_text(self.config_data, "world_map_drag_hint"))
+        node_lookup = {str(node.get("name") or ""): node for node in nodes}
+        rect_items: dict[str, int] = {}
+        node_size = 84
+
+        def node_xy(node: dict[str, object]) -> tuple[int, int]:
+            return int(node.get("x") or 80), int(node.get("y") or 80)
+
+        if not nodes:
+            canvas.create_text(480, 320, text=_ui_text(self.config_data, "world_map_no_locations"), fill="#111111", font=self.ui_fonts.bold(0))
+        else:
+            max_x = max(int(node.get("x") or 80) for node in nodes) + 220
+            max_y = max(int(node.get("y") or 80) for node in nodes) + 180
+            canvas.configure(scrollregion=(0, 0, max(max_x, 940), max(max_y, 620)))
+            for edge in edges:
+                a = node_lookup.get(str(edge.get("from") or ""))
+                b = node_lookup.get(str(edge.get("to") or ""))
+                if not a or not b:
+                    continue
+                ax, ay = node_xy(a)
+                bx, by = node_xy(b)
+                canvas.create_line(ax + node_size // 2, ay + node_size // 2, bx + node_size // 2, by + node_size // 2, fill="#111111", width=5)
+
+            def select_node(node: dict[str, object]) -> None:
+                name = str(node.get("name") or "")
+                selected_name.set(name)
+                for item_name, rect in rect_items.items():
+                    canvas.itemconfigure(rect, outline="#101010", width=7 if item_name == name else 4)
+                detail_var.set(_world_map_node_detail(node, data.get("current_location"), self.config_data.language))
+
+            def draw_icon(node: dict[str, object], x: int, y: int, tag: str) -> None:
+                kind = str(node.get("kind") or "").lower()
+                if kind in {"settlement", "town", "village", "city"}:
+                    canvas.create_polygon(x + 22, y + 44, x + 42, y + 22, x + 62, y + 44, fill="", outline="#101010", width=5, tags=tag)
+                    canvas.create_rectangle(x + 28, y + 44, x + 56, y + 66, fill="", outline="#101010", width=5, tags=tag)
+                    canvas.create_rectangle(x + 39, y + 52, x + 48, y + 66, fill="#101010", outline="#101010", tags=tag)
+                elif kind in {"dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair"}:
+                    canvas.create_arc(x + 18, y + 22, x + 66, y + 78, start=0, extent=180, style="arc", outline="#101010", width=7, tags=tag)
+                    canvas.create_line(x + 18, y + 50, x + 18, y + 76, x + 66, y + 76, x + 66, y + 50, fill="#101010", width=7, tags=tag)
+                    canvas.create_rectangle(x + 34, y + 50, x + 50, y + 76, fill="#101010", outline="#101010", tags=tag)
+                else:
+                    canvas.create_oval(x + 22, y + 22, x + 62, y + 62, outline="#101010", width=5, tags=tag)
+                    canvas.create_line(x + 42, y + 62, x + 42, y + 74, fill="#101010", width=5, tags=tag)
+
+            for index, node in enumerate(nodes):
+                name = str(node.get("name") or f"node{index}")
+                x, y = node_xy(node)
+                tag = f"world_node_{index}"
+                rect = canvas.create_rectangle(x, y, x + node_size, y + node_size, fill="#ffffff", outline="#101010", width=4, tags=tag)
+                rect_items[name] = rect
+                draw_icon(node, x, y, tag)
+                if name == str(data.get("current_location") or ""):
+                    canvas.create_oval(x + node_size - 18, y + 8, x + node_size - 8, y + 18, fill="#d33030", outline="#d33030", tags=tag)
+                canvas.tag_bind(tag, "<Enter>", lambda _event, n=node: detail_var.set(_world_map_node_detail(n, data.get("current_location"), self.config_data.language)))
+                canvas.tag_bind(tag, "<Leave>", lambda _event: detail_var.set(_ui_text(self.config_data, "world_map_drag_hint")) if not selected_name.get() else None)
+                canvas.tag_bind(tag, "<Button-1>", lambda _event, n=node: select_node(n))
+
+        canvas.bind("<ButtonPress-1>", lambda event: canvas.scan_mark(event.x, event.y), add="+")
+        canvas.bind("<B1-Motion>", lambda event: canvas.scan_dragto(event.x, event.y, gain=1), add="+")
+
+        footer = tk.Frame(dialog, bg=APP_DEEP_BG)
+        footer.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 14))
+        footer.columnconfigure(0, weight=1)
+        tk.Label(footer, textvariable=detail_var, bg=APP_DEEP_BG, fg="#f2f2f2", anchor="w", justify="left", font=self.ui_fonts.normal(-2)).grid(row=0, column=0, sticky="ew")
+
+        def travel() -> None:
+            destination = selected_name.get()
+            if not destination:
+                return
+            dialog.destroy()
+            self._run_task(
+                _ui_text(self.config_data, "task_world_map_travel"),
+                lambda dest=destination: self.engine.travel_world_map_to(dest),
+                self._set_log,
+            )
+
+        self._instant_button(footer, _ui_text(self.config_data, "world_map_move"), travel).grid(row=0, column=1, sticky="e", padx=(12, 0))
 
     def _open_map_window(self) -> None:
         facilities = self.engine.current_location_facilities()
@@ -3010,7 +3194,7 @@ class FantasiaApp(tk.Tk):
     ) -> None:
         player_inventory = self._player_inventory()
         language = self.config_data.language
-        dialog_height = 650 if mode == "shop" else 600
+        dialog_height = 600
         dialog = self._create_modal_dialog(title, 900, dialog_height)
         dialog.title(title)
         dialog.configure(bg=APP_DEEP_BG)
@@ -3024,8 +3208,6 @@ class FantasiaApp(tk.Tk):
         player_gold_var = tk.StringVar()
         target_gold_var = tk.StringVar()
         detail_var = tk.StringVar(value="")
-        haggle_var = tk.StringVar(value="")
-        haggle_status_var = tk.StringVar(value="")
 
         tk.Label(dialog, text=_ui_text(self.config_data, "player_label"), bg=APP_DEEP_BG, fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 6))
         tk.Label(dialog, text=target_name, bg=APP_DEEP_BG, fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=2, sticky="ew", padx=16, pady=(14, 6))
@@ -3063,38 +3245,8 @@ class FantasiaApp(tk.Tk):
             font=self.ui_fonts.normal(-3),
         ).grid(row=3, column=0, columnspan=3, sticky="ew", padx=16, pady=(6, 0))
 
-        if mode == "shop":
-            haggle_frame = tk.Frame(dialog, bg=APP_DEEP_BG)
-            haggle_frame.grid(row=4, column=0, columnspan=3, sticky="ew", padx=16, pady=(8, 0))
-            haggle_frame.columnconfigure(1, weight=1)
-            tk.Label(
-                haggle_frame,
-                text=_ui_text(self.config_data, "trade_haggle_prompt"),
-                bg=APP_DEEP_BG,
-                fg="#f2f2f2",
-                font=self.ui_fonts.normal(-3),
-            ).grid(row=0, column=0, sticky="w", padx=(0, 8))
-            tk.Entry(
-                haggle_frame,
-                textvariable=haggle_var,
-                bg=APP_PANEL_BG,
-                fg="#f2f2f2",
-                insertbackground="#f2f2f2",
-                relief="solid",
-                bd=1,
-                font=self.ui_fonts.normal(-2),
-            ).grid(row=0, column=1, sticky="ew", padx=(0, 8), ipady=4)
-            self._instant_button(haggle_frame, _ui_text(self.config_data, "trade_haggle"), lambda: negotiate_price()).grid(row=0, column=2, sticky="e")
-            tk.Label(
-                haggle_frame,
-                textvariable=haggle_status_var,
-                bg=APP_DEEP_BG,
-                fg="#d8d4cf",
-                font=self.ui_fonts.normal(-3),
-            ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
-
         actions = tk.Frame(dialog, bg=APP_DEEP_BG)
-        actions.grid(row=5 if mode == "shop" else 4, column=0, columnspan=3, sticky="ew", padx=16, pady=(10, 14))
+        actions.grid(row=4, column=0, columnspan=3, sticky="ew", padx=16, pady=(10, 14))
         actions.columnconfigure(0, weight=1)
         if mode == "inventory":
             self._instant_button(actions, "装備", lambda: equip_selected_item()).grid(row=0, column=1, sticky="e", padx=(0, 8))
@@ -3143,12 +3295,6 @@ class FantasiaApp(tk.Tk):
         def buy_value(item: dict[str, object]) -> int:
             return max(1, int(round(_item_value(item) * current_buy_multiplier())))
 
-        def shop_price_status() -> str:
-            if mode != "shop":
-                return ""
-            percent = int(round(current_buy_multiplier() * 100))
-            return _ui_text(self.config_data, "trade_price_rate").format(rate=percent)
-
         def refresh() -> None:
             player_list.delete(0, "end")
             target_list.delete(0, "end")
@@ -3159,7 +3305,6 @@ class FantasiaApp(tk.Tk):
             player_gold_var.set(f"Gold: {self._player_gold()}")
             target_gold = target_character.gold if target_character else 0
             target_gold_var.set(f"Gold: {target_gold}" if mode == "shop" else "")
-            haggle_status_var.set(shop_price_status())
             update_detail()
 
         def selected_index(listbox: tk.Listbox) -> int | None:
@@ -3243,21 +3388,6 @@ class FantasiaApp(tk.Tk):
             else:
                 self._append_inventory_event(f"> [移動] {label}")
             return True
-
-        def negotiate_price() -> None:
-            if mode != "shop" or target_character is None:
-                return
-            event = self.engine.roll_trade_negotiation(target_character, haggle_var.get())
-            roll = event.get("roll") if isinstance(event, dict) else None
-            if isinstance(roll, dict) and roll.get("line"):
-                self._append_inventory_event(str(roll["line"]))
-            line = str(event.get("line") or "")
-            if line:
-                self._append_inventory_event(line)
-            for relation_line in event.get("relationship_lines", []) if isinstance(event, dict) else []:
-                self._append_inventory_event(str(relation_line))
-            self.engine.save_game()
-            refresh()
 
         def move_to_player() -> None:
             selection = target_list.curselection()
@@ -3413,6 +3543,8 @@ class FantasiaApp(tk.Tk):
     def _maybe_open_inventory_for_action(self, action: str) -> bool:
         text = action.strip().lower()
         if not text:
+            return False
+        if _is_trade_negotiation_text(action):
             return False
         if any(keyword in text for keyword in ("inventory", "item", "所持品", "インベントリ", "持ち物")):
             self._open_player_inventory()
@@ -4185,16 +4317,38 @@ class FantasiaApp(tk.Tk):
 
     def _new_world(self) -> None:
         self.character_setup_back_screen = "world_create"
+        self._reset_world_generation_progress()
         self._run_task(
             _ui_text(self.config_data, "task_creating_world"),
-            lambda: self.engine.create_world(self.world_name_var.get(), self.premise_var.get(), save_game=False),
+            lambda: self.engine.create_world(
+                self.world_name_var.get(),
+                self.premise_var.get(),
+                location_count=_world_location_count_from_label(self.world_location_count_var.get()),
+                save_game=False,
+                progress_callback=self._world_generation_progress_callback,
+            ),
             self._on_world_created,
+            initial_status=_ui_text(self.config_data, "world_generation_progress_start"),
+            auto_status=False,
         )
 
     def _on_world_created(self, text: str) -> None:
+        self.world_generation_progress_var.set(100)
         self._show_screen("character_setup")
         self._replace_text(self.character_world_summary_text, self._character_world_summary())
         self._append_log("\n" + _ui_text(self.config_data, "log_world_generated") + "\n" + text + "\n")
+
+    def _reset_world_generation_progress(self) -> None:
+        if hasattr(self, "world_generation_progress_var"):
+            self.world_generation_progress_var.set(0)
+
+    def _world_generation_progress_callback(self, payload: dict[str, object]) -> None:
+        self.after(0, lambda payload=dict(payload): self._apply_world_generation_progress(payload))
+
+    def _apply_world_generation_progress(self, payload: dict[str, object]) -> None:
+        percent = max(0, min(100, _safe_int(str(payload.get("percent", payload.get("current", 0))), 0)))
+        self.world_generation_progress_var.set(percent)
+        self._set_task_status(_world_generation_progress_text(self.config_data, payload))
 
     def _refresh_character_setup_screen(self) -> None:
         if not hasattr(self, "character_world_summary_text"):
@@ -5985,6 +6139,9 @@ def _prompt_parts_from_look(look: str) -> list[str]:
 def _character_attributes(character: dict[str, object]) -> dict[str, int]:
     extra = character.get("extra")
     attrs: dict[str, object] = {}
+    direct_attrs = character.get("attributes")
+    if isinstance(direct_attrs, dict):
+        attrs.update(direct_attrs)
     if isinstance(extra, dict):
         direct = extra.get("attributes")
         if isinstance(direct, dict):
@@ -6009,7 +6166,13 @@ def _character_attributes(character: dict[str, object]) -> dict[str, int]:
 def _format_character_status_detail(data: dict[str, object], encounter: dict[str, object], *, is_player: bool, language: str = "ja") -> str:
     attrs = _character_attributes(data)
     extra = data.get("extra") if isinstance(data.get("extra"), dict) else {}
-    sp_text = f"{extra.get('current_sp', '-')}/{extra.get('max_sp', '-')}" if is_player else ""
+    level_text = str(data.get("level") or data.get("lv") or extra.get("level") or "1")
+    hp_text = str(
+        data.get("hp")
+        or data.get("health")
+        or f"{data.get('current_hp', extra.get('current_hp', '-'))}/{data.get('max_hp', extra.get('max_hp', '-'))}"
+    )
+    sp_text = str(data.get("sp") or f"{data.get('current_sp', extra.get('current_sp', '-'))}/{data.get('max_sp', extra.get('max_sp', '-'))}")
     equipment = data.get("equipment") if isinstance(data.get("equipment"), dict) else extra.get("equipment")
     equipment_lines: list[str] = []
     if isinstance(equipment, dict):
@@ -6028,9 +6191,11 @@ def _format_character_status_detail(data: dict[str, object], encounter: dict[str
         f"{field('gender_age')}: {_join_nonempty(_display_gender(data.get('gender'), language), data.get('age')) or '-'}",
         f"{field('location')}: {data.get('location') or '-'}",
         f"{field('state')}: {state_label}",
+        f"{tr_enum('status_field', 'level', language)}: {level_text}",
+        f"HP: {hp_text}",
+        f"{field('sp')}: {sp_text}",
         f"{field('gold')}: {data.get('gold') or 0}",
         f"{field('affinity')}: {affinity_value} ({affinity_state})" if not is_player else "",
-        f"{field('sp')}: {sp_text}" if is_player else "",
         f"{field('equipment')}: " + (" / ".join(equipment_lines) if equipment_lines else "-") if is_player else "",
         f"{field('attributes')}: "
         + ", ".join(
@@ -6115,13 +6280,17 @@ def _display_gender(value: object, language: str = "ja") -> str:
 
 
 def _affinity_state_label(value: int, language: str = "ja") -> str:
+    if value <= -80:
+        return "Mortal enemy" if str(language).lower().startswith("en") else "完全な敵対"
+    if value <= -40:
+        return "Hostile" if str(language).lower().startswith("en") else "敵対"
     if value <= -10:
-        return "Hostile" if str(language).lower().startswith("en") else "完全な敵対"
-    if value <= -5:
         return "Distrust" if str(language).lower().startswith("en") else "不信"
+    if value >= 80:
+        return "Absolute trust" if str(language).lower().startswith("en") else "完全な信頼"
+    if value >= 40:
+        return "Trusted" if str(language).lower().startswith("en") else "信頼"
     if value >= 10:
-        return "Trusted" if str(language).lower().startswith("en") else "完全な信頼"
-    if value >= 5:
         return "Friendly" if str(language).lower().startswith("en") else "友好的"
     return "Neutral" if str(language).lower().startswith("en") else "中立"
 
@@ -6451,7 +6620,19 @@ UI_TEXT["en"].update(
         "world_generation_subtitle": "Create a new world through the AI managers.",
         "world_name": "World Name",
         "world_premise": "Premise",
+        "world_location_count": "Initial Locations",
         "world_generate": "Generate World",
+        "world_generation_progress_start": "Preparing world generation...",
+        "world_progress_working": "Generating world",
+        "world_progress_content_check": "Checking world premise",
+        "world_progress_overview": "Generating world overview",
+        "world_progress_locations": "Generating locations",
+        "world_progress_story": "Generating story",
+        "world_progress_settlement": "Generating starting settlement",
+        "world_progress_characters": "Generating NPCs",
+        "world_progress_quests": "Generating quests and rewards",
+        "world_progress_initial": "Generating opening scene",
+        "world_progress_completed": "World generation complete",
         "world_select_title": "World Select",
         "saved_games": "Saved Games",
         "world_data": "World Data",
@@ -6533,6 +6714,7 @@ UI_TEXT["en"].update(
         "layers_monsters": "Monsters",
         "game_inventory": "Inventory",
         "game_loot": "Loot",
+        "game_world_map": "World Map",
         "game_trade": "Trade",
         "game_craft": "Craft",
         "game_save": "Save",
@@ -6552,6 +6734,10 @@ UI_TEXT["en"].update(
         "map_type": "Type",
         "map_npc": "NPC",
         "map_no_facilities": "No settlement map is available here.",
+        "world_map_title": "World Map",
+        "world_map_move": "Move to Selected Location",
+        "world_map_no_locations": "No visited locations are recorded yet.",
+        "world_map_drag_hint": "Drag to scroll. Hover a location to inspect it, then click to select.",
         "quest_board_title": "Guild Quest Board",
         "quest_board_accept": "Accept",
         "quest_board_empty": "No quests are available.",
@@ -6560,6 +6746,7 @@ UI_TEXT["en"].update(
         "quest_board_status": "Status",
         "quest_board_objective": "Objective",
         "task_moving_facility": "Moving...",
+        "task_world_map_travel": "Traveling...",
         "task_accepting_quest": "Accepting quest...",
         "game_initial_log": "Start or load a world from the title screen.\n",
         "inventory_title": "Inventory",
@@ -6576,9 +6763,6 @@ UI_TEXT["en"].update(
         "trade_not_enough_gold": "Not enough gold.",
         "trade_target_not_enough_gold": "{name} does not have enough gold.",
         "trade_stock_changed": "> [Shop] {name}'s stock changed for the day.",
-        "trade_haggle": "Negotiate",
-        "trade_haggle_prompt": "Negotiation",
-        "trade_price_rate": "Purchase price: {rate}%",
         "trade_buy_price": "Buy: {price}G",
         "trade_sell_price": "Sell: {price}G",
         "dialog_import_world": "Import World",
@@ -6677,7 +6861,19 @@ UI_TEXT["ja"].update(
         "world_generation_subtitle": "AIマネージャで新しい世界を作ります。",
         "world_name": "世界名",
         "world_premise": "前提",
+        "world_location_count": "初期ロケーション数",
         "world_generate": "ワールド生成",
+        "world_generation_progress_start": "ワールド生成を準備中...",
+        "world_progress_working": "ワールド生成中",
+        "world_progress_content_check": "内容確認中",
+        "world_progress_overview": "世界概要を生成中",
+        "world_progress_locations": "ロケーション生成中",
+        "world_progress_story": "ストーリー生成中",
+        "world_progress_settlement": "初期拠点を生成中",
+        "world_progress_characters": "NPC生成中",
+        "world_progress_quests": "クエストと報酬を生成中",
+        "world_progress_initial": "初期場面を生成中",
+        "world_progress_completed": "ワールド生成完了",
         "world_select_title": "ワールド選択",
         "saved_games": "セーブデータ",
         "world_data": "ワールドデータ",
@@ -6759,6 +6955,7 @@ UI_TEXT["ja"].update(
         "layers_monsters": "モンスター",
         "game_inventory": "所持品",
         "game_loot": "漁る",
+        "game_world_map": "世界地図",
         "game_trade": "取引",
         "game_craft": "クラフト",
         "game_save": "保存",
@@ -6778,6 +6975,10 @@ UI_TEXT["ja"].update(
         "map_type": "種類",
         "map_npc": "NPC",
         "map_no_facilities": "ここでは街の地図を開けません。",
+        "world_map_title": "世界地図",
+        "world_map_move": "選択した場所へ移動",
+        "world_map_no_locations": "訪問済みの場所がまだ記録されていません。",
+        "world_map_drag_hint": "ドラッグでスクロール。場所にカーソルを合わせると詳細、クリックで選択できます。",
         "quest_board_title": "ギルドの依頼掲示板",
         "quest_board_accept": "受ける",
         "quest_board_empty": "現在受けられる依頼はありません。",
@@ -6786,6 +6987,7 @@ UI_TEXT["ja"].update(
         "quest_board_status": "状態",
         "quest_board_objective": "目的",
         "task_moving_facility": "施設へ移動中...",
+        "task_world_map_travel": "移動中...",
         "task_accepting_quest": "依頼を受注中...",
         "game_initial_log": "タイトル画面からワールドを開始またはロードしてください。\n",
         "inventory_title": "所持品",
@@ -6802,9 +7004,6 @@ UI_TEXT["ja"].update(
         "trade_not_enough_gold": "所持金が足りません。",
         "trade_target_not_enough_gold": "{name}の所持金が足りません。",
         "trade_stock_changed": "> [店] {name}の商品が入れ替わった。",
-        "trade_haggle": "値引き交渉",
-        "trade_haggle_prompt": "交渉内容",
-        "trade_price_rate": "購入価格: {rate}%",
         "trade_buy_price": "購入: {price}G",
         "trade_sell_price": "売却: {price}G",
         "dialog_import_world": "ワールド読み込み",
@@ -7163,6 +7362,70 @@ def _image_generation_enabled_config(config_data) -> bool:
     if isinstance(value, str):
         return value.strip().lower() not in {"0", "false", "off", "no", "disabled"}
     return bool(value)
+
+
+def _world_location_count_label(count: int, language: str = "ja") -> str:
+    value = int(count or DEFAULT_WORLD_LOCATION_COUNT)
+    english = {30: "Small (30)", 60: "Normal (60)", 90: "Many (90)"}
+    japanese = {30: "少ない（30個）", 60: "普通（60個）", 90: "多め（90個）"}
+    table = english if str(language).lower().startswith("en") else japanese
+    return table.get(value, table[DEFAULT_WORLD_LOCATION_COUNT])
+
+
+def _world_location_count_options(language: str = "ja") -> tuple[str, ...]:
+    return tuple(_world_location_count_label(value, language) for value in (30, 60, 90))
+
+
+def _world_location_count_from_label(label: str) -> int:
+    text = str(label or "").strip()
+    for value in (30, 60, 90):
+        if str(value) in text:
+            return value
+    return DEFAULT_WORLD_LOCATION_COUNT
+
+
+def _world_map_node_detail(node: dict[str, object], current_location: object = "", language: str = "ja") -> str:
+    name = str(node.get("name") or "")
+    kind = str(node.get("kind") or "")
+    danger = str(node.get("danger") if node.get("danger") is not None else "0")
+    description = str(node.get("description") or "")
+    english = str(language).lower().startswith("en")
+    marker = " / current" if english and name and name == str(current_location or "") else " / 現在地" if name and name == str(current_location or "") else ""
+    if english:
+        parts = [f"{name}{marker}", f"Kind: {kind or '-'} / Danger: {danger}"]
+    else:
+        parts = [f"{name}{marker}", f"種別: {kind or '-'} / 危険度: {danger}"]
+    if description:
+        parts.append(description)
+    return "\n".join(parts)
+
+
+def _world_generation_progress_text(config_data, payload: dict[str, object]) -> str:
+    phase = str(payload.get("phase") or "")
+    percent = max(0, min(100, _safe_int(str(payload.get("percent", 0)), 0)))
+    item_current = _safe_int(str(payload.get("item_current", 0)), 0)
+    item_total = _safe_int(str(payload.get("item_total", 0)), 0)
+    message = str(payload.get("message") or "").strip()
+    key_by_phase = {
+        "content_check": "world_progress_content_check",
+        "world_overview": "world_progress_overview",
+        "location_graph": "world_progress_locations",
+        "story": "world_progress_story",
+        "settlement": "world_progress_settlement",
+        "characters": "world_progress_characters",
+        "quests": "world_progress_quests",
+        "initial_narration": "world_progress_initial",
+        "completed": "world_progress_completed",
+    }
+    label = _ui_text(config_data, key_by_phase.get(phase, "world_progress_working"))
+    if phase in {"location_graph", "characters"} and item_total:
+        if str(getattr(config_data, "language", "ja")).lower().startswith("en"):
+            label = f"{label} ({item_current}/{item_total})"
+        else:
+            label = f"{label}（{item_current}/{item_total}）"
+    elif not label or label.startswith("world_progress_"):
+        label = message or _ui_text(config_data, "world_progress_working")
+    return f"{label} ({percent}%)"
 
 
 def _debug_device_summary(info, language: str = "ja") -> str:
@@ -7528,6 +7791,30 @@ def _limit_exploration_choices(choices: list[str]) -> list[str]:
         if len(result) >= MAX_EXPLORATION_CHOICES:
             break
     return result
+
+
+def _is_trade_negotiation_text(value: object) -> bool:
+    text = str(value or "").strip().lower()
+    if not text:
+        return False
+    return any(
+        keyword in text
+        for keyword in (
+            "値引",
+            "値切",
+            "まけて",
+            "安く",
+            "価格交渉",
+            "値段交渉",
+            "割引",
+            "discount",
+            "haggle",
+            "bargain",
+            "negotiate price",
+            "lower price",
+            "cheaper",
+        )
+    )
 
 
 if __name__ == "__main__":

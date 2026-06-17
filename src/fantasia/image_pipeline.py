@@ -52,9 +52,10 @@ def process_subject_image(
 def remove_background(source: Path, target: Path) -> dict[str, Any]:
     image = Image.open(source).convert("RGBA")
     bg = _corner_background_color(image)
-    threshold = 48
-    soft_threshold = 88
-    background_mask = _edge_connected_background_mask(image, bg, soft_threshold)
+    threshold = 38
+    soft_threshold = 72
+    protected_mask, protection_meta = _foreground_protection_mask(image, bg)
+    background_mask = _edge_connected_background_mask(image, bg, soft_threshold, protected_mask=protected_mask)
     pixels = []
     removed = 0
     softened = 0
@@ -74,15 +75,45 @@ def remove_background(source: Path, target: Path) -> dict[str, Any]:
             pixels.append((red, green, blue, alpha))
     image.putdata(pixels)
     image.save(target)
+    protected_restore_meta = restore_protected_foreground(source, target, protected_mask)
     repair_meta = repair_internal_alpha_holes(source, target)
     return {
-        "method": "edge_connected_corner_color_alpha",
+        "method": "edge_connected_corner_color_protected_alpha",
         "background_color": bg,
+        "foreground_protection": protection_meta,
         "removed_pixels": removed,
         "softened_pixels": softened,
         "edge_connected_pixels": int(sum(background_mask)),
+        "protected_restore": protected_restore_meta,
         "hole_repair": repair_meta,
         "image_size": list(image.size),
+    }
+
+
+def restore_protected_foreground(source: Path, target: Path, protected_mask: bytearray, alpha_threshold: int = 16) -> dict[str, Any]:
+    source_image = Image.open(source).convert("RGBA")
+    image = Image.open(target).convert("RGBA")
+    source_pixels = list(source_image.getdata())
+    pixels = list(image.getdata())
+    restored = 0
+    for index, protected in enumerate(protected_mask):
+        if not protected:
+            continue
+        red, green, blue, source_alpha = source_pixels[index]
+        if source_alpha <= alpha_threshold:
+            continue
+        old_alpha = pixels[index][3]
+        if old_alpha >= source_alpha:
+            continue
+        pixels[index] = (red, green, blue, source_alpha)
+        restored += 1
+    if restored:
+        image.putdata(pixels)
+        image.save(target)
+    return {
+        "method": "restore_protected_foreground",
+        "restored_pixels": restored,
+        "alpha_threshold": alpha_threshold,
     }
 
 
@@ -303,13 +334,19 @@ def _corner_background_color(image: Image.Image) -> tuple[int, int, int]:
         (width - sample, height - sample, width, height),
     )
     for box in boxes:
-        crop = image.crop(box).convert("RGB")
-        points.extend(crop.getdata())
+        crop = image.crop(box).convert("RGBA")
+        points.extend((red, green, blue) for red, green, blue, alpha in crop.getdata() if alpha > 16)
     if not points:
         return (255, 255, 255)
-    red = sum(pixel[0] for pixel in points) // len(points)
-    green = sum(pixel[1] for pixel in points) // len(points)
-    blue = sum(pixel[2] for pixel in points) // len(points)
+    bucket_size = 16
+    buckets: dict[tuple[int, int, int], list[tuple[int, int, int]]] = {}
+    for red, green, blue in points:
+        key = (red // bucket_size, green // bucket_size, blue // bucket_size)
+        buckets.setdefault(key, []).append((red, green, blue))
+    bucket = max(buckets.values(), key=len)
+    red = sum(pixel[0] for pixel in bucket) // len(bucket)
+    green = sum(pixel[1] for pixel in bucket) // len(bucket)
+    blue = sum(pixel[2] for pixel in bucket) // len(bucket)
     return (red, green, blue)
 
 
@@ -317,11 +354,14 @@ def _edge_connected_background_mask(
     image: Image.Image,
     background_color: tuple[int, int, int],
     threshold: int,
+    protected_mask: bytearray | None = None,
 ) -> bytearray:
     rgb_pixels = list(image.convert("RGB").getdata())
     width, height = image.size
 
     def candidate(index: int) -> bool:
+        if protected_mask is not None and protected_mask[index]:
+            return False
         red, green, blue = rgb_pixels[index]
         return abs(red - background_color[0]) + abs(green - background_color[1]) + abs(blue - background_color[2]) <= threshold
 
@@ -354,6 +394,59 @@ def _edge_connected_background_mask(
         if y + 1 < height:
             add(index + width)
     return mask
+
+
+def _foreground_protection_mask(image: Image.Image, background_color: tuple[int, int, int]) -> tuple[bytearray, dict[str, Any]]:
+    width, height = image.size
+    bg_luma = _luma(*background_color)
+    seed = Image.new("L", image.size, 0)
+    seed_pixels = seed.load()
+    source_pixels = image.load()
+    seed_count = 0
+    for y in range(height):
+        for x in range(width):
+            red, green, blue, alpha = source_pixels[x, y]
+            if alpha <= 24:
+                continue
+            distance = abs(red - background_color[0]) + abs(green - background_color[1]) + abs(blue - background_color[2])
+            max_channel = max(red, green, blue)
+            min_channel = min(red, green, blue)
+            saturation = max_channel - min_channel
+            luma = _luma(red, green, blue)
+            skin_color = _is_skin_color(red, green, blue)
+            is_seed = False
+            if distance >= 84 and (saturation >= 12 or luma <= 96 or skin_color or (bg_luma < 100 and luma >= bg_luma + 70)):
+                is_seed = True
+            elif distance >= 56 and saturation >= 18:
+                is_seed = True
+            elif skin_color:
+                is_seed = True
+            elif luma <= 72:
+                is_seed = True
+            elif bg_luma >= 168 and luma <= bg_luma - 72:
+                is_seed = True
+            elif bg_luma < 100 and luma >= bg_luma + 70:
+                is_seed = True
+            if not is_seed:
+                continue
+            seed_pixels[x, y] = 255
+            seed_count += 1
+
+    radius = max(3, min(10, min(width, height) // 96))
+    filter_size = radius * 2 + 1
+    protected = seed.filter(ImageFilter.MaxFilter(filter_size))
+    protected_data = protected.getdata()
+    mask = bytearray(1 if value else 0 for value in protected_data)
+    return mask, {
+        "method": "foreground_seed_expand",
+        "seed_pixels": seed_count,
+        "protected_pixels": int(sum(mask)),
+        "expand_radius": radius,
+    }
+
+
+def _luma(red: int, green: int, blue: int) -> float:
+    return 0.299 * red + 0.587 * green + 0.114 * blue
 
 
 def _edge_connected_binary_mask(mask_source: bytearray, width: int, height: int) -> bytearray:

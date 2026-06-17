@@ -5,7 +5,8 @@ import random
 import re
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+from uuid import uuid4
 
 from .image_pipeline import process_subject_image
 from .imagegen import BaseImageBackend, ImageResult
@@ -42,6 +43,10 @@ PLAYER_MAX_LEVEL = 50
 PLAYER_BASE_EXP_TO_NEXT = 5
 PLAYER_MAX_EXP_TO_NEXT = 100_000_000
 MAX_EXPLORATION_CHOICES = 5
+WORLD_LOCATION_COUNT_OPTIONS = {"small": 30, "normal": 60, "many": 90}
+DEFAULT_WORLD_LOCATION_COUNT = WORLD_LOCATION_COUNT_OPTIONS["normal"]
+WORLD_MAP_EDGE_HOURS = 2
+WORLD_MAP_MAX_DYNAMIC_DEGREE = 3
 REPEATED_INPUT_DEDUPE_SECONDS = 4.0
 DEFAULT_GUILD_NAME = "冒険者ギルド"
 QUEST_BOARD_NAME = "依頼掲示板"
@@ -51,6 +56,13 @@ SKILL_TRAIT_POWER_MIN = 1
 SKILL_TRAIT_POWER_MAX = 5
 NPC_DEFAULT_POWER_BUDGET = 8
 PLAYER_UNLIMITED_POWER_BUDGET = 999
+CHARACTER_DEFAULT_ATTRIBUTES = {"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10}
+NPC_MAX_LEVEL = 50
+NPC_AFFINITY_MIN = -100
+NPC_AFFINITY_MAX = 100
+NPC_AFFINITY_DELTA_MIN = -10
+NPC_AFFINITY_DELTA_MAX = 10
+COMPANION_WAIT_RETURN_DAYS = 3
 
 FACILITY_KEYWORDS = (
     "guild",
@@ -58,6 +70,21 @@ FACILITY_KEYWORDS = (
     "quest board",
     "board",
     "blacksmith",
+    "black market",
+    "apothecary",
+    "food store",
+    "material store",
+    "general store",
+    "magic store",
+    "闇商店",
+    "闇市",
+    "薬品店",
+    "薬屋",
+    "食料店",
+    "素材店",
+    "雑貨店",
+    "魔術店",
+    "魔法店",
     "smith",
     "weapon shop",
     "armor shop",
@@ -99,6 +126,63 @@ FACILITY_KEYWORDS = (
     "浴場",
 )
 
+SHOP_FACILITY_TYPES = {
+    "blacksmith",
+    "black_market",
+    "apothecary",
+    "food_store",
+    "material_store",
+    "general_store",
+    "magic_store",
+    "shop",
+    "market",
+}
+
+SHOP_FACILITY_PRICE_MULTIPLIERS = {
+    "black_market": 3.0,
+}
+
+SHOP_FACILITY_NAME_BANK = {
+    "blacksmith": ("鋼火鍛冶", "赤炉工房", "槌音鍛冶店", "黒鉄武具店"),
+    "black_market": ("影市", "月裏商会", "黒帳武具店", "夜鴉商店"),
+    "apothecary": ("若葉薬品店", "月露薬房", "白瓶堂", "癒し草の薬屋"),
+    "food_store": ("麦籠食料店", "香草食料店", "旅腹亭", "朝市食材店"),
+    "material_store": ("素材蔵", "石と根の素材店", "採集者の棚", "原石商会"),
+    "general_store": ("よろず屋", "旅支度雑貨店", "何でも棚", "道具箱商店"),
+    "magic_store": ("星灯魔術店", "巻物堂", "青燐魔法店", "古文書の塔"),
+    "shop": ("よろず屋", "旅支度雑貨店", "何でも棚", "道具箱商店"),
+    "market": ("広場市場", "朝市", "旅人市場", "屋台通り"),
+}
+
+GENERIC_SHOP_FACILITY_NAMES = {
+    "blacksmith",
+    "black market",
+    "apothecary",
+    "food store",
+    "material store",
+    "general store",
+    "magic store",
+    "shop",
+    "store",
+    "market",
+    "鍛冶屋",
+    "武器屋",
+    "防具屋",
+    "武具屋",
+    "闇商店",
+    "闇市",
+    "薬品店",
+    "薬屋",
+    "食料店",
+    "素材店",
+    "雑貨店",
+    "魔術店",
+    "魔法店",
+    "道具屋",
+    "商店",
+    "市場",
+}
+
 MOVEMENT_KEYWORDS = (
     "go to",
     "visit",
@@ -139,10 +223,14 @@ class GameEngine:
         premise: str,
         player_character: CharacterData | None = None,
         save_game: bool = True,
+        location_count: int = DEFAULT_WORLD_LOCATION_COUNT,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> str:
         requested_world_name = world_name.strip()
         player = (player_character.name if player_character else "").strip() or "Player"
         premise_text = premise.strip() or "霧深い辺境、古い魔法、探索"
+        target_location_count = _world_location_target_count(location_count)
+        self._emit_world_generation_progress(progress_callback, "content_check", "内容確認中", 0, 100)
         world_check = self._check_world_content_violation(requested_world_name or "unknown", premise_text)
         premise_context = _short_text(premise_text, 5000)
         if _as_bool(world_check.get("content_violation")):
@@ -158,20 +246,24 @@ class GameEngine:
             )
             return self.state.log_text()
 
+        self._emit_world_generation_progress(progress_callback, "world_overview", "世界概要を生成中", 8, 100)
         messages = [
             {
                 "role": "system",
                 "content": (
                     "あなたはAI駆動RPGのワールドビルダーです。"
                     "必ず日本語で、Fantasiaのcreate_world_overview相当として、"
-                    "world_name, overview, structure_description, structure を持つJSONだけを返してください。"
+                    "world_name, overview, structure_description, structure, locations, connections を持つJSONだけを返してください。"
+                    "locationsは世界地図の地点一覧、connectionsは地点間を2時間で結ぶ線です。"
                     "開始地点が自然に決まる場合は starting_location も追加してください。"
+                    "基本的に開始地点から遠いほど危険度を高くしてください。ただし物語上の例外は許可します。"
                 ),
             },
             {
                 "role": "user",
                 "content": (
                     f"希望世界名: {requested_world_name or 'AIに任せる'}\n"
+                    f"初期ロケーション数: {target_location_count}\n"
                     f"次の雰囲気で、新しいRPG世界の初期状態を作ってください: {premise_context}"
                 ),
             },
@@ -179,11 +271,12 @@ class GameEngine:
         response = self._chat_json(
             "create_world_overview",
             messages,
-            max_tokens=1000,
+            max_tokens=_world_overview_max_tokens(target_location_count),
             world_name="unknown",
             player_name=requested_world_name or player,
         )
 
+        self._emit_world_generation_progress(progress_callback, "location_graph", f"ロケーションを生成中（0/{target_location_count}）", 20, 100)
         world = WorldData.from_overview(_strip_response_metadata(response))
         if requested_world_name:
             world.world_name = requested_world_name
@@ -192,6 +285,16 @@ class GameEngine:
         if world.starting_location == "unknown":
             world.starting_location = "灯守りの宿"
             world.ensure_location(world.starting_location)
+        self._ensure_world_location_graph(
+            world,
+            response,
+            premise_text,
+            target_location_count,
+            progress_callback=progress_callback,
+            progress_start=20,
+            progress_end=45,
+        )
+        self._mark_location_visited(world, world.starting_location)
         world.history.append(
             {
                 "manager": "create_world_overview",
@@ -200,6 +303,7 @@ class GameEngine:
             }
         )
 
+        self._emit_world_generation_progress(progress_callback, "story", "ストーリーを生成中", 48, 100)
         story = self._create_story(player, premise_text, world)
         self._apply_story(world, story)
         world.history.append(
@@ -210,6 +314,7 @@ class GameEngine:
         )
 
         settlement_location = world.starting_location
+        self._emit_world_generation_progress(progress_callback, "settlement", "初期拠点を生成中", 60, 100)
         settlement = self._create_settlement_detail(player, world, settlement_location)
         self._apply_settlement_detail(world, settlement_location, settlement)
         world.history.append(
@@ -220,7 +325,9 @@ class GameEngine:
             }
         )
 
-        self._enrich_initial_characters(player, premise_text, world)
+        self._emit_world_generation_progress(progress_callback, "characters", "NPCを生成中", 70, 100)
+        self._enrich_initial_characters(player, premise_text, world, progress_callback=progress_callback, progress_start=70, progress_end=82)
+        self._emit_world_generation_progress(progress_callback, "quests", "クエストと報酬を生成中", 82, 100)
         settlement_quests = self._generate_settlement_quests(player, world, settlement_location)
         self._apply_settlement_quests(world, settlement_quests, settlement_location)
         world.history.append(
@@ -231,6 +338,7 @@ class GameEngine:
             }
         )
 
+        self._emit_world_generation_progress(progress_callback, "initial_narration", "初期場面を生成中", 92, 100)
         initial = self._create_initial_narration(player, premise_text, world)
         opening = str(
             initial.get("narration")
@@ -243,6 +351,8 @@ class GameEngine:
         if initial_location:
             world.ensure_location(initial_location, opening)
             _link_location_to_settlement(world, initial_location, settlement_location)
+            self._connect_world_locations(world, settlement_location, initial_location)
+            self._mark_location_visited(world, initial_location)
             world.starting_location = initial_location
         world.history.append(
             {
@@ -269,6 +379,7 @@ class GameEngine:
             self._install_player_character(player_character)
         if save_game:
             self.save_game()
+        self._emit_world_generation_progress(progress_callback, "completed", "ワールド生成完了", 100, 100)
         return self.state.log_text()
 
     def apply_player_character(self, character: CharacterData) -> str:
@@ -277,6 +388,37 @@ class GameEngine:
         self._install_player_character(character)
         self.save_game()
         return self.state.log_text()
+
+    def _emit_world_generation_progress(
+        self,
+        progress_callback: Callable[[dict[str, Any]], None] | None,
+        phase: str,
+        message: str,
+        current: int,
+        total: int,
+        *,
+        item_current: int | None = None,
+        item_total: int | None = None,
+    ) -> None:
+        if progress_callback is None:
+            return
+        safe_total = max(1, int(total or 1))
+        safe_current = max(0, min(safe_total, int(current or 0)))
+        payload: dict[str, Any] = {
+            "phase": phase,
+            "message": message,
+            "current": safe_current,
+            "total": safe_total,
+            "percent": int(safe_current * 100 / safe_total),
+        }
+        if item_current is not None:
+            payload["item_current"] = max(0, int(item_current))
+        if item_total is not None:
+            payload["item_total"] = max(0, int(item_total))
+        try:
+            progress_callback(payload)
+        except Exception:
+            return
 
     def generate_character_setup_traits(
         self,
@@ -326,6 +468,7 @@ class GameEngine:
         character.inventory = self.state.inventory
         character.location = self.state.current_location or self.state.world_data.starting_location
         character.state = "present"
+        self._ensure_character_runtime_data(character)
         self._ensure_player_progress(character)
         self.state.party = [character.to_dict()]
         self.state.world_data.characters[name] = character
@@ -1034,7 +1177,9 @@ class GameEngine:
         if not hours:
             return []
         event = self._advance_world_time(hours, source=source, reason=self._response_time_reason(response), append_log=False)
-        return [str(event["line"])] if event.get("line") else []
+        lines = [str(event["line"])] if event.get("line") else []
+        lines.extend(str(item) for item in event.get("companion_lines", []) if item)
+        return lines
 
     def _advance_world_time(
         self,
@@ -1052,6 +1197,7 @@ class GameEngine:
         new_hours = old_hours + requested_hours
         self._set_world_time_total_hours(new_hours)
         new_label = self._world_time_label(new_hours)
+        companion_lines = self._resolve_pending_companion_returns(source=source)
         reason_text = f" {reason}" if reason else ""
         line = f"> [時間] {old_label} -> {new_label} (+{requested_hours}時間){reason_text}"
         event = {
@@ -1064,11 +1210,13 @@ class GameEngine:
             "old_label": old_label,
             "new_label": new_label,
             "line": line,
+            "companion_lines": companion_lines,
             "changed": True,
         }
         self.state.world_data.extra.setdefault("time_events", []).append(dict(event))
         if append_log:
             self.state.display_log.append(line)
+            self.state.display_log.extend(companion_lines)
         return event
 
     def _world_time_total_hours(self) -> int:
@@ -1364,14 +1512,21 @@ class GameEngine:
             if not name:
                 continue
             facility_type = str(item.get("type") or item.get("facility_type") or _facility_type_from_name(name)).strip()
+            original_name = name
+            name = _shop_facility_display_name(name, facility_type, settlement.name, len(normalized))
+            raw_location_name = str(item.get("location_name") or "").strip()
+            location_name = raw_location_name
+            if not location_name or _normalize_facility_name(original_name) in _normalize_facility_name(location_name):
+                location_name = f"{settlement.name} / {name}"
             record = {
                 "name": name,
                 "type": facility_type,
                 "description": str(item.get("description") or item.get("overview") or ""),
                 "npc_name": str(item.get("npc_name") or item.get("keeper") or item.get("owner") or ""),
                 "npc_role": str(item.get("npc_role") or item.get("role") or ""),
-                "location_name": str(item.get("location_name") or f"{settlement.name} / {name}"),
+                "location_name": location_name,
                 "source": str(item.get("source") or "settlement"),
+                "aliases": _facility_aliases(original_name, name, facility_type),
             }
             if _looks_like_guild_name(name):
                 record["type"] = "guild"
@@ -1388,12 +1543,16 @@ class GameEngine:
             return None
         facilities = self._ensure_settlement_facilities(settlement)
         for facility in facilities:
-            if _facility_name_matches(str(facility.get("name") or ""), requested):
+            if _facility_record_matches_requested(facility, requested):
                 return facility
         requested_type = _facility_type_from_name(requested)
         if requested_type == "guild":
             for facility in facilities:
                 if str(facility.get("type") or "").lower() == "guild" or _looks_like_guild_name(str(facility.get("name") or "")):
+                    return facility
+        if requested_type in SHOP_FACILITY_TYPES:
+            for facility in facilities:
+                if str(facility.get("type") or "").lower() == requested_type:
                     return facility
         return None
 
@@ -1464,6 +1623,8 @@ class GameEngine:
         location.extra["facility_name"] = facility_name
         location.extra["facility_type"] = str(facility.get("type") or _facility_type_from_name(facility_name))
         location.extra["facility"] = dict(facility)
+        self._connect_world_locations(self.state.world_data, settlement.name, location_name)
+        self._mark_location_visited(self.state.world_data, location_name)
         npc = self._ensure_facility_npc(settlement, facility, location_name)
         choices = self._location_default_choices(location_name) + _as_str_list((response or {}).get("choices"))
         if npc:
@@ -1481,6 +1642,8 @@ class GameEngine:
         if not npc_name:
             npc_name = _default_facility_npc_name(str(facility.get("name") or ""), str(facility.get("type") or ""))
             facility["npc_name"] = npc_name
+        if _world_has_dead_npc_identity(self.state.world_data, name=npc_name):
+            return None
         character = self.state.world_data.characters.get(npc_name)
         if character is None:
             character = CharacterData(
@@ -1493,8 +1656,13 @@ class GameEngine:
             facility["npc_name"] = character.name
             character.flags["source"] = "facility"
             character.extra["facility"] = str(facility.get("name") or "")
+            character.extra["facility_type"] = str(facility.get("type") or _facility_type_from_name(str(facility.get("name") or "")))
             character.extra["parent_settlement"] = settlement.name
             self.state.world_data.characters[character.name] = character
+        else:
+            character.extra["facility"] = str(facility.get("name") or character.extra.get("facility") or "")
+            character.extra["facility_type"] = str(facility.get("type") or character.extra.get("facility_type") or _facility_type_from_name(str(facility.get("name") or "")))
+            character.extra["parent_settlement"] = settlement.name
         self._set_character_presence(character, location_name)
         return character
 
@@ -1507,9 +1675,393 @@ class GameEngine:
             flags = self.state.party[0].setdefault("flags", {})
             if isinstance(flags, dict):
                 flags["current_location"] = location
+        for companion in self._party_companions():
+            self._set_character_presence(companion, location, "party")
+
+    def _ensure_world_location_graph(
+        self,
+        world: WorldData,
+        response: dict[str, Any] | None = None,
+        premise: str = "",
+        target_count: int = DEFAULT_WORLD_LOCATION_COUNT,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        progress_start: int = 0,
+        progress_end: int = 100,
+    ) -> dict[str, Any]:
+        target_count = _world_location_target_count(target_count)
+        graph = world.extra.get("location_graph")
+        if isinstance(graph, dict) and isinstance(graph.get("nodes"), dict) and isinstance(graph.get("edges"), list):
+            for name, location in world.locations.items():
+                self._set_location_graph_node(world, name, location=location)
+            self._recalculate_world_graph_layout(world)
+            return graph
+
+        rng = random.Random(f"{world.world_name}|{premise}|{target_count}")
+        nodes: dict[str, dict[str, Any]] = {}
+        edges: list[dict[str, Any]] = []
+        world.extra["location_graph"] = {
+            "edge_hours": WORLD_MAP_EDGE_HOURS,
+            "target_count": target_count,
+            "nodes": nodes,
+            "edges": edges,
+        }
+
+        raw_locations = _world_location_payloads(response or {})
+        self._emit_world_generation_progress(
+            progress_callback,
+            "location_graph",
+            f"ロケーションを生成中（0/{target_count}）",
+            progress_start,
+            100,
+            item_current=0,
+            item_total=target_count,
+        )
+        for payload in raw_locations:
+            name = _world_location_name_from_payload(payload)
+            if not name:
+                continue
+            description = _world_location_description_from_payload(payload)
+            kind = _infer_world_location_kind(payload, name, description)
+            danger = _world_location_danger_from_payload(payload)
+            location = world.ensure_location(name, description)
+            location.extra["location_kind"] = kind
+            location.extra["danger_level"] = danger
+            location.flags["discovered"] = bool(name == world.starting_location)
+            if _world_kind_is_settlement(kind):
+                location.flags["settlement"] = True
+            self._set_location_graph_node(world, name, kind=kind, danger=danger, location=location)
+            completed = min(len(nodes), target_count)
+            percent = progress_start + int((progress_end - progress_start) * completed / max(1, target_count))
+            self._emit_world_generation_progress(
+                progress_callback,
+                "location_graph",
+                f"ロケーションを生成中（{completed}/{target_count}）",
+                percent,
+                100,
+                item_current=completed,
+                item_total=target_count,
+            )
+
+        for name, location in list(world.locations.items()):
+            self._set_location_graph_node(world, name, location=location)
+
+        if world.starting_location and world.starting_location != "unknown":
+            world.ensure_location(world.starting_location)
+            self._set_location_graph_node(world, world.starting_location, kind="settlement", danger=0)
+
+        fallback_index = 1
+        while len(nodes) < target_count:
+            kind = _fallback_world_location_kind(rng, len(nodes))
+            name = _unique_world_location_name(world, _fallback_world_location_name(kind, fallback_index))
+            fallback_index += 1
+            danger = max(0, min(9, (len(nodes) // 8) + rng.randint(0, 1)))
+            description = _fallback_world_location_description(kind, danger)
+            location = world.ensure_location(name, description)
+            location.extra["location_kind"] = kind
+            location.extra["danger_level"] = danger
+            if _world_kind_is_settlement(kind):
+                location.flags["settlement"] = True
+            self._set_location_graph_node(world, name, kind=kind, danger=danger, location=location)
+            completed = min(len(nodes), target_count)
+            percent = progress_start + int((progress_end - progress_start) * completed / max(1, target_count))
+            self._emit_world_generation_progress(
+                progress_callback,
+                "location_graph",
+                f"ロケーションを生成中（{completed}/{target_count}）",
+                percent,
+                100,
+                item_current=completed,
+                item_total=target_count,
+            )
+
+        for payload in _world_connection_payloads(response or {}):
+            a = str(payload.get("from") or payload.get("source") or payload.get("a") or "").strip()
+            b = str(payload.get("to") or payload.get("target") or payload.get("b") or "").strip()
+            if a and b and a in nodes and b in nodes:
+                self._connect_world_locations(world, a, b, hours=WORLD_MAP_EDGE_HOURS)
+
+        ordered_names = list(nodes)
+        start = world.starting_location if world.starting_location in nodes else (ordered_names[0] if ordered_names else "")
+        connected = {start} if start else set()
+        for name in ordered_names:
+            if not name or name in connected:
+                continue
+            candidates = [item for item in ordered_names if item in connected] or ordered_names[:1]
+            parent = min(candidates, key=lambda item: (len(self._world_neighbors(world, item)), rng.random()))
+            self._connect_world_locations(world, parent, name, hours=WORLD_MAP_EDGE_HOURS)
+            connected.add(name)
+        self._recalculate_world_graph_layout(world)
+        return world.extra["location_graph"]
+
+    def _set_location_graph_node(
+        self,
+        world: WorldData,
+        name: str,
+        *,
+        kind: str = "",
+        danger: int | None = None,
+        location: LocationData | None = None,
+    ) -> dict[str, Any]:
+        graph = world.extra.setdefault("location_graph", {"edge_hours": WORLD_MAP_EDGE_HOURS, "nodes": {}, "edges": []})
+        nodes = graph.setdefault("nodes", {})
+        key = str(name or "").strip()
+        if not key:
+            key = "unknown"
+        location = location or world.ensure_location(key)
+        extra = location.extra if isinstance(location.extra, dict) else {}
+        resolved_kind = kind or str(extra.get("location_kind") or extra.get("kind") or extra.get("type") or "").strip()
+        if not resolved_kind:
+            resolved_kind = _infer_world_location_kind({}, key, location.description)
+        resolved_danger = _safe_int(extra.get("danger_level"), 0) if danger is None else int(danger)
+        node = nodes.setdefault(key, {})
+        node.update(
+            {
+                "name": key,
+                "description": _short_text(location.description or str(node.get("description") or ""), 220),
+                "kind": resolved_kind,
+                "danger": max(0, resolved_danger),
+                "visited": bool(location.flags.get("visited") or node.get("visited")),
+                "discovered": bool(location.flags.get("discovered") or node.get("discovered")),
+            }
+        )
+        if _world_kind_is_settlement(resolved_kind):
+            location.flags["settlement"] = True
+        location.extra["location_kind"] = resolved_kind
+        location.extra["danger_level"] = node["danger"]
+        return node
+
+    def _connect_world_locations(
+        self,
+        world: WorldData,
+        a: str,
+        b: str,
+        *,
+        hours: int = WORLD_MAP_EDGE_HOURS,
+        kind: str = "road",
+    ) -> None:
+        a = str(a or "").strip()
+        b = str(b or "").strip()
+        if not a or not b or a == b:
+            return
+        graph = self._ensure_world_location_graph(world, target_count=max(len(world.locations), 1))
+        self._set_location_graph_node(world, a)
+        self._set_location_graph_node(world, b)
+        edge_key = {a, b}
+        for edge in graph.setdefault("edges", []):
+            if {str(edge.get("from") or ""), str(edge.get("to") or "")} == edge_key:
+                edge["hours"] = WORLD_MAP_EDGE_HOURS
+                return
+        graph.setdefault("edges", []).append({"from": a, "to": b, "hours": int(hours or WORLD_MAP_EDGE_HOURS), "kind": kind})
+
+    def _world_neighbors(self, world: WorldData, location: str) -> list[str]:
+        graph = self._ensure_world_location_graph(world, target_count=max(len(world.locations), 1))
+        name = str(location or "").strip()
+        neighbors: list[str] = []
+        for edge in graph.get("edges", []):
+            a = str(edge.get("from") or "").strip()
+            b = str(edge.get("to") or "").strip()
+            if a == name and b:
+                neighbors.append(b)
+            elif b == name and a:
+                neighbors.append(a)
+        return _dedupe_strs(neighbors)
+
+    def _mark_location_visited(self, world: WorldData, location: str) -> None:
+        name = str(location or "").strip()
+        if not name:
+            return
+        location_data = world.ensure_location(name)
+        location_data.flags["visited"] = True
+        location_data.flags["discovered"] = True
+        node = self._set_location_graph_node(world, name, location=location_data)
+        node["visited"] = True
+        visited = world.extra.setdefault("visited_locations", [])
+        if isinstance(visited, list) and name not in visited:
+            visited.append(name)
+
+    def _recalculate_world_graph_layout(self, world: WorldData) -> None:
+        graph = world.extra.get("location_graph")
+        if not isinstance(graph, dict):
+            return
+        nodes = graph.get("nodes")
+        if not isinstance(nodes, dict) or not nodes:
+            return
+        start = world.starting_location if world.starting_location in nodes else next(iter(nodes))
+        depths: dict[str, int] = {start: 0}
+        queue = [start]
+        while queue:
+            current = queue.pop(0)
+            for neighbor in self._world_neighbors_no_ensure(world, current):
+                if neighbor in depths:
+                    continue
+                depths[neighbor] = depths[current] + 1
+                queue.append(neighbor)
+        levels: dict[int, list[str]] = {}
+        for name in nodes:
+            depth = depths.get(name, max(depths.values(), default=0) + 1)
+            nodes[name]["depth"] = depth
+            levels.setdefault(depth, []).append(name)
+        for depth, names in levels.items():
+            names.sort()
+            for index, name in enumerate(names):
+                nodes[name]["x"] = 80 + depth * 170
+                nodes[name]["y"] = 80 + index * 130 + (depth % 2) * 48
+
+    def _world_neighbors_no_ensure(self, world: WorldData, location: str) -> list[str]:
+        graph = world.extra.get("location_graph")
+        if not isinstance(graph, dict):
+            return []
+        name = str(location or "").strip()
+        result: list[str] = []
+        for edge in graph.get("edges", []):
+            a = str(edge.get("from") or "").strip()
+            b = str(edge.get("to") or "").strip()
+            if a == name and b:
+                result.append(b)
+            elif b == name and a:
+                result.append(a)
+        return _dedupe_strs(result)
+
+    def _shortest_world_path(self, world: WorldData, start: str, goal: str, *, visited_only: bool = False) -> list[str]:
+        graph = self._ensure_world_location_graph(world, target_count=max(len(world.locations), 1))
+        nodes = graph.get("nodes", {})
+        if start not in nodes or goal not in nodes:
+            return []
+        queue: list[list[str]] = [[start]]
+        seen = {start}
+        while queue:
+            path = queue.pop(0)
+            current = path[-1]
+            if current == goal:
+                return path
+            for neighbor in self._world_neighbors(world, current):
+                if neighbor in seen:
+                    continue
+                if visited_only and not bool(nodes.get(neighbor, {}).get("visited")):
+                    continue
+                seen.add(neighbor)
+                queue.append([*path, neighbor])
+        return []
+
+    def world_map_data(self) -> dict[str, Any]:
+        world = self.state.world_data
+        graph = self._ensure_world_location_graph(world, target_count=max(len(world.locations), DEFAULT_WORLD_LOCATION_COUNT))
+        nodes = graph.get("nodes", {})
+        visited_nodes = [
+            dict(node)
+            for node in nodes.values()
+            if isinstance(node, dict) and bool(node.get("visited"))
+        ]
+        visited_names = {str(node.get("name") or "") for node in visited_nodes}
+        edges = [
+            dict(edge)
+            for edge in graph.get("edges", [])
+            if str(edge.get("from") or "") in visited_names and str(edge.get("to") or "") in visited_names
+        ]
+        return {
+            "current_location": self.state.current_location,
+            "edge_hours": WORLD_MAP_EDGE_HOURS,
+            "nodes": visited_nodes,
+            "edges": edges,
+        }
+
+    def travel_world_map_to(self, destination: str) -> str:
+        world = self.state.world_data
+        current = self.state.current_location or world.starting_location
+        target = str(destination or "").strip()
+        graph = self._ensure_world_location_graph(world, target_count=max(len(world.locations), DEFAULT_WORLD_LOCATION_COUNT))
+        nodes = graph.get("nodes", {})
+        if not target or target not in nodes or not bool(nodes.get(target, {}).get("visited")):
+            raise ValueError("その場所はまだ地図に記録されていません。")
+        if target == current:
+            return self.state.log_text(16)
+        if not _world_location_allows_world_map_departure(world, current):
+            raise ValueError("危険地帯の奥からはワールドマップ移動できません。入口や安全な退避地点まで戻ってください。")
+        path = self._shortest_world_path(world, current, target, visited_only=True)
+        if not path:
+            raise ValueError("現在地からその場所までの道が見つかりません。")
+        hours = (len(path) - 1) * WORLD_MAP_EDGE_HOURS
+        time_event = self._advance_world_time(hours, source="world_map_travel", reason="world map travel", append_log=False)
+        narration = f"{' -> '.join(path)} の道をたどって移動した。"
+        choices = self._location_default_choices(target)
+        self._set_player_presence(target)
+        self.state.flags["screen_mode"] = "exploration"
+        self._mark_location_visited(world, target)
+        self.state.append_turn("ワールドマップ移動", narration, target, choices, input_type="choice")
+        if time_event.get("line"):
+            self.state.display_log.append(str(time_event["line"]))
+        self.state.display_log.extend(str(item) for item in time_event.get("companion_lines", []) if item)
+        self._apply_visual_intent({}, "world_map_travel", target, current)
+        self.save_game()
+        return self.state.log_text(16)
+
+    def _normalize_world_response_location(
+        self,
+        action: str,
+        input_type: str,
+        response: dict[str, Any],
+        proposed_location: str,
+    ) -> dict[str, Any]:
+        world = self.state.world_data
+        current = self.state.current_location or world.starting_location
+        proposed = str(proposed_location or current).strip() or current
+        self._ensure_world_location_graph(world, target_count=max(len(world.locations), DEFAULT_WORLD_LOCATION_COUNT))
+        self._mark_location_visited(world, current)
+        if proposed == current:
+            return {"location": current, "narration_lines": [], "status_lines": [], "moved": False, "denied": False}
+
+        graph = world.extra.get("location_graph", {})
+        nodes = graph.get("nodes", {}) if isinstance(graph, dict) else {}
+        neighbors = self._world_neighbors(world, current)
+        status_lines: list[str] = []
+        narration_lines: list[str] = []
+        teleport = _teleport_movement_requested(response)
+
+        if proposed in neighbors or teleport:
+            if proposed not in nodes:
+                location = world.ensure_location(proposed, _short_text(str(response.get("narration") or ""), 220))
+                kind = _infer_world_location_kind({}, proposed, location.description)
+                location.extra["location_kind"] = kind
+                self._set_location_graph_node(world, proposed, kind=kind, location=location)
+            if not teleport:
+                event = self._advance_world_time(WORLD_MAP_EDGE_HOURS, source="world_travel", reason="adjacent location travel", append_log=False)
+                if event.get("line"):
+                    status_lines.append(str(event["line"]))
+                status_lines.extend(str(item) for item in event.get("companion_lines", []) if item)
+            self._mark_location_visited(world, proposed)
+            return {"location": proposed, "narration_lines": narration_lines, "status_lines": status_lines, "moved": True, "denied": False}
+
+        if proposed in nodes:
+            narration_lines.append(f"この場所から「{proposed}」へ直接向かう道は見つからない。隣接している場所から順に移動する必要がある。")
+            return {"location": current, "narration_lines": narration_lines, "status_lines": [], "moved": False, "denied": True}
+
+        if _nearby_dynamic_location_requested(action, proposed) and len(neighbors) <= WORLD_MAP_MAX_DYNAMIC_DEGREE:
+            description = _short_text(str(response.get("narration") or response.get("description") or ""), 220)
+            kind = _infer_world_location_kind({}, proposed, description)
+            current_node = nodes.get(current, {}) if isinstance(nodes, dict) else {}
+            danger = max(0, _safe_int(current_node.get("danger"), 0) + (1 if kind in {"dungeon", "wilderness"} else 0))
+            location = world.ensure_location(proposed, description)
+            location.extra["location_kind"] = kind
+            location.extra["danger_level"] = danger
+            if _world_kind_is_settlement(kind):
+                location.flags["settlement"] = True
+            self._set_location_graph_node(world, proposed, kind=kind, danger=danger, location=location)
+            self._connect_world_locations(world, current, proposed)
+            event = self._advance_world_time(WORLD_MAP_EDGE_HOURS, source="world_travel", reason="new nearby location", append_log=False)
+            if event.get("line"):
+                status_lines.append(str(event["line"]))
+            status_lines.extend(str(item) for item in event.get("companion_lines", []) if item)
+            self._mark_location_visited(world, proposed)
+            status_lines.append(f"> [Map] 新しい地点を発見: {proposed}")
+            return {"location": proposed, "narration_lines": [], "status_lines": status_lines, "moved": True, "denied": False}
+
+        narration_lines.append(f"この付近に「{proposed}」のような場所は見当たらない。")
+        return {"location": current, "narration_lines": narration_lines, "status_lines": [], "moved": False, "denied": True}
 
     def _location_default_choices(self, location_name: str) -> list[str]:
         choices = ["周囲を見る"]
+        for neighbor in self._world_neighbors(self.state.world_data, location_name)[:3]:
+            choices.append(f"{neighbor}へ移動")
         if _settlement_location_for_name(self.state.world_data, location_name):
             choices.insert(0, MAP_CHOICE_LABEL)
         if _location_is_guild(self.state.world_data, location_name) and not self.state.active_quest:
@@ -1525,12 +2077,24 @@ class GameEngine:
         )
 
     def _set_character_presence(self, character: CharacterData, location: str, state: str = "present") -> None:
+        self._ensure_character_runtime_data(character)
+        requested_state = state or character.state or "present"
+        if _character_state_is_dead(character) and requested_state not in {"dead", "corpse"}:
+            self._mark_character_dead(character, source="presence_guard")
+            return
         if location:
             character.location = location
             character.flags["current_location"] = location
             character.flags.setdefault("first_seen_location", location)
-        character.state = state or character.state or "present"
+            character.extra.setdefault("origin_location", location)
+        character.state = requested_state
         character.flags["state"] = character.state
+        if _actor_state_is_present(character.state):
+            character.flags["alive"] = True
+        if character.state in {"dead", "corpse"}:
+            self._mark_character_dead(character, source="presence")
+        else:
+            self._sync_companion_party_entry(character)
 
     def _set_monster_presence(self, monster: MonsterData, location: str, state: str = "present") -> None:
         if location:
@@ -1540,6 +2104,268 @@ class GameEngine:
         monster.state = state or monster.state or "present"
         monster.flags["state"] = monster.state
 
+    def _ensure_character_runtime_data(self, character: CharacterData, *, level: int | None = None) -> None:
+        if not character.uuid:
+            character.uuid = uuid4().hex
+        character.level = max(1, min(NPC_MAX_LEVEL, _safe_int(level if level is not None else character.level, 1)))
+        attrs = _character_runtime_attributes(character)
+        character.attributes = attrs
+        character.extra["attributes"] = dict(attrs)
+        ability = character.extra.setdefault("ability", {})
+        if isinstance(ability, dict):
+            ability["attributes"] = dict(attrs)
+        max_hp = character.max_hp or _character_calculated_max_hp(character)
+        max_sp = character.max_sp or _character_calculated_max_sp(character, max_hp=max_hp)
+        character.max_hp = max(1, _safe_int(max_hp, 1))
+        character.max_sp = max(1, _safe_int(max_sp, 1))
+        current_hp = _safe_int(character.current_hp, 0)
+        current_sp = _safe_int(character.current_sp, 0)
+        if current_hp <= 0 and not _character_state_is_dead(character):
+            current_hp = character.max_hp
+        if current_sp <= 0 and not _character_state_is_dead(character):
+            current_sp = character.max_sp
+        character.current_hp = max(0, min(character.max_hp, current_hp))
+        character.current_sp = max(0, min(character.max_sp, current_sp))
+        character.extra["level"] = character.level
+        character.extra["current_hp"] = character.current_hp
+        character.extra["max_hp"] = character.max_hp
+        character.extra["current_sp"] = character.current_sp
+        character.extra["max_sp"] = character.max_sp
+        character.flags["alive"] = not _character_state_is_dead(character)
+        character.flags["uuid"] = character.uuid
+
+    def _party_companions(self) -> list[CharacterData]:
+        names: list[str] = []
+        for item in self.state.party[1:2]:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or item.get("character_name") or "").strip()
+            if name:
+                names.append(name)
+                continue
+            uuid = str(item.get("uuid") or "").strip()
+            if uuid:
+                for character in self.state.world_data.characters.values():
+                    if character.uuid == uuid:
+                        names.append(character.name)
+                        break
+        result: list[CharacterData] = []
+        for name in names:
+            character = self.state.world_data.characters.get(name)
+            if not character or character.flags.get("is_player") or _character_state_is_dead(character):
+                continue
+            result.append(character)
+        return result[:1]
+
+    def _sync_companion_party_entry(self, character: CharacterData) -> None:
+        if character.flags.get("is_player"):
+            return
+        for index, item in enumerate(self.state.party[1:], start=1):
+            if not isinstance(item, dict):
+                continue
+            if item.get("name") != character.name and item.get("uuid") != character.uuid:
+                continue
+            entry = character.to_dict()
+            entry["party_role"] = "companion"
+            self.state.party[index] = entry
+            return
+
+    def _set_party_companion(self, character: CharacterData | None, *, source: str, reason: str = "") -> list[str]:
+        player_entry = self.state.party[0] if self.state.party and isinstance(self.state.party[0], dict) else None
+        if character is None:
+            if len(self.state.party) > 1:
+                removed = self.state.party[1:]
+                self.state.party = [player_entry] if player_entry else []
+                for item in removed:
+                    if isinstance(item, dict):
+                        npc = self.state.world_data.characters.get(str(item.get("name") or ""))
+                        if npc and not _character_state_is_dead(npc):
+                            self._return_companion_to_origin(npc, source=source, reason=reason)
+                return ["> [Party] Companion left the party."]
+            return []
+        if character.flags.get("is_player") or _character_state_is_dead(character):
+            return []
+        self._ensure_character_runtime_data(character)
+        for existing in self._party_companions():
+            if existing.name == character.name or existing.uuid == character.uuid:
+                continue
+            self._return_companion_to_origin(existing, source=source, reason="replaced")
+        self._set_character_presence(character, self.state.current_location or character.location or self.state.world_data.starting_location, "party")
+        entry = character.to_dict()
+        entry["party_role"] = "companion"
+        self.state.party = ([player_entry] if player_entry else []) + [entry]
+        event = {
+            "source": source,
+            "character": character.name,
+            "uuid": character.uuid,
+            "location": character.location,
+            "reason": reason,
+            "day": self.state.day,
+        }
+        self.state.world_data.extra.setdefault("party_events", []).append({**event, "action": "join"})
+        reason_text = f" {reason}" if reason else ""
+        return [f"> [Party] {character.name} joined the party.{reason_text}"]
+
+    def _remove_party_companion(
+        self,
+        character: CharacterData,
+        *,
+        source: str,
+        reason: str = "",
+        wait_at_current: bool = False,
+    ) -> list[str]:
+        before = len(self.state.party)
+        self.state.party = [
+            item
+            for index, item in enumerate(self.state.party)
+            if index == 0 or not (isinstance(item, dict) and (item.get("name") == character.name or item.get("uuid") == character.uuid))
+        ]
+        if len(self.state.party) == before:
+            return []
+        if not _character_state_is_dead(character):
+            if wait_at_current:
+                self._set_companion_waiting(character, source=source, reason=reason)
+            else:
+                self._return_companion_to_origin(character, source=source, reason=reason)
+        event = {
+            "source": source,
+            "character": character.name,
+            "uuid": character.uuid,
+            "location": character.location,
+            "reason": reason,
+            "day": self.state.day,
+            "action": "leave",
+        }
+        self.state.world_data.extra.setdefault("party_events", []).append(event)
+        reason_text = f" {reason}" if reason else ""
+        action_text = "waits here" if wait_at_current else "returned home"
+        return [f"> [Party] {character.name} left the party and {action_text}.{reason_text}"]
+
+    def _set_companion_waiting(self, character: CharacterData, *, source: str, reason: str = "") -> None:
+        day = self.current_absolute_day()
+        location = self.state.current_location or character.location or self.state.world_data.starting_location
+        origin = self._character_origin_location(character)
+        self._set_character_presence(character, location, "waiting")
+        character.extra["party_waiting"] = {
+            "source": source,
+            "reason": reason,
+            "started_day": day,
+            "expires_day": day + COMPANION_WAIT_RETURN_DAYS,
+            "wait_location": location,
+            "origin_location": origin,
+        }
+
+    def _return_companion_to_origin(self, character: CharacterData, *, source: str, reason: str = "") -> str:
+        origin = self._character_origin_location(character)
+        character.extra.pop("party_waiting", None)
+        if origin:
+            self.state.world_data.ensure_location(origin)
+            self._set_character_presence(character, origin, "present")
+        else:
+            self._set_character_presence(character, character.location or self.state.current_location, "present")
+        character.extra.setdefault("party_return_events", []).append(
+            {
+                "source": source,
+                "reason": reason,
+                "location": character.location,
+                "day": self.state.day,
+            }
+        )
+        return character.location
+
+    def _character_origin_location(self, character: CharacterData) -> str:
+        extra = character.extra if isinstance(character.extra, dict) else {}
+        flags = character.flags if isinstance(character.flags, dict) else {}
+        for value in (
+            extra.get("origin_location"),
+            extra.get("home_location"),
+            extra.get("spawn_location"),
+            flags.get("first_seen_location"),
+            flags.get("current_location"),
+            character.location,
+            self.state.world_data.starting_location,
+        ):
+            text = str(value or "").strip()
+            if text:
+                return text
+        return ""
+
+    def _resolve_pending_companion_returns(self, *, source: str) -> list[str]:
+        current_day = self.current_absolute_day()
+        lines: list[str] = []
+        for character in list(self.state.world_data.characters.values()):
+            if character.flags.get("is_player") or _character_state_is_dead(character):
+                continue
+            waiting = character.extra.get("party_waiting") if isinstance(character.extra, dict) else None
+            if not isinstance(waiting, dict):
+                continue
+            started_day = _safe_int(waiting.get("started_day"), current_day)
+            expires_day = _safe_int(waiting.get("expires_day"), started_day + COMPANION_WAIT_RETURN_DAYS)
+            if current_day < expires_day:
+                continue
+            old_location = character.location or str(waiting.get("wait_location") or "")
+            origin = self._character_origin_location(character)
+            if self._companion_can_return_to_origin(character):
+                destination = self._return_companion_to_origin(character, source=source, reason="wait_expired")
+                line = f"> [Party] {character.name} returned from {old_location or '-'} to {destination or origin or '-'}."
+                action = "return"
+            else:
+                character.extra.pop("party_waiting", None)
+                self._mark_character_dead(character, source="companion_wait_timeout")
+                line = f"> [Party] {character.name} could not return from {old_location or '-'} and died."
+                action = "dead"
+            self.state.world_data.extra.setdefault("companion_wait_events", []).append(
+                {
+                    "source": source,
+                    "character": character.name,
+                    "uuid": character.uuid,
+                    "action": action,
+                    "old_location": old_location,
+                    "origin_location": origin,
+                    "day": current_day,
+                }
+            )
+            lines.append(line)
+        return lines
+
+    def _companion_can_return_to_origin(self, character: CharacterData) -> bool:
+        world = self.state.world_data
+        origin = self._character_origin_location(character)
+        current = character.location or str(character.flags.get("current_location") or "")
+        if not origin or not current:
+            return False
+        if origin == current:
+            return True
+        if origin not in world.locations or current not in world.locations:
+            return False
+        if not _world_location_allows_world_map_departure(world, current):
+            return False
+        return bool(self._shortest_world_path(world, current, origin, visited_only=False))
+
+    def _mark_character_dead(self, character: CharacterData, *, source: str) -> None:
+        if character.flags.get("is_player"):
+            character.state = "dead"
+            character.flags["state"] = "dead"
+            character.flags["alive"] = False
+            return
+        character.state = "dead"
+        character.current_hp = 0
+        character.flags["state"] = "dead"
+        character.flags["alive"] = False
+        character.flags["dead"] = True
+        character.extra["death_source"] = source
+        dead_uuids = self.state.world_data.extra.setdefault("dead_npc_uuids", [])
+        if isinstance(dead_uuids, list) and character.uuid not in dead_uuids:
+            dead_uuids.append(character.uuid)
+        dead_names = self.state.world_data.extra.setdefault("dead_npc_names", [])
+        if isinstance(dead_names, list) and character.name not in dead_names:
+            dead_names.append(character.name)
+        self.state.party = [
+            item
+            for item in self.state.party
+            if not (isinstance(item, dict) and (item.get("name") == character.name or item.get("uuid") == character.uuid))
+        ]
+
     def prepare_vendor_inventory(self, character: CharacterData) -> dict[str, Any]:
         day = self.current_absolute_day()
         extra = character.extra if isinstance(character.extra, dict) else {}
@@ -1547,9 +2373,16 @@ class GameEngine:
             character.extra = extra
         if _safe_int(extra.get("vendor_inventory_day"), 0) == day and character.inventory:
             return {"changed": False, "day": day}
+        facility_type = str(extra.get("facility_type") or "").strip().lower()
+        if not facility_type:
+            location = self.state.world_data.locations.get(character.location or str(character.flags.get("current_location") or ""))
+            facility_type = str((location.extra.get("facility_type") if location else "") or "").strip().lower()
+        if not facility_type:
+            facility_type = _facility_type_from_name(str(extra.get("facility") or character.role or character.name))
         context = " ".join(
             part
             for part in (
+                f"facility_type:{facility_type}",
                 character.role,
                 character.category,
                 character.personality,
@@ -1562,6 +2395,7 @@ class GameEngine:
         character.inventory = generate_vendor_items(character.name, context)
         character.gold = character.gold or 120
         extra["vendor_inventory_day"] = day
+        extra["vendor_base_price_multiplier"] = SHOP_FACILITY_PRICE_MULTIPLIERS.get(facility_type, 1.0)
         extra["trade_price_multiplier"] = 1.0
         extra["trade_negotiation"] = {}
         event = {
@@ -1577,10 +2411,144 @@ class GameEngine:
         if character is None or not isinstance(character.extra, dict):
             return 1.0
         try:
-            value = float(character.extra.get("trade_price_multiplier", 1.0))
+            base = float(character.extra.get("vendor_base_price_multiplier", 1.0))
         except (TypeError, ValueError):
-            value = 1.0
-        return max(0.5, min(1.5, value))
+            base = 1.0
+        try:
+            negotiation = float(character.extra.get("trade_price_multiplier", 1.0))
+        except (TypeError, ValueError):
+            negotiation = 1.0
+        value = base * negotiation
+        return max(0.5, min(4.5, value))
+
+    def _trade_negotiation_target(self, action: str) -> CharacterData | None:
+        if not _is_trade_negotiation_action(action):
+            return None
+        active = self._active_conversation_character()
+        if active and self._character_can_trade(active):
+            return active
+        current_location = self.state.current_location or self.state.world_data.starting_location
+        candidates: list[CharacterData] = []
+        for character in self.state.world_data.characters.values():
+            if character.flags.get("is_player") or _character_state_is_dead(character):
+                continue
+            if not _actor_present_at(character.location, character.state, character.flags, current_location):
+                continue
+            if self._character_can_trade(character):
+                candidates.append(character)
+        if not candidates:
+            return None
+        action_text = str(action or "")
+        for character in candidates:
+            terms = _character_reference_terms(character)
+            facility = character.extra.get("facility") if isinstance(character.extra, dict) else ""
+            terms.append(str(facility or ""))
+            if any(term and term in action_text for term in terms):
+                return character
+        return candidates[0] if len(candidates) == 1 else None
+
+    def _character_can_trade(self, character: CharacterData) -> bool:
+        if character.flags.get("is_player") or _character_state_is_dead(character):
+            return False
+        extra = character.extra if isinstance(character.extra, dict) else {}
+        if character.inventory or extra.get("vendor_inventory_day") or extra.get("trade_price_multiplier") is not None:
+            return True
+        location = self.state.world_data.locations.get(character.location or str(character.flags.get("current_location") or ""))
+        location_type = str((location.extra.get("facility_type") if location else "") or "").casefold()
+        if location_type in SHOP_FACILITY_TYPES or location_type in {"weapon_shop", "armor_shop", "store"}:
+            return True
+        text = "\n".join(
+            str(value or "")
+            for value in (
+                character.name,
+                character.role,
+                character.category,
+                character.backstory,
+                extra.get("facility"),
+                extra.get("facility_type"),
+                extra.get("occupation"),
+                extra.get("archetype"),
+            )
+        ).casefold()
+        return any(
+            keyword in text
+            for keyword in (
+                "shop",
+                "store",
+                "market",
+                "merchant",
+                "vendor",
+                "trader",
+                "blacksmith",
+                "black market",
+                "apothecary",
+                "food store",
+                "material store",
+                "general store",
+                "magic store",
+                "闇商店",
+                "薬品店",
+                "食料店",
+                "素材店",
+                "雑貨店",
+                "魔術店",
+                "店",
+                "商人",
+                "店主",
+                "商店",
+                "市場",
+                "露店",
+                "行商",
+                "鍛冶",
+                "武器",
+                "防具",
+                "道具",
+                "薬",
+            )
+        )
+
+    def _resolve_trade_negotiation_action(self, action: str, input_type: str, character: CharacterData) -> str:
+        location = self.state.current_location or character.location or self.state.world_data.starting_location
+        vendor_event = self.prepare_vendor_inventory(character)
+        event = self.roll_trade_negotiation(character, action)
+        line = str(event.get("line") or "")
+        roll = event.get("roll") if isinstance(event, dict) else None
+        percent = int(round(self.vendor_price_multiplier(character) * 100))
+        if event.get("already_done"):
+            narration = line or f"{character.name}との今日の値引き交渉はすでに終わっている。"
+        else:
+            narration = f"{character.name}に値引き交渉を試みた。現在の購入価格は{percent}%になった。"
+        choices = self.state.choices or self._location_default_choices(location)
+        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        if vendor_event.get("changed"):
+            self.state.world_data.history.append(
+                {
+                    "manager": "prepare_vendor_inventory",
+                    "character": character.name,
+                    "location": location,
+                    "response": vendor_event,
+                }
+            )
+        display_lines: list[str] = []
+        if isinstance(roll, dict) and roll.get("line"):
+            display_lines.append(str(roll["line"]))
+        if line:
+            display_lines.append(line)
+        display_lines.extend(str(item) for item in event.get("relationship_lines", []) if item)
+        if display_lines:
+            self.state.display_log.extend(display_lines)
+        self.state.world_data.history.append(
+            {
+                "manager": "trade_negotiation",
+                "character": character.name,
+                "action": action,
+                "input_type": input_type,
+                "location": location,
+                "event": event,
+            }
+        )
+        self.save_game()
+        return self.state.log_text(16)
 
     def roll_trade_negotiation(self, character: CharacterData, action: str = "") -> dict[str, Any]:
         day = self.current_absolute_day()
@@ -1592,9 +2560,13 @@ class GameEngine:
             return {"changed": False, "already_done": True, "line": "> [交渉] 今日の値引き交渉はすでに終わっている。"}
         affinity = self._npc_affinity(character)
         target = 10
-        if affinity >= 6:
+        if affinity >= 60:
+            target = 7
+        elif affinity >= 30:
             target = 8
-        elif affinity <= -6:
+        elif affinity <= -60:
+            target = 13
+        elif affinity <= -30:
             target = 12
         roll = self._make_action_roll(
             action.strip() or f"{character.name}に値引き交渉をする",
@@ -1626,7 +2598,7 @@ class GameEngine:
         relationship_lines: list[str] = []
         if affinity_delta:
             relationship_lines = self._apply_npc_affinity_delta(character, affinity_delta, source="trade_negotiation", reason="値引き交渉")
-        percent = int(round(multiplier * 100))
+        percent = int(round(self.vendor_price_multiplier(character) * 100))
         outcome = "値引き" if multiplier < 1.0 else "値上げ"
         line = f"> [交渉] {character.name}: {outcome}（購入価格 {percent}%）"
         event = {
@@ -1653,16 +2625,16 @@ class GameEngine:
         if not isinstance(character.extra, dict):
             character.extra = {}
         value = character.extra.get("affinity", character.extra.get("trust", 0))
-        return max(-10, min(10, _safe_int(value, 0)))
+        return max(NPC_AFFINITY_MIN, min(NPC_AFFINITY_MAX, _safe_int(value, 0)))
 
     def _apply_npc_affinity_delta(self, character: CharacterData, delta: Any, *, source: str, reason: str = "") -> list[str]:
         if character.flags.get("is_player"):
             return []
-        requested_delta = max(-10, min(10, _safe_int(delta, 0)))
+        requested_delta = max(NPC_AFFINITY_DELTA_MIN, min(NPC_AFFINITY_DELTA_MAX, _safe_int(delta, 0)))
         if not requested_delta:
             return []
         old_value = self._npc_affinity(character)
-        new_value = max(-10, min(10, old_value + requested_delta))
+        new_value = max(NPC_AFFINITY_MIN, min(NPC_AFFINITY_MAX, old_value + requested_delta))
         actual_delta = new_value - old_value
         if not actual_delta:
             return []
@@ -1751,7 +2723,17 @@ class GameEngine:
             "followers",
             "escorted_npcs",
         ):
-            entries.extend(_as_list(response.get(key)))
+            for item in _as_list(response.get(key)):
+                if key in {"followers", "escorted_npcs"}:
+                    if isinstance(item, dict):
+                        data = dict(item)
+                        data.setdefault("follow_player", True)
+                        data.setdefault("state", "party")
+                        entries.append(data)
+                    else:
+                        entries.append({"name": item, "follow_player": True, "state": "party"})
+                else:
+                    entries.append(item)
         if not entries:
             return []
         fallback_location = default_location or str(response.get("location") or self.state.current_location or self.state.world_data.starting_location)
@@ -1765,6 +2747,23 @@ class GameEngine:
                 continue
             old_location = character.location or str(character.flags.get("current_location") or "")
             state = _movement_target_state(entry, character.state or "present")
+            party_action = _movement_party_action(entry, state)
+            if party_action == "dead":
+                self._mark_character_dead(character, source=source)
+                lines.append(f"> [NPC] {character.name} is dead.")
+                continue
+            if party_action == "wait":
+                lines.extend(self._remove_party_companion(character, source=source, reason=_relationship_reason(entry), wait_at_current=True))
+                continue
+            if party_action == "leave":
+                lines.extend(self._remove_party_companion(character, source=source, reason=_relationship_reason(entry)))
+                if _movement_has_explicit_location(entry) and target_location:
+                    self.state.world_data.ensure_location(target_location)
+                    self._set_character_presence(character, target_location, state if state not in {"party", "companion"} else "present")
+                continue
+            if party_action == "join":
+                lines.extend(self._set_party_companion(character, source=source, reason=_relationship_reason(entry)))
+                continue
             self.state.world_data.ensure_location(target_location)
             self._set_character_presence(character, target_location, state)
             event = {
@@ -1945,6 +2944,7 @@ class GameEngine:
                     "あなたはAI駆動RPGの拠点詳細作成担当です。"
                     "Fantasiaのcreate_settlement_detail相当として、"
                     "settlement_structure_description, atmosphere, settlement_structure, facilities, "
+                    "Shop facility types can include blacksmith, black_market, apothecary, food_store, material_store, general_store, and magic_store; every shop must have a proper unique name. "
                     "residents, adventurers を持つJSONだけを返してください。"
                     "facilities は name, type, description, npc_name, npc_role を持つ施設オブジェクトの配列にしてください。"
                     "residents と adventurers は人物オブジェクトの配列にしてください。"
@@ -2028,7 +3028,8 @@ class GameEngine:
                     f"requested_facility: {requested_facility}\n"
                     f"player_action: {action}\n"
                     "Judge whether this facility can be added. If allowed, include facility{name,type,description} and npc{name,role,personality,look}. "
-                    "Prefer ordinary settlement facilities such as guilds, shops, inns, temples, clinics, libraries, stables, and markets when plausible."
+                    "Prefer ordinary settlement facilities such as guilds, blacksmiths, black markets, apothecaries, food stores, material stores, general stores, magic stores, inns, temples, clinics, libraries, stables, and markets when plausible. "
+                    "Shop facilities must have a proper unique shop name instead of only a generic type name."
                 ),
             },
         ]
@@ -2045,14 +3046,22 @@ class GameEngine:
         npc = response.get("npc") if isinstance(response.get("npc"), dict) else {}
         name = str(raw.get("name") or raw.get("facility_name") or requested).strip() or requested
         facility_type = str(raw.get("type") or raw.get("facility_type") or _facility_type_from_name(name)).strip()
+        original_name = name
+        facility_index = len(_as_list(settlement.extra.get("facilities")))
+        name = _shop_facility_display_name(name, facility_type, settlement.name, facility_index)
+        raw_location_name = str(raw.get("location_name") or "").strip()
+        location_name = raw_location_name
+        if not location_name or _normalize_facility_name(original_name) in _normalize_facility_name(location_name):
+            location_name = f"{settlement.name} / {name}"
         return {
             "name": name,
             "type": facility_type,
             "description": str(raw.get("description") or raw.get("overview") or response.get("narration") or ""),
             "npc_name": str(npc.get("name") or raw.get("npc_name") or ""),
             "npc_role": str(npc.get("role") or raw.get("npc_role") or _default_facility_role(facility_type)),
-            "location_name": str(raw.get("location_name") or f"{settlement.name} / {name}"),
+            "location_name": location_name,
             "source": "facility_request_evaluator",
+            "aliases": _facility_aliases(original_name, name, facility_type),
             "raw_facility_request_evaluator": _strip_response_metadata(response),
         }
 
@@ -2228,9 +3237,32 @@ class GameEngine:
             status = "completed"
         return self._finish_quest(quest, status, source, response)
 
-    def _enrich_initial_characters(self, player_name: str, premise: str, world: WorldData) -> None:
+    def _enrich_initial_characters(
+        self,
+        player_name: str,
+        premise: str,
+        world: WorldData,
+        *,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        progress_start: int = 70,
+        progress_end: int = 82,
+    ) -> None:
         targets = list(world.characters.values())[:6]
-        for character in targets:
+        if not targets:
+            self._emit_world_generation_progress(progress_callback, "characters", "NPC生成をスキップ", progress_end, 100, item_current=0, item_total=0)
+            return
+        total = len(targets)
+        for index, character in enumerate(targets, start=1):
+            percent = progress_start + int((progress_end - progress_start) * (index - 1) / max(1, total))
+            self._emit_world_generation_progress(
+                progress_callback,
+                "characters",
+                f"NPC生成中（{index}/{total}: {character.name}）",
+                percent,
+                100,
+                item_current=index,
+                item_total=total,
+            )
             try:
                 profile = self._create_character(player_name, premise, world, character)
             except JsonResponseError as exc:
@@ -2262,6 +3294,16 @@ class GameEngine:
             else:
                 self._apply_character_skills(character, skills)
                 self._append_character_history(world, "create_skill", character, skills)
+            percent = progress_start + int((progress_end - progress_start) * index / max(1, total))
+            self._emit_world_generation_progress(
+                progress_callback,
+                "characters",
+                f"NPC生成中（{index}/{total}: {character.name}）",
+                percent,
+                100,
+                item_current=index,
+                item_total=total,
+            )
 
     def _append_character_enrichment_error(
         self,
@@ -3033,6 +4075,10 @@ class GameEngine:
                 return finish(self._resolve_player_attack(action_text, input_type))
             return finish(self._start_encounter_from_attack(action_text, input_type))
 
+        trade_negotiation_target = self._trade_negotiation_target(action_text)
+        if trade_negotiation_target:
+            return finish(self._resolve_trade_negotiation_action(action_text, input_type, trade_negotiation_target))
+
         facility_result = self._create_facility_from_action(action_text, input_type)
         if facility_result is not None:
             return finish(facility_result)
@@ -3139,6 +4185,13 @@ class GameEngine:
             or "進行は静かに保留された。"
         )
         location = str(response.get("location") or self.state.current_location)
+        movement_result = {"location": location, "narration_lines": [], "status_lines": []}
+        if not content_violation:
+            movement_result = self._normalize_world_response_location(action, input_type, response, location)
+            location = str(movement_result.get("location") or location)
+            movement_narration = [str(line) for line in movement_result.get("narration_lines", []) if str(line).strip()]
+            if movement_narration:
+                narration = "\n".join([narration, *movement_narration]).strip()
         choices = _as_str_list(response.get("choices")) or self.state.choices
         finished = _as_bool(response.get("finished"))
         history_entry = {
@@ -3172,9 +4225,11 @@ class GameEngine:
         self.state.flags["screen_mode"] = "exploration"
         choices = self._augment_location_choices(choices, location)
         self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self._set_player_presence(location)
         self._append_action_roll_log(action_roll)
         status_lines = [] if content_violation else self._apply_response_status_effects(response, "master_ai_facilitator", default_target="player")
         if not content_violation:
+            status_lines.extend(str(line) for line in movement_result.get("status_lines", []) if str(line).strip())
             status_lines.extend(self._apply_response_hp_effects(response, "master_ai_facilitator"))
             status_lines.extend(self._apply_response_sp_effects(response, "master_ai_facilitator"))
             status_lines.extend(self._apply_response_progress_effects(response, "master_ai_facilitator"))
@@ -3326,6 +4381,8 @@ class GameEngine:
         generated: list[CharacterData] = []
         for item in raw_npcs:
             character = _npc_from_raw(item, len(self.state.world_data.characters) + len(generated))
+            if _world_has_dead_npc_identity(self.state.world_data, name=character.name, uuid=character.uuid):
+                continue
             character.name = _unique_character_name(self.state.world_data, character.name)
             character.flags.setdefault("source", "master_ai_npc_generater")
             character.flags.setdefault("generated", True)
@@ -3404,6 +4461,7 @@ class GameEngine:
                     "必ず content_violation, think, narration, process, finished を持つJSONだけを返してください。"
                     "通常進行できる場合は content_violation を false にしてください。"
                     "game_side_action_roll が enabled=true の場合、成否・強制成功・強制失敗はゲーム側の確定判定として必ず尊重してください。"
+                    "通常の移動はworld_mapの隣接地点だけにしてください。テレポート、ポータル等の明示的な処理がない限り遠隔地へ直接移動させないでください。"
                 ),
             },
             {
@@ -4670,10 +5728,14 @@ class GameEngine:
         self.state.extra["base_max_hp"] = base_max_hp
         player = self.state.world_data.characters.get(self.state.player_name)
         if player:
+            player.current_hp = resolved_hp
+            player.max_hp = resolved_max_hp
             player.extra["current_hp"] = resolved_hp
             player.extra["max_hp"] = resolved_max_hp
             player.extra["base_max_hp"] = base_max_hp
         if self.state.party and isinstance(self.state.party[0], dict):
+            self.state.party[0]["current_hp"] = resolved_hp
+            self.state.party[0]["max_hp"] = resolved_max_hp
             self.state.party[0]["hp"] = f"{resolved_hp}/{resolved_max_hp}"
             extra = self.state.party[0].setdefault("extra", {})
             if isinstance(extra, dict):
@@ -4853,10 +5915,14 @@ class GameEngine:
         self.state.extra["base_max_sp"] = base_max_sp
         player = self.state.world_data.characters.get(self.state.player_name)
         if player:
+            player.current_sp = resolved_sp
+            player.max_sp = resolved_max_sp
             player.extra["current_sp"] = resolved_sp
             player.extra["max_sp"] = resolved_max_sp
             player.extra["base_max_sp"] = base_max_sp
         if self.state.party and isinstance(self.state.party[0], dict):
+            self.state.party[0]["current_sp"] = resolved_sp
+            self.state.party[0]["max_sp"] = resolved_max_sp
             self.state.party[0]["sp"] = f"{resolved_sp}/{resolved_max_sp}"
             extra = self.state.party[0].setdefault("extra", {})
             if isinstance(extra, dict):
@@ -4930,7 +5996,7 @@ class GameEngine:
         player = character or self.state.world_data.characters.get(self.state.player_name)
         candidates: list[Any] = [self.state.flags.get("player_level"), self.state.extra.get("level")]
         if player:
-            candidates.extend([player.extra.get("level"), player.flags.get("level")])
+            candidates.extend([player.level, player.extra.get("level"), player.flags.get("level")])
         if self.state.party and isinstance(self.state.party[0], dict):
             party = self.state.party[0]
             extra = party.get("extra") if isinstance(party.get("extra"), dict) else {}
@@ -4976,6 +6042,7 @@ class GameEngine:
         self.state.extra["next_exp"] = self._exp_to_next(resolved_level)
         player = character or self.state.world_data.characters.get(self.state.player_name)
         if player:
+            player.level = resolved_level
             player.extra["level"] = resolved_level
             player.extra["exp"] = resolved_exp
         if self.state.party and isinstance(self.state.party[0], dict):
@@ -4997,6 +6064,8 @@ class GameEngine:
     def _player_base_max_hp(self, character: CharacterData | None = None) -> int:
         player = character or self.state.world_data.characters.get(self.state.player_name)
         if player:
+            if player.max_hp:
+                return max(1, _safe_int(player.max_hp, 10))
             for source in (player.extra, player.flags):
                 if isinstance(source, dict):
                     value = source.get("base_max_hp") or source.get("original_max_hp") or source.get("max_hp")
@@ -5030,6 +6099,9 @@ class GameEngine:
                 return max(0, min(max_hp, _safe_int(value, max_hp)))
         player = self.state.world_data.characters.get(self.state.player_name)
         if player:
+            value = player.current_hp
+            if value:
+                return max(0, min(max_hp, _safe_int(value, max_hp)))
             value = player.extra.get("current_hp") if isinstance(player.extra, dict) else None
             if value is not None:
                 return max(0, min(max_hp, _safe_int(value, max_hp)))
@@ -5043,6 +6115,8 @@ class GameEngine:
     def _player_base_max_sp(self, character: CharacterData | None = None) -> int:
         player = character or self.state.world_data.characters.get(self.state.player_name)
         if player:
+            if player.max_sp:
+                return max(1, _safe_int(player.max_sp, 12))
             for source in (player.extra, player.flags):
                 if isinstance(source, dict):
                     value = source.get("base_max_sp") or source.get("original_max_sp") or source.get("max_sp")
@@ -5077,6 +6151,9 @@ class GameEngine:
                 return max(0, min(max_sp, _safe_int(value, max_sp)))
         player = self.state.world_data.characters.get(self.state.player_name)
         if player:
+            value = player.current_sp
+            if value:
+                return max(0, min(max_sp, _safe_int(value, max_sp)))
             value = player.extra.get("current_sp") if isinstance(player.extra, dict) else None
             if value is not None:
                 return max(0, min(max_sp, _safe_int(value, max_sp)))
@@ -5085,6 +6162,8 @@ class GameEngine:
     def _player_attributes(self, character: CharacterData | None = None) -> dict[str, int]:
         player = character or self.state.world_data.characters.get(self.state.player_name)
         attrs: dict[str, Any] = {}
+        if player and isinstance(player.attributes, dict):
+            attrs.update(player.attributes)
         if player and isinstance(player.extra, dict):
             direct = player.extra.get("attributes")
             if isinstance(direct, dict):
@@ -5191,6 +6270,7 @@ class GameEngine:
         self.state.extra["attributes"] = dict(cleaned)
         player = self.state.world_data.characters.get(self.state.player_name)
         if player:
+            player.attributes.update(cleaned)
             player.extra.setdefault("attributes", {}).update(cleaned)
             ability = player.extra.setdefault("ability", {})
             if isinstance(ability, dict):
@@ -5610,6 +6690,11 @@ class GameEngine:
         previous_location = self.state.current_location
         location = str(response.get("location") or self.state.current_location)
         narration = str(response.get("narration") or response.get("text") or "探索中に何かが起きた。")
+        movement_result = self._normalize_world_response_location(action, input_type, response, location)
+        location = str(movement_result.get("location") or location)
+        movement_narration = [str(line) for line in movement_result.get("narration_lines", []) if str(line).strip()]
+        if movement_narration:
+            narration = "\n".join([narration, *movement_narration]).strip()
         discovered_location = self._apply_discovered_location(response)
         generated_quests = self._apply_field_event_quests(response, location)
         generated_actors = self._apply_field_event_actors(response, location)
@@ -5645,8 +6730,10 @@ class GameEngine:
         )
         self.state.flags["screen_mode"] = "exploration"
         self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self._set_player_presence(location)
         self._append_action_roll_log(action_roll)
         status_lines = self._apply_response_status_effects(response, "field_event_evaluator", default_target="player")
+        status_lines.extend(str(line) for line in movement_result.get("status_lines", []) if str(line).strip())
         status_lines.extend(self._apply_response_hp_effects(response, "field_event_evaluator"))
         status_lines.extend(self._apply_response_sp_effects(response, "field_event_evaluator"))
         status_lines.extend(self._apply_response_progress_effects(response, "field_event_evaluator"))
@@ -5675,6 +6762,11 @@ class GameEngine:
             location.flags["discovered"] = True
             location.flags["source"] = "field_event_evaluator"
             location.extra["raw_field_event_location"] = raw
+            kind = _infer_world_location_kind(raw, name, description)
+            location.extra["location_kind"] = kind
+            location.extra["danger_level"] = _world_location_danger_from_payload(raw)
+            self._set_location_graph_node(self.state.world_data, name, kind=kind, location=location)
+            self._connect_world_locations(self.state.world_data, self.state.current_location, name)
             return name
         name = str(raw).strip()
         if not name:
@@ -5682,6 +6774,10 @@ class GameEngine:
         location = self.state.world_data.ensure_location(name)
         location.flags["discovered"] = True
         location.flags["source"] = "field_event_evaluator"
+        kind = _infer_world_location_kind({}, name, location.description)
+        location.extra["location_kind"] = kind
+        self._set_location_graph_node(self.state.world_data, name, kind=kind, location=location)
+        self._connect_world_locations(self.state.world_data, self.state.current_location, name)
         return name
 
     def _apply_field_event_actors(self, response: dict[str, Any], location: str) -> list[dict[str, str]]:
@@ -5689,6 +6785,8 @@ class GameEngine:
         raw_characters = _as_list(response.get("npcs") or response.get("characters") or response.get("npc"))
         for item in raw_characters:
             character = _npc_from_raw(item, len(self.state.world_data.characters) + len(generated))
+            if _world_has_dead_npc_identity(self.state.world_data, name=character.name, uuid=character.uuid):
+                continue
             character.name = _unique_character_name(self.state.world_data, character.name)
             character.flags.setdefault("source", "field_event_evaluator")
             self._set_character_presence(character, location)
@@ -6873,7 +7971,7 @@ def _safe_int(value: Any, fallback: int = 0) -> int:
 
 def _relationship_delta(value: Any) -> int:
     if isinstance(value, (int, float, str)):
-        return _safe_int(value, 0)
+        return max(NPC_AFFINITY_DELTA_MIN, min(NPC_AFFINITY_DELTA_MAX, _safe_int(value, 0)))
     if not isinstance(value, dict):
         return 0
     for key in (
@@ -6892,7 +7990,7 @@ def _relationship_delta(value: Any) -> int:
         "affection",
     ):
         if key in value:
-            return max(-10, min(10, _safe_int(value.get(key), 0)))
+            return max(NPC_AFFINITY_DELTA_MIN, min(NPC_AFFINITY_DELTA_MAX, _safe_int(value.get(key), 0)))
     if _as_bool(value.get("positive") or value.get("liked") or value.get("success")):
         return 1
     if _as_bool(value.get("negative") or value.get("disliked") or value.get("failure")):
@@ -6907,6 +8005,30 @@ def _relationship_reason(value: Any) -> str:
     if isinstance(reason, (dict, list)):
         return ""
     return _short_text(str(reason or "").strip(), 40)
+
+
+def _is_trade_negotiation_action(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    if not text:
+        return False
+    return any(
+        keyword in text
+        for keyword in (
+            "値引",
+            "値切",
+            "まけて",
+            "安く",
+            "価格交渉",
+            "値段交渉",
+            "割引",
+            "discount",
+            "haggle",
+            "bargain",
+            "negotiate price",
+            "lower price",
+            "cheaper",
+        )
+    )
 
 
 def _movement_target_location(value: Any, fallback: str) -> str:
@@ -6929,6 +8051,16 @@ def _movement_target_location(value: Any, fallback: str) -> str:
     return location or fallback
 
 
+def _movement_has_explicit_location(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    for key in ("location", "to", "destination", "new_location", "current_location"):
+        text = str(value.get(key) or "").strip()
+        if text and text.lower() not in {"here", "current", "current_location", "player", "with_player", "follow_player"}:
+            return True
+    return False
+
+
 def _movement_target_state(value: Any, fallback: str) -> str:
     if not isinstance(value, dict):
         return fallback or "present"
@@ -6938,6 +8070,68 @@ def _movement_target_state(value: Any, fallback: str) -> str:
     if _as_bool(value.get("left") or value.get("gone")):
         return "gone"
     return fallback or "present"
+
+
+def _movement_party_action(value: Any, state: str) -> str:
+    texts = [str(state or "")]
+    if isinstance(value, dict):
+        texts.extend(
+            str(value.get(key) or "")
+            for key in (
+                "action",
+                "party_action",
+                "relationship",
+                "status",
+                "presence",
+                "state",
+                "reason",
+            )
+        )
+        if _as_bool(
+            value.get("dead")
+            or value.get("killed")
+            or value.get("is_dead")
+            or value.get("died")
+        ):
+            return "dead"
+        if _as_bool(
+            value.get("wait")
+            or value.get("waiting")
+            or value.get("stay")
+            or value.get("standby")
+            or value.get("temporary_wait")
+            or value.get("wait_here")
+        ):
+            return "wait"
+        if _as_bool(
+            value.get("leave_party")
+            or value.get("party_leave")
+            or value.get("dismiss")
+            or value.get("dismissed")
+            or value.get("separate")
+        ):
+            return "leave"
+        if _as_bool(
+            value.get("join_party")
+            or value.get("party_join")
+            or value.get("companion")
+            or value.get("follow_player")
+            or value.get("with_player")
+            or value.get("following")
+            or value.get("escort")
+            or value.get("escorted")
+        ):
+            return "join"
+    joined = " ".join(text.casefold() for text in texts if text)
+    if any(word in joined for word in ("dead", "corpse", "killed", "died")):
+        return "dead"
+    if any(word in joined for word in ("wait", "waiting", "standby", "stay here", "temporary", "待機", "待つ", "ここで待")):
+        return "wait"
+    if any(word in joined for word in ("leave", "left", "depart", "dismiss", "separate", "gone", "removed")):
+        return "leave"
+    if any(word in joined for word in ("party", "companion", "join", "follow", "following", "escort", "ally")):
+        return "join"
+    return ""
 
 
 def _normalise_element_id(value: Any, fallback: str = "physical") -> str:
@@ -7220,6 +8414,290 @@ def _safe_asset_segment(value: str) -> str:
     return cleaned or "unknown"
 
 
+def _character_runtime_attributes(character: CharacterData) -> dict[str, int]:
+    attrs: dict[str, Any] = {}
+    if isinstance(character.attributes, dict):
+        attrs.update(character.attributes)
+    if isinstance(character.extra, dict):
+        direct = character.extra.get("attributes")
+        if isinstance(direct, dict):
+            attrs.update(direct)
+        ability = character.extra.get("ability")
+        if isinstance(ability, dict) and isinstance(ability.get("attributes"), dict):
+            attrs.update(ability["attributes"])
+    resolved = {
+        key: max(1, _safe_int(attrs.get(key), default))
+        for key, default in CHARACTER_DEFAULT_ATTRIBUTES.items()
+    }
+    resolved["magic"] = max(1, _safe_int(attrs.get("magic", attrs.get("mag", resolved["int"])), resolved["int"]))
+    resolved["will"] = max(1, _safe_int(attrs.get("will", resolved["wis"]), resolved["wis"]))
+    return resolved
+
+
+def _character_calculated_max_hp(character: CharacterData) -> int:
+    attrs = _character_runtime_attributes(character)
+    level = max(1, _safe_int(character.level, 1))
+    return max(10, 8 + level * 3 + attrs["con"] * 2 + attrs["str"] // 2 + attrs["will"] // 3)
+
+
+def _character_calculated_max_sp(character: CharacterData, *, max_hp: int | None = None) -> int:
+    attrs = _character_runtime_attributes(character)
+    level = max(1, _safe_int(character.level, 1))
+    resolved_max_hp = max_hp if max_hp is not None else _character_calculated_max_hp(character)
+    return max(6, int(resolved_max_hp * 0.45) + attrs["magic"] + attrs["will"] + level * 2)
+
+
+def _character_state_is_dead(character: CharacterData) -> bool:
+    state = str(character.state or character.flags.get("state") or "").strip().lower()
+    if state in {"dead", "corpse", "killed"}:
+        return True
+    if character.flags.get("dead") is True or character.flags.get("alive") is False:
+        return True
+    return False
+
+
+def _world_location_target_count(value: Any) -> int:
+    requested = _safe_int(value, DEFAULT_WORLD_LOCATION_COUNT)
+    candidates = sorted(WORLD_LOCATION_COUNT_OPTIONS.values())
+    return min(candidates, key=lambda item: abs(item - requested))
+
+
+def _world_overview_max_tokens(target_count: Any) -> int:
+    count = _world_location_target_count(target_count)
+    return max(1600, min(5200, 800 + count * 45))
+
+
+def _world_location_payloads(value: Any) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        for key in ("locations", "location_nodes", "map_locations", "nodes"):
+            payloads.extend(_world_location_payloads(value.get(key)))
+        structure = value.get("structure")
+        if isinstance(structure, (dict, list)):
+            payloads.extend(_world_location_payloads(structure))
+        if any(key in value for key in ("name", "title", "location_name", "id")):
+            payloads.append(dict(value))
+    elif isinstance(value, list):
+        for item in value:
+            payloads.extend(_world_location_payloads(item))
+    elif isinstance(value, str):
+        text = value.strip()
+        if text:
+            payloads.append({"name": text})
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for payload in payloads:
+        name = _world_location_name_from_payload(payload)
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        result.append(payload)
+    return result
+
+
+def _world_connection_payloads(value: Any) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        for key in ("connections", "edges", "routes", "roads", "links", "paths"):
+            payloads.extend(_world_connection_payloads(value.get(key)))
+        structure = value.get("structure")
+        if isinstance(structure, (dict, list)):
+            payloads.extend(_world_connection_payloads(structure))
+        if any(key in value for key in ("from", "source", "a")) and any(key in value for key in ("to", "target", "b")):
+            payloads.append(dict(value))
+    elif isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                payloads.extend(_world_connection_payloads(item))
+    return payloads
+
+
+def _world_location_name_from_payload(payload: dict[str, Any]) -> str:
+    for key in ("name", "title", "location_name", "id"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _world_location_description_from_payload(payload: dict[str, Any]) -> str:
+    for key in ("description", "overview", "summary", "detail", "text"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _world_location_danger_from_payload(payload: dict[str, Any]) -> int:
+    for key in ("danger", "danger_level", "threat", "threat_level", "difficulty", "rank"):
+        if key in payload:
+            return max(0, _safe_int(payload.get(key), 0))
+    return 0
+
+
+def _infer_world_location_kind(payload: dict[str, Any], name: str, description: str = "") -> str:
+    for key in ("kind", "type", "category", "location_kind"):
+        value = str(payload.get(key) or "").strip().lower()
+        if value:
+            if value in {"town", "village", "city", "settlement", "hamlet", "base"}:
+                return "settlement"
+            if value in {"dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair"}:
+                return "dungeon"
+            if value in {"facility", "shop", "inn", "guild", "temple", "market"}:
+                return "facility"
+            return value
+    text = f"{name}\n{description}".lower()
+    if any(word in text for word in ("dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair", "洞窟", "迷宮", "遺跡", "鉱山")):
+        return "dungeon"
+    if any(word in text for word in ("town", "village", "city", "settlement", "guild", "inn", "村", "街", "町", "都市", "宿場")):
+        return "settlement"
+    if any(word in text for word in ("forest", "swamp", "mountain", "plain", "wilderness", "森", "沼", "山", "荒野", "平原")):
+        return "wilderness"
+    return "landmark"
+
+
+def _world_kind_is_settlement(kind: str) -> bool:
+    return str(kind or "").strip().lower() in {"settlement", "town", "village", "city", "hamlet", "base"}
+
+
+def _world_location_allows_world_map_departure(world: WorldData, name: str) -> bool:
+    location = world.locations.get(str(name or "").strip())
+    if location is None:
+        return False
+    if _world_location_is_world_map_exit(location):
+        return True
+    return not _world_location_blocks_world_map_departure(location)
+
+
+def _world_location_blocks_world_map_departure(location: LocationData) -> bool:
+    kind = str(location.extra.get("location_kind") or "").strip().lower()
+    danger = _safe_int(location.extra.get("danger_level"), 0)
+    if kind in {"dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair"}:
+        return True
+    if kind in {"wilderness", "forest", "swamp", "mountain", "wilds"} and danger >= 2:
+        return True
+    if location.flags.get("dangerous") or location.flags.get("dungeon"):
+        return True
+    return False
+
+
+def _world_location_is_world_map_exit(location: LocationData) -> bool:
+    for key in (
+        "world_map_departure_allowed",
+        "world_map_exit",
+        "fast_travel_exit",
+        "dungeon_entrance",
+        "entrance",
+        "exit",
+        "safe_exit",
+    ):
+        if _as_bool(location.flags.get(key)) or _as_bool(location.extra.get(key)):
+            return True
+    text = "\n".join(
+        str(value or "")
+        for value in (
+            location.name,
+            location.description,
+            location.area,
+            location.extra.get("location_kind"),
+            location.extra.get("kind"),
+            location.extra.get("type"),
+            location.extra.get("category"),
+        )
+    ).lower()
+    return any(
+        marker in text
+        for marker in (
+            "entrance",
+            "exit",
+            "gate",
+            "foyer",
+            "checkpoint",
+            "camp",
+            "safe room",
+            "入口",
+            "入り口",
+            "出入口",
+            "出口",
+            "門",
+            "前庭",
+            "退避",
+            "野営",
+            "キャンプ",
+        )
+    )
+
+
+def _fallback_world_location_kind(rng: random.Random, index: int) -> str:
+    if index == 0:
+        return "settlement"
+    return rng.choice(("wilderness", "landmark", "dungeon", "settlement", "wilderness"))
+
+
+def _fallback_world_location_name(kind: str, index: int) -> str:
+    prefix = {
+        "settlement": "Settlement",
+        "dungeon": "Dungeon",
+        "wilderness": "Wilds",
+        "landmark": "Landmark",
+        "facility": "Facility",
+    }.get(kind, "Location")
+    return f"{prefix} {index:02d}"
+
+
+def _fallback_world_location_description(kind: str, danger: int) -> str:
+    labels = {
+        "settlement": "A settled place connected to the local roads.",
+        "dungeon": "A dangerous site where stronger threats may appear.",
+        "wilderness": "Open wilderness between safer places.",
+        "landmark": "A notable place on the road.",
+    }
+    return f"{labels.get(kind, 'A location in the world.')} Danger {danger}."
+
+
+def _unique_world_location_name(world: WorldData, base: str) -> str:
+    name = str(base or "Location").strip() or "Location"
+    if name not in world.locations:
+        return name
+    index = 2
+    while f"{name} {index}" in world.locations:
+        index += 1
+    return f"{name} {index}"
+
+
+def _nearby_dynamic_location_requested(action: str, proposed_location: str) -> bool:
+    text = f"{action}\n{proposed_location}".lower()
+    movement_words = ("go", "move", "travel", "head", "enter", "nearby", "around", "探", "行", "向", "入", "近く", "周辺")
+    location_words = (
+        "dungeon",
+        "cave",
+        "ruin",
+        "forest",
+        "tower",
+        "mine",
+        "村",
+        "街",
+        "町",
+        "洞窟",
+        "迷宮",
+        "森",
+        "塔",
+        "遺跡",
+        "鉱山",
+    )
+    return any(word in text for word in movement_words) and any(word in text for word in location_words)
+
+
+def _teleport_movement_requested(response: dict[str, Any]) -> bool:
+    if not isinstance(response, dict):
+        return False
+    text = " ".join(
+        str(response.get(key) or "")
+        for key in ("movement_type", "travel_type", "transport", "method", "process", "narration")
+    ).lower()
+    return any(word in text for word in ("teleport", "portal", "warp", "gate", "転移", "瞬間移動", "ポータル"))
+
+
 def _quest_start_choices(quests: list[QuestData]) -> list[str]:
     return []
 
@@ -7492,21 +8970,79 @@ def _facility_names_from_structure(value: Any) -> list[str]:
     return _dedupe_strs(names)
 
 
+def _shop_facility_display_name(name: str, facility_type: str, settlement_name: str, index: int = 0) -> str:
+    clean_name = str(name or "").strip()
+    resolved_type = str(facility_type or _facility_type_from_name(clean_name)).strip().lower()
+    if resolved_type not in SHOP_FACILITY_TYPES:
+        return clean_name
+    normalized = _normalize_facility_name(clean_name)
+    generic_names = {_normalize_facility_name(item) for item in GENERIC_SHOP_FACILITY_NAMES}
+    if clean_name and normalized not in generic_names:
+        return clean_name
+    bank = SHOP_FACILITY_NAME_BANK.get(resolved_type) or SHOP_FACILITY_NAME_BANK["general_store"]
+    rng = random.Random(f"facility-shop-name:{settlement_name}:{resolved_type}:{clean_name}:{index}")
+    suffix = bank[rng.randrange(len(bank))]
+    prefix = str(settlement_name or "").strip()
+    return f"{prefix}の{suffix}" if prefix else suffix
+
+
+def _facility_aliases(original_name: str, display_name: str, facility_type: str) -> list[str]:
+    aliases = []
+    for value in (original_name, _shop_type_generic_name(facility_type)):
+        text = str(value or "").strip()
+        if text and not _facility_name_matches(text, display_name) and text not in aliases:
+            aliases.append(text)
+    return aliases
+
+
+def _shop_type_generic_name(facility_type: str) -> str:
+    return {
+        "blacksmith": "鍛冶屋",
+        "black_market": "闇商店",
+        "apothecary": "薬品店",
+        "food_store": "食料店",
+        "material_store": "素材店",
+        "general_store": "雑貨店",
+        "magic_store": "魔術店",
+        "shop": "商店",
+        "market": "市場",
+    }.get(str(facility_type or "").strip().lower(), "")
+
+
+def _facility_record_matches_requested(facility: dict[str, Any], requested: str) -> bool:
+    requested_type = _facility_type_from_name(requested)
+    facility_type = str(facility.get("type") or _facility_type_from_name(str(facility.get("name") or ""))).strip().lower()
+    if _facility_name_matches(str(facility.get("name") or ""), requested):
+        return True
+    aliases = facility.get("aliases")
+    if isinstance(aliases, list):
+        for alias in aliases:
+            if _facility_name_matches(str(alias or ""), requested):
+                return True
+    return requested_type != "facility" and requested_type == facility_type
+
+
 def _facility_record(name: str, settlement_name: str, facility_type: str = "") -> dict[str, Any]:
     resolved_type = facility_type or _facility_type_from_name(name)
+    original_name = str(name or "").strip()
+    display_name = _shop_facility_display_name(original_name, resolved_type, settlement_name)
     return {
-        "name": name,
+        "name": display_name,
         "type": resolved_type,
         "description": f"{settlement_name}にある{name}。",
         "npc_name": "",
         "npc_role": _default_facility_role(resolved_type),
-        "location_name": f"{settlement_name} / {name}",
+        "location_name": f"{settlement_name} / {display_name}",
         "source": "create_settlement_detail",
+        "aliases": _facility_aliases(original_name, display_name, resolved_type),
     }
 
 
 def _facility_exists(facilities: list[dict[str, Any]], name: str) -> bool:
-    return any(_facility_name_matches(str(item.get("name") or ""), name) for item in facilities)
+    return any(
+        _facility_record_matches_requested(item, name) if isinstance(item, dict) else False
+        for item in facilities
+    )
 
 
 def _facility_name_matches(existing: str, requested: str) -> bool:
@@ -7527,6 +9063,18 @@ def _facility_type_from_name(name: str) -> str:
     text = str(name or "").lower()
     if _looks_like_guild_name(name):
         return "guild"
+    direct_mapping = (
+        ("black_market", ("black market", "black_market", "闇商店", "闇市", "裏市場")),
+        ("blacksmith", ("blacksmith", "smith", "weapon shop", "armor shop", "鍛冶", "武具", "武器", "防具")),
+        ("apothecary", ("apothecary", "potion", "medicine shop", "薬品店", "薬屋", "薬草", "回復")),
+        ("food_store", ("food store", "grocery", "食料店", "食料", "食材")),
+        ("material_store", ("material store", "素材店", "素材", "鉱石", "材料")),
+        ("magic_store", ("magic store", "magic shop", "scroll", "魔術店", "魔法店", "巻物")),
+        ("general_store", ("general store", "雑貨店", "よろず屋", "道具屋")),
+    )
+    for facility_type, needles in direct_mapping:
+        if any(needle in text for needle in needles):
+            return facility_type
     mapping = (
         ("blacksmith", ("鍛冶", "武器", "防具", "smith", "blacksmith", "weapon", "armor")),
         ("shop", ("道具", "雑貨", "商店", "市場", "market", "shop", "store")),
@@ -7550,6 +9098,17 @@ def _looks_like_guild_name(name: str) -> bool:
 
 
 def _default_facility_role(facility_type: str) -> str:
+    modern_roles = {
+        "black_market": "闇商人",
+        "apothecary": "薬師",
+        "food_store": "食料店主",
+        "material_store": "素材商",
+        "general_store": "雑貨店主",
+        "magic_store": "魔術商",
+    }
+    normalized_type = str(facility_type or "").strip().lower()
+    if normalized_type in modern_roles:
+        return modern_roles[normalized_type]
     return {
         "guild": "ギルド受付",
         "blacksmith": "鍛冶職人",
@@ -7604,6 +9163,18 @@ def _looks_like_facility_term(value: str) -> bool:
 def _canonical_facility_name(keyword: str) -> str:
     text = str(keyword or "")
     lowered = text.lower()
+    if any(word in lowered or word in text for word in ("black market", "black_market", "闇商店", "闇市", "裏市場")):
+        return "闇商店"
+    if any(word in lowered or word in text for word in ("apothecary", "potion", "medicine shop", "薬品店", "薬屋", "薬草")):
+        return "薬品店"
+    if any(word in lowered or word in text for word in ("food store", "grocery", "食料店", "食料", "食材")):
+        return "食料店"
+    if any(word in lowered or word in text for word in ("material store", "素材店", "素材", "鉱石", "材料")):
+        return "素材店"
+    if any(word in lowered or word in text for word in ("magic store", "magic shop", "scroll", "魔術店", "魔法店", "巻物")):
+        return "魔術店"
+    if any(word in lowered or word in text for word in ("general store", "雑貨店", "よろず屋")):
+        return "雑貨店"
     if any(word in lowered or word in text for word in ("guild", "adventurer", "ギルド", "冒険者", "依頼掲示板")):
         return DEFAULT_GUILD_NAME
     if any(word in lowered or word in text for word in ("blacksmith", "smith", "weapon", "armor", "鍛冶", "武器", "防具")):
@@ -8421,6 +9992,8 @@ def _should_generate_npc_name(
         return False
     if name == world.world_name or name in world.characters or name in world.monsters:
         return False
+    if _world_has_dead_npc_identity(world, name=name):
+        return False
     lowered = name.lower()
     if lowered in {"player", "pc", "npc", "character", "unknown", "monster", "enemy", "hero", "protagonist", "you"}:
         return False
@@ -8429,6 +10002,19 @@ def _should_generate_npc_name(
     if _existing_scene_character_matches(world, name, location, player_name):
         return False
     return True
+
+
+def _world_has_dead_npc_identity(world: WorldData, *, name: str = "", uuid: str = "") -> bool:
+    extra = world.extra if isinstance(world.extra, dict) else {}
+    dead_names = extra.get("dead_npc_names")
+    if name and isinstance(dead_names, list):
+        if any(str(item) == name for item in dead_names):
+            return True
+    dead_uuids = extra.get("dead_npc_uuids")
+    if uuid and isinstance(dead_uuids, list):
+        if any(str(item) == uuid for item in dead_uuids):
+            return True
+    return False
 
 
 def _is_player_reference(name: str, world: WorldData, player_name: str = "") -> bool:
@@ -8535,6 +10121,24 @@ def _world_ai_context(
     }
     if isinstance(world.extra, dict) and world.extra.get("world_time"):
         data["world_time"] = _compact_value(world.extra.get("world_time"), max_chars=400)
+    if isinstance(world.extra, dict) and isinstance(world.extra.get("location_graph"), dict):
+        graph = world.extra.get("location_graph") or {}
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        edges = graph.get("edges", []) if isinstance(graph.get("edges"), list) else []
+        data["world_map"] = {
+            "movement_rule": "normal movement is limited to adjacent locations; each edge takes 2 hours",
+            "known_nodes": [
+                {
+                    "name": name,
+                    "kind": node.get("kind"),
+                    "danger": node.get("danger"),
+                    "visited": node.get("visited"),
+                }
+                for name, node in list(nodes.items())[:location_limit]
+                if isinstance(node, dict)
+            ],
+            "connections": edges[: max(0, location_limit * 2)],
+        }
     if include_locations:
         data["locations"] = [
             _location_ai_context(location)
@@ -8575,9 +10179,19 @@ def _location_ai_context(location: Any) -> dict[str, Any]:
 
 def _character_ai_context(character: CharacterData, *, details: bool = True) -> dict[str, Any]:
     data: dict[str, Any] = {
+        "uuid": character.uuid,
         "name": character.name,
         "role": character.role,
         "category": character.category,
+        "location": character.location,
+        "state": character.state,
+        "alive": not _character_state_is_dead(character),
+        "level": character.level,
+        "current_hp": character.current_hp,
+        "max_hp": character.max_hp,
+        "current_sp": character.current_sp,
+        "max_sp": character.max_sp,
+        "attributes": _compact_value(character.attributes, max_chars=500),
         "gender": character.gender,
         "age": character.age,
         "backstory": _short_text(character.backstory, 700 if details else 280),
@@ -8587,8 +10201,8 @@ def _character_ai_context(character: CharacterData, *, details: bool = True) -> 
     }
     if not character.flags.get("is_player"):
         affinity = character.extra.get("affinity", character.extra.get("trust", 0)) if isinstance(character.extra, dict) else 0
-        data["affinity"] = max(-10, min(10, _safe_int(affinity, 0)))
-        data["affinity_scale"] = "-10: fully hostile, 0: neutral, 10: fully trusted"
+        data["affinity"] = max(NPC_AFFINITY_MIN, min(NPC_AFFINITY_MAX, _safe_int(affinity, 0)))
+        data["affinity_scale"] = "-100: fully hostile, 0: neutral, 100: fully trusted; one event should usually change -10 to +10"
     if isinstance(character.extra, dict):
         for source_key, target_key in (
             ("level", "level"),
@@ -8929,6 +10543,13 @@ def _actor_present_at(location: str, state: str, flags: dict[str, Any], current_
     if not actor_location or actor_location != current_location:
         return False
     actor_state = str(state or flags.get("state") or "present").strip().lower()
+    if not actor_state:
+        actor_state = "present"
+    return _actor_state_is_present(actor_state)
+
+
+def _actor_state_is_present(value: str) -> bool:
+    actor_state = str(value or "present").strip().lower()
     if not actor_state:
         actor_state = "present"
     return actor_state not in {"absent", "gone", "left", "hidden", "dead", "ended", "inactive", "removed"}

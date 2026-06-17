@@ -430,9 +430,48 @@ LOOT_PROFILES: dict[str, list[tuple[str, int]]] = {
 
 VENDOR_PROFILES: dict[str, list[tuple[str, int]]] = {
     "healer": [("medicine", 5), ("potion", 4), ("plant", 3), ("liquid_material", 2), ("scroll", 1)],
-    "blacksmith": [("small_weapon", 2), ("medium_weapon", 4), ("large_weapon", 1), ("long_weapon", 2), ("shield", 2), ("body_armor", 2), ("metal", 3)],
+    "apothecary": [("medicine", 5), ("potion", 5), ("plant", 4), ("mushroom", 2), ("liquid_material", 2)],
+    "blacksmith": [
+        ("small_weapon", 2),
+        ("medium_weapon", 4),
+        ("large_weapon", 2),
+        ("long_weapon", 3),
+        ("throwable_weapon", 1),
+        ("shield", 2),
+        ("body_armor", 2),
+        ("headgear", 1),
+        ("gauntlets", 1),
+        ("leg_armor", 1),
+    ],
+    "black_market": [
+        ("small_weapon", 2),
+        ("medium_weapon", 4),
+        ("large_weapon", 2),
+        ("long_weapon", 3),
+        ("throwable_weapon", 1),
+        ("shield", 2),
+        ("body_armor", 2),
+        ("headgear", 2),
+        ("gauntlets", 1),
+        ("leg_armor", 1),
+        ("accessory", 2),
+    ],
+    "food_store": [("food", 6), ("drink", 3), ("mushroom", 1), ("plant", 1)],
+    "material_store": [
+        ("other_material", 4),
+        ("ore", 3),
+        ("metal", 3),
+        ("plant", 2),
+        ("creature_part", 2),
+        ("liquid_material", 2),
+        ("magical_material", 1),
+        ("scrap", 2),
+        ("gem", 1),
+    ],
     "mage": [("scroll", 4), ("potion", 2), ("magical_material", 4), ("gem", 2), ("relic", 1), ("document", 2)],
+    "magic_store": [("scroll", 5), ("magical_material", 4), ("potion", 2), ("gem", 2), ("relic", 1), ("document", 2), ("accessory", 1)],
     "inn": [("food", 5), ("drink", 4), ("medicine", 1), ("tool", 1)],
+    "general_store": [("food", 3), ("drink", 2), ("tool", 4), ("medicine", 2), ("clothing", 2), ("legwear", 1), ("scrap", 2), ("other_material", 2), ("document", 1)],
     "general": [("food", 3), ("drink", 2), ("tool", 4), ("medicine", 2), ("clothing", 2), ("scrap", 2)],
 }
 
@@ -506,10 +545,13 @@ def generate_loot_items(location_name: str, context: str = "", count: int | None
 
 def generate_vendor_items(owner_name: str, context: str = "", count: int | None = None) -> list[dict[str, Any]]:
     profile_name = _vendor_profile_name(f"{owner_name} {context}")
-    profile = VENDOR_PROFILES[profile_name]
+    profile = VENDOR_PROFILES.get(profile_name, VENDOR_PROFILES["general"])
     rng = _rng("vendor", owner_name, context, profile_name)
     item_count = count if count is not None else rng.randint(5, 8)
-    return [_random_item(profile, rng, source="vendor", context=owner_name) for _ in range(max(1, item_count))]
+    return [
+        _random_item(profile, rng, source="vendor", context=owner_name, rarity_profile=profile_name)
+        for _ in range(max(1, item_count))
+    ]
 
 
 def make_item(
@@ -1103,15 +1145,21 @@ def _clean_item_name(value: Any, fallback: str) -> str:
     return text
 
 
-def _random_item(profile: list[tuple[str, int]], rng: random.Random, source: str, context: str) -> dict[str, Any]:
+def _random_item(
+    profile: list[tuple[str, int]],
+    rng: random.Random,
+    source: str,
+    context: str,
+    rarity_profile: str = "",
+) -> dict[str, Any]:
     categories, weights = zip(*profile)
     category = rng.choices(categories, weights=weights, k=1)[0]
     name, description, base_value = rng.choice(ITEM_TEMPLATES.get(category, [(CATEGORY_LABELS.get(category, "アイテム"), "", CATEGORY_BASE_VALUE.get(category, 5))]))
     if category in EQUIPMENT_CATEGORIES:
-        rarity = rng.choices(list(RARITY_ORDER), weights=[65, 22, 8, 3.5, 1.2, 0.3], k=1)[0]
+        rarity = _random_equipment_rarity(rng, rarity_profile)
         multiplier = 1.0
     else:
-        rarity = rng.choices(["common", "uncommon", "rare"], weights=[76, 20, 4], k=1)[0]
+        rarity = _random_stackable_rarity(rng, rarity_profile)
         multiplier = {"common": 1.0, "uncommon": 1.5, "rare": 2.3}[rarity]
     quantity = _random_quantity(category, rng)
     return make_item(
@@ -1123,6 +1171,22 @@ def _random_item(profile: list[tuple[str, int]], rng: random.Random, source: str
         rarity=rarity,
         source=source,
     )
+
+
+def _random_equipment_rarity(rng: random.Random, profile_name: str = "") -> str:
+    if profile_name == "black_market":
+        return rng.choices(["epic", "legendary", "artifact"], weights=[72, 24, 4], k=1)[0]
+    if profile_name == "blacksmith":
+        return rng.choices(["common", "uncommon", "rare", "epic", "legendary"], weights=[42, 34, 20, 3.5, 0.5], k=1)[0]
+    if profile_name == "magic_store":
+        return rng.choices(["uncommon", "rare", "epic", "legendary"], weights=[56, 32, 10, 2], k=1)[0]
+    return rng.choices(list(RARITY_ORDER), weights=[65, 22, 8, 3.5, 1.2, 0.3], k=1)[0]
+
+
+def _random_stackable_rarity(rng: random.Random, profile_name: str = "") -> str:
+    if profile_name in {"magic_store", "material_store"}:
+        return rng.choices(["common", "uncommon", "rare"], weights=[62, 30, 8], k=1)[0]
+    return rng.choices(["common", "uncommon", "rare"], weights=[76, 20, 4], k=1)[0]
 
 
 def _loot_profile_name(text: str) -> str:
@@ -1142,6 +1206,20 @@ def _loot_profile_name(text: str) -> str:
 
 def _vendor_profile_name(text: str) -> str:
     lowered = text.lower()
+    if "facility_type:black_market" in lowered or any(word in lowered for word in ("black market", "black_market", "闇商店", "闇市", "裏市場")):
+        return "black_market"
+    if "facility_type:blacksmith" in lowered or any(word in lowered for word in ("blacksmith", "鍛冶", "武具", "武器", "防具")):
+        return "blacksmith"
+    if "facility_type:apothecary" in lowered or any(word in lowered for word in ("potion", "薬品", "薬屋", "薬草", "回復")):
+        return "apothecary"
+    if "facility_type:food_store" in lowered or any(word in lowered for word in ("food store", "grocery", "食料店", "食料", "食材")):
+        return "food_store"
+    if "facility_type:material_store" in lowered or any(word in lowered for word in ("material store", "素材店", "素材", "鉱石", "材料")):
+        return "material_store"
+    if "facility_type:magic_store" in lowered or any(word in lowered for word in ("scroll", "魔術店", "魔法店", "巻物")):
+        return "magic_store"
+    if "facility_type:general_store" in lowered or any(word in lowered for word in ("general store", "雑貨店", "よろず屋", "道具屋")):
+        return "general_store"
     if any(word in lowered for word in ("heal", "doctor", "apothecary", "薬", "医", "治療", "聖職")):
         return "healer"
     if any(word in lowered for word in ("smith", "weapon", "armor", "鍛冶", "武器", "防具", "傭兵")):

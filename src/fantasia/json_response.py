@@ -131,10 +131,20 @@ class ManagerSchema:
                 "- NPC好感度が変化する場合は relationship_change または affinity_changes に "
                 "{target/name/npc_name, delta, reason} を返してください。delta は差分で、0が中立、-10が完全敵対、10が完全信頼です。"
             )
+        if any(field.name in {"relationship_change", "relationship_changes", "npc_relationship_change", "affinity_change", "affinity_changes"} for field in self.fields):
+            lines.append(
+                "- NPC affinity scale is -100 to 100. Return only the change as delta, normally clamped from -10 to +10 per event."
+            )
         if any(field.name in {"npc_movement", "npc_movements", "character_movement", "character_movements", "move_npc", "move_npcs"} for field in self.fields):
             lines.append(
                 "- NPCが同行・離脱・別地点へ移動した場合は npc_movements に "
                 "{target/name/npc_name, location/to/destination, state, reason} を返してください。文章だけで同行させず、必ず実データ更新用に返してください。"
+            )
+        if any(field.name in {"npc_movement", "npc_movements", "character_movement", "character_movements", "move_npc", "move_npcs"} for field in self.fields):
+            lines.append(
+                "- Party movement must also be explicit: use state='party' or join_party=true when an NPC joins, "
+                "leave_party=true when an NPC leaves, wait=true or state='waiting' when an NPC waits on the current map, "
+                "and state='dead' when an NPC dies."
             )
         lines.append(json.dumps(self.example, ensure_ascii=False, indent=2))
         return "\n".join(lines)
@@ -270,16 +280,24 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("structure_description", (str,)),
             FieldRule("structure", (dict, list), non_empty=False, string_items=False),
             FieldRule("starting_location", (str,), required=False),
+            FieldRule("locations", (list, dict), string_items=False),
+            FieldRule("connections", (list, dict), non_empty=False, string_items=False),
         ),
         example={
             "world_name": "硝子森の辺境",
             "overview": "古い森と鉱山跡に囲まれた辺境。",
             "structure_description": "宿場町、森、鉱山跡が接続している。",
             "structure": {
-                "settlements": [{"name": "灯守りの宿"}],
-                "regions": ["硝子森", "錆びた鉱山跡"],
+                "map_rule": "地点同士は2時間単位の道で結ばれている。",
+                "danger_rule": "開始地点から離れるほど危険度が上がる。",
+                "themes": ["古い森", "錆びた鉱山跡"],
             },
             "starting_location": "灯守りの宿",
+            "locations": [
+                {"name": "灯守りの宿", "kind": "settlement", "danger": 0, "description": "旅人が集まる宿場町。"},
+                {"name": "硝子森", "kind": "wilderness", "danger": 1, "description": "透明な葉が鳴る森。"},
+            ],
+            "connections": [{"from": "灯守りの宿", "to": "硝子森", "hours": 2}],
         },
     ),
     "check_world_content_violation": ManagerSchema(
@@ -1067,7 +1085,17 @@ def schema_instruction(manager_name: str) -> str:
     schema = SCHEMAS.get(manager_name)
     if not schema:
         return "応答はJSONオブジェクトだけにしてください。"
-    return schema.instruction()
+    instruction = schema.instruction()
+    if manager_name == "create_world_overview":
+        instruction += (
+            "\ncreate_world_overview専用ルール:\n"
+            "- トップレベルの world_name, overview, structure_description, structure, locations, connections を必ず返してください。\n"
+            "- locations はロケーション配列、connections は {from, to, hours} の配列にしてください。\n"
+            "- locations の各要素は name, kind, danger, description を持たせてください。\n"
+            "- kind は settlement/wilderness/dungeon/landmark/facility のいずれかを優先してください。\n"
+            "- structure には世界全体の地理ルール、危険度ルール、文化圏、主要テーマなどを入れてください。\n"
+        )
+    return instruction
 
 
 def validate_manager_response(manager_name: str, value: Any) -> tuple[dict[str, Any], list[str]]:

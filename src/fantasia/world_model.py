@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any, TypeVar
+from uuid import uuid4
 
 
 T = TypeVar("T")
@@ -44,11 +45,18 @@ class LocationData:
 
 @dataclass
 class CharacterData:
+    uuid: str = field(default_factory=lambda: uuid4().hex)
     name: str = "unknown"
     role: str = ""
     category: str = ""
     location: str = ""
     state: str = "present"
+    level: int = 1
+    current_hp: int = 0
+    max_hp: int = 0
+    current_sp: int = 0
+    max_sp: int = 0
+    attributes: dict[str, int] = field(default_factory=dict)
     gender: str = ""
     age: str = ""
     backstory: str = ""
@@ -68,7 +76,14 @@ class CharacterData:
     @classmethod
     def from_dict(cls, data: dict[str, Any], default_name: str = "unknown") -> "CharacterData":
         kwargs = _known_kwargs(cls, data)
+        kwargs["uuid"] = str(kwargs.get("uuid") or uuid4().hex)
         kwargs["name"] = str(kwargs.get("name") or default_name)
+        kwargs["level"] = max(1, _as_int(kwargs.get("level"), 1))
+        kwargs["current_hp"] = max(0, _as_int(kwargs.get("current_hp"), 0))
+        kwargs["max_hp"] = max(0, _as_int(kwargs.get("max_hp"), 0))
+        kwargs["current_sp"] = max(0, _as_int(kwargs.get("current_sp"), 0))
+        kwargs["max_sp"] = max(0, _as_int(kwargs.get("max_sp"), 0))
+        kwargs["attributes"] = _int_dict(kwargs.get("attributes"))
         kwargs["image_generation_prompt"] = _as_list(kwargs.get("image_generation_prompt"))
         kwargs["traits"] = _as_list(kwargs.get("traits"))
         kwargs["skills"] = _as_list(kwargs.get("skills"))
@@ -429,6 +444,19 @@ def _guess_starting_location(structure: Any) -> str:
 
 def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _as_int(value: Any, fallback: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _int_dict(value: Any) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): _as_int(item, 0) for key, item in value.items()}
 
 
 def _as_list(value: Any) -> list[Any]:
