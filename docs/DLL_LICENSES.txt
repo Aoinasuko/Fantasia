@@ -1,0 +1,63 @@
+Fantasia distributed DLL / runtime license list
+Last updated: 2026-06-17
+
+Scope
+-----
+This file summarizes third-party runtime binaries that may be bundled under
+publish/.fantasia_runtime by scripts/build_exe.ps1.
+
+It covers DLL files, Python extension modules (.pyd), and helper executables
+used as runtime components. Model files under model/text and model/graphic are
+not bundled by default and are not covered by this file.
+
+This is a practical distribution checklist, not legal advice. Before a public
+release, verify the current upstream license terms for the exact binary package
+you ship.
+
+
+Summary
+-------
+
+| Component | Bundled files / patterns | License summary | Notes / source |
+| --- | --- | --- | --- |
+| Fantasia | Fantasia.exe, .fantasia_runtime/fantasia.exe | MIT License | Project license: license.txt |
+| Nuitka runtime support | Generated standalone runtime code inside .fantasia_runtime/fantasia.exe | AGPL-3.0 with Nuitka Runtime Library Exception | https://github.com/Nuitka/Nuitka |
+| Python 3.10.6 | python310.dll, _*.pyd, select.pyd, unicodedata.pyd | Python Software Foundation License | https://docs.python.org/3.10/license.html |
+| Tcl/Tk 8.6 | tcl86t.dll, tk86t.dll, _tkinter.pyd | Tcl/Tk license | Bundled full text: .fantasia_runtime/tk/license.terms; https://www.tcl-lang.org/software/tcltk/license.html |
+| OpenSSL 1.1.1 | libssl-1_1.dll, libcrypto-1_1.dll, _ssl.pyd, _hashlib.pyd | OpenSSL / SSLeay license for 1.1.1 series | https://www.openssl.org/source/license.html |
+| libffi | libffi-7.dll, _ctypes.pyd linkage | MIT-style libffi license | https://github.com/libffi/libffi/blob/master/LICENSE |
+| Pillow / PIL extensions | PIL/*.pyd | HPND / MIT-CMU style Pillow license | Local venv source: pillow-*.dist-info/licenses/LICENSE; https://github.com/python-pillow/Pillow/blob/main/LICENSE |
+| llama.cpp | bin/llama*/llama*.exe, bin/llama*/llama*.dll, bin/llama*/mtmd.dll, bin/llama*/rpc-server.exe | MIT License | https://github.com/ggml-org/llama.cpp/blob/master/LICENSE |
+| ggml | bin/llama*/ggml*.dll, ggml runtime pieces used by stable-diffusion.cpp | MIT License | https://github.com/ggml-org/ggml/blob/master/LICENSE |
+| stable-diffusion.cpp | bin/stable-diffusion.cpp*/sd-cli.exe, sd-server.exe, stable-diffusion.dll | MIT License | Bundled full text: bin/stable-diffusion.cpp*/stable-diffusion.cpp.txt |
+| NVIDIA CUDA Runtime / cuBLAS | bin/*-cuda/cudart64_12.dll, cublas64_12.dll, cublasLt64_12.dll | NVIDIA CUDA Toolkit EULA / redistributable component terms | https://docs.nvidia.com/cuda/eula/index.html |
+| LLVM OpenMP runtime | bin/llama*/libomp140.x86_64.dll | Apache-2.0 WITH LLVM-exception | https://github.com/llvm/llvm-project/blob/main/LICENSE.TXT |
+| Microsoft Visual C++ Runtime | vcruntime140.dll | Microsoft Visual C++ Redistributable license terms | https://visualstudio.microsoft.com/license-terms/vs2022-cruntime/ |
+
+
+Runtime profile notes
+---------------------
+
+The exact bundled runtime folders depend on the build profile:
+
+- cpu: bin/llama and bin/stable-diffusion.cpp
+- vulkan: bin/llama-vulkan or bin/llama fallback, and bin/stable-diffusion.cpp-vulkan or bin/stable-diffusion.cpp fallback
+- cuda: bin/llama-cuda and bin/stable-diffusion.cpp-cuda
+- all: all available runtime folders
+
+CUDA builds duplicate NVIDIA runtime DLLs in both llama-cuda and
+stable-diffusion.cpp-cuda when each upstream binary package ships its own copy.
+
+
+Local full-text notices currently bundled
+-----------------------------------------
+
+The build keeps upstream notice files that are already present in runtime
+folders. Current examples:
+
+- .fantasia_runtime/bin/stable-diffusion.cpp*/stable-diffusion.cpp.txt
+- .fantasia_runtime/bin/stable-diffusion.cpp*/ggml.txt
+- .fantasia_runtime/tk/license.terms
+
+If a runtime binary folder is replaced, refresh this file and keep any upstream
+LICENSE, COPYING, NOTICE, or EULA files that come with the replacement package.

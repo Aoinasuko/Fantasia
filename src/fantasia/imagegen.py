@@ -34,6 +34,7 @@ DEFAULT_NEGATIVE_PROMPTS = {
     "background": "low quality, worst quality, blurry, text, watermark, logo, signature",
     "character": "low quality, worst quality, blurry, text, watermark, extra fingers, bad hands, malformed hands, extra limbs",
     "monster": "low quality, worst quality, blurry, text, watermark, cropped, extra limbs, extra heads, deformed anatomy",
+    "cg": "low quality, worst quality, blurry, text, watermark, logo, signature, cropped, bad anatomy",
 }
 
 

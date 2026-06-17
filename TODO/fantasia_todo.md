@@ -1,33 +1,33 @@
 # Fantasia TODO
 
-Created: 2026-06-16
+作成日: 2026-06-16
 
-## P2: Distribution And Operations
+## P2: 配布と運用
 
-- [x] Select runtime binary profile during build and asset sync.
-- [x] Exclude duplicate CPU/Vulkan binaries from the default CUDA distribution.
-- [x] Add crashlog capture for unhandled exceptions, Tk callback exceptions, and thread exceptions.
-- [x] Show crashlogs from the Generation Logs screen.
-- [ ] Add license collection for bundled runtime binaries and fonts.
-- [ ] Add log rotation settings for generation logs and server logs.
-- [ ] Add a clean release packaging script.
+- [x] ビルド時とアセット同期時にランタイムバイナリのプロファイルを選択できるようにする。
+- [x] 標準のCUDA配布から重複するCPU/Vulkanバイナリを除外する。
+- [x] 未処理例外、Tkコールバック例外、スレッド例外のクラッシュログ取得を追加する。
+- [x] 生成ログ画面からクラッシュログを確認できるようにする。
+- [ ] 同梱するランタイムバイナリとフォントのライセンス一覧を用意する。
+- [ ] 生成ログとサーバーログのローテーション設定を追加する。
+- [ ] クリーンなリリースパッケージ作成スクリプトを追加する。
 
-## P2: Device And Setup
+## P2: デバイス検出と初期設定
 
-- [x] Detect startup device capability.
-- [x] Add first-run setup wizard.
-- [x] Auto-select backend from detected GPU capability.
-- [x] Keep model sync opt-in and safe by default.
-- [ ] Add model download progress persistence after app restart.
-- [ ] Add clearer recovery UI for missing model downloads.
+- [x] 起動時にデバイス性能を検出する。
+- [x] 初回設定ウィザードを追加する。
+- [x] 検出したGPU性能に応じてバックエンドを自動選択する。
+- [x] モデル同期は標準で安全な任意実行にする。
+- [ ] アプリ再起動後もモデルダウンロード進捗を保持できるようにする。
+- [ ] モデル未ダウンロード時の復旧UIをわかりやすくする。
 
-## P2: Tests
+## P2: テスト
 
-- [x] Add save smoke test.
-- [x] Add encoding check.
-- [x] Add runtime asset check.
-- [ ] Add unit tests for `--check-assets`.
-- [ ] Add manager schema regression tests.
-- [ ] Add save/load migration tests for current Fantasia save version only.
-- [ ] Add minimal CUDA image generation smoke script.
-- [ ] Add llama.cpp CUDA device detection smoke script.
+- [x] セーブのスモークテストを追加する。
+- [x] エンコーディングチェックを追加する。
+- [x] ランタイムアセットチェックを追加する。
+- [ ] `--check-assets` のユニットテストを追加する。
+- [ ] managerスキーマの回帰テストを追加する。
+- [ ] 現行のFantasiaセーブバージョンのみを対象にしたセーブ/ロード移行テストを追加する。
+- [ ] 最小構成のCUDA画像生成スモークスクリプトを追加する。
+- [ ] llama.cppのCUDAデバイス検出スモークスクリプトを追加する。

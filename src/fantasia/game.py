@@ -9,6 +9,7 @@ from typing import Any
 
 from .image_pipeline import process_subject_image
 from .imagegen import BaseImageBackend, ImageResult
+from .i18n import ELEMENT_IDS, tr_enum
 from .items import (
     EQUIPMENT_SLOT_LABELS,
     EQUIPMENT_SLOTS,
@@ -16,6 +17,7 @@ from .items import (
     calculate_equipment_summary,
     equipment_slot_for_category,
     extract_response_rewards,
+    generate_vendor_items,
     is_equipment_item,
     item_label,
     normalise_item,
@@ -35,6 +37,7 @@ SEASONS = ("春", "夏", "秋", "冬")
 DAYS_PER_SEASON = 60
 HOURS_PER_DAY = 24
 WORLD_DAYS_PER_YEAR = DAYS_PER_SEASON * len(SEASONS)
+INITIAL_WORLD_TIME_HOURS = 8
 PLAYER_MAX_LEVEL = 50
 PLAYER_BASE_EXP_TO_NEXT = 5
 PLAYER_MAX_EXP_TO_NEXT = 100_000_000
@@ -255,7 +258,7 @@ class GameEngine:
             active_quest=False,
         )
         self.state = GameStateData.new_game(player, world, opening, choices)
-        self._set_world_time_total_hours(0)
+        self._set_world_time_total_hours(INITIAL_WORLD_TIME_HOURS)
         self.state.flags["premise"] = premise_text
         self.state.flags["world_content_check"] = _strip_response_metadata(world_check)
         self.state.flags["llm_backend"] = str(response.get("_backend") or "")
@@ -275,13 +278,37 @@ class GameEngine:
         self.save_game()
         return self.state.log_text()
 
-    def generate_character_setup_traits(self, character: CharacterData) -> list[dict[str, Any]]:
-        response = self._create_trait(character.name or self.state.player_name, self.state.world_data, character)
+    def generate_character_setup_traits(
+        self,
+        character: CharacterData,
+        seed_name: str = "",
+        seed_description: str = "",
+    ) -> list[dict[str, Any]]:
+        response = self._create_trait(
+            character.name or self.state.player_name,
+            self.state.world_data,
+            character,
+            seed_name=seed_name,
+            seed_description=seed_description,
+        )
         self._apply_character_traits(character, response)
         return character.traits
 
-    def generate_character_setup_skills(self, character: CharacterData) -> list[dict[str, Any]]:
-        response = self._create_skill(character.name or self.state.player_name, self.state.world_data, character)
+    def generate_character_setup_skills(
+        self,
+        character: CharacterData,
+        desired_element: str = "",
+        seed_name: str = "",
+        seed_description: str = "",
+    ) -> list[dict[str, Any]]:
+        response = self._create_skill(
+            character.name or self.state.player_name,
+            self.state.world_data,
+            character,
+            desired_element=desired_element,
+            seed_name=seed_name,
+            seed_description=seed_description,
+        )
         self._apply_character_skills(character, response)
         return character.skills
 
@@ -444,6 +471,15 @@ class GameEngine:
         self.state.extra["equipment"] = equipment
         return equipment
 
+    def _equipment_slot_for_item(self, item: dict[str, Any]) -> str:
+        slot = equipment_slot_for_category(str(item.get("category") or ""))
+        if slot in EQUIPMENT_SLOTS:
+            return slot
+        slot = str(item.get("equipment_slot") or "").strip()
+        if slot in EQUIPMENT_SLOTS:
+            return slot
+        return ""
+
     def _sync_player_equipment(self) -> None:
         equipment = self._player_equipment()
         inventory = self._player_inventory()
@@ -536,7 +572,7 @@ class GameEngine:
         if not is_equipment_item(item):
             return {"changed": False, "line": f"> [装備] {item.get('name') or 'Unknown'} は装備できない。"}
         if item.get("equipped"):
-            event = self._unequip_player_slot(str(item.get("equipment_slot") or equipment_slot_for_category(str(item.get("category") or ""))), source="inventory")
+            event = self._unequip_player_slot(self._equipment_slot_for_item(item), source="inventory")
         else:
             event = self._equip_player_inventory_index(inventory_index, source="inventory")
         if save_game and event.get("changed"):
@@ -689,7 +725,7 @@ class GameEngine:
             return None
         item = normalise_item(inventory[index])
         if item.get("equipped"):
-            self._unequip_player_slot(str(item.get("equipment_slot") or ""), source=source, reason=reason)
+            self._unequip_player_slot(self._equipment_slot_for_item(item), source=source, reason=reason)
         quantity = 1
         if isinstance(value, dict):
             quantity = _safe_int(value.get("quantity", value.get("count", value.get("amount", 1))), 1)
@@ -712,7 +748,7 @@ class GameEngine:
             if item_uuid not in uuids:
                 continue
             if item.get("equipped"):
-                self._unequip_player_slot(str(item.get("equipment_slot") or ""), source=source, reason=reason)
+                self._unequip_player_slot(self._equipment_slot_for_item(item), source=source, reason=reason)
             removed = dict(item)
             removed["quantity"] = 1
             removed["item_uuids"] = [item_uuid]
@@ -784,6 +820,9 @@ class GameEngine:
     def _unequip_player_reference(self, value: Any, *, source: str, reason: str = "") -> dict[str, Any]:
         if isinstance(value, dict):
             slot = str(value.get("slot") or value.get("equipment_slot") or "").strip()
+            category_slot = equipment_slot_for_category(str(value.get("category") or value.get("type") or value.get("kind") or ""))
+            if category_slot:
+                slot = category_slot
             if slot in EQUIPMENT_SLOT_LABELS.values():
                 slot = next((key for key, label in EQUIPMENT_SLOT_LABELS.items() if label == slot), slot)
             if slot:
@@ -1076,6 +1115,10 @@ class GameEngine:
         day_in_season = day_of_year % DAYS_PER_SEASON + 1
         return f"{year}年目 {season} {day_in_season}日 {hour}時"
 
+    def current_absolute_day(self) -> int:
+        self._set_world_time_total_hours(self._world_time_total_hours())
+        return max(1, _safe_int(self.state.day, 1))
+
     def _response_time_delta_hours(self, payload: Any) -> int:
         if isinstance(payload, list):
             return sum(self._response_time_delta_hours(item) for item in payload)
@@ -1294,6 +1337,8 @@ class GameEngine:
     def _current_settlement_location(self) -> LocationData | None:
         current_name = self.state.current_location or self.state.world_data.starting_location
         current = self.state.world_data.locations.get(current_name)
+        if _is_non_settlement_submap(self.state.world_data, current_name):
+            return None
         if current and _is_settlement_location(current):
             return current
         parent_name = str((current.extra.get("parent_location") if current else "") or "")
@@ -1494,6 +1539,277 @@ class GameEngine:
             monster.flags.setdefault("first_seen_location", location)
         monster.state = state or monster.state or "present"
         monster.flags["state"] = monster.state
+
+    def prepare_vendor_inventory(self, character: CharacterData) -> dict[str, Any]:
+        day = self.current_absolute_day()
+        extra = character.extra if isinstance(character.extra, dict) else {}
+        if character.extra is not extra:
+            character.extra = extra
+        if _safe_int(extra.get("vendor_inventory_day"), 0) == day and character.inventory:
+            return {"changed": False, "day": day}
+        context = " ".join(
+            part
+            for part in (
+                character.role,
+                character.category,
+                character.personality,
+                character.backstory,
+                str(extra.get("facility") or ""),
+                f"day:{day}",
+            )
+            if part
+        )
+        character.inventory = generate_vendor_items(character.name, context)
+        character.gold = character.gold or 120
+        extra["vendor_inventory_day"] = day
+        extra["trade_price_multiplier"] = 1.0
+        extra["trade_negotiation"] = {}
+        event = {
+            "character": character.name,
+            "day": day,
+            "location": self.state.current_location,
+            "items": [normalise_item(item) for item in character.inventory],
+        }
+        self.state.world_data.extra.setdefault("vendor_inventory_events", []).append(event)
+        return {"changed": True, "day": day, "event": event}
+
+    def vendor_price_multiplier(self, character: CharacterData | None) -> float:
+        if character is None or not isinstance(character.extra, dict):
+            return 1.0
+        try:
+            value = float(character.extra.get("trade_price_multiplier", 1.0))
+        except (TypeError, ValueError):
+            value = 1.0
+        return max(0.5, min(1.5, value))
+
+    def roll_trade_negotiation(self, character: CharacterData, action: str = "") -> dict[str, Any]:
+        day = self.current_absolute_day()
+        extra = character.extra if isinstance(character.extra, dict) else {}
+        if character.extra is not extra:
+            character.extra = extra
+        previous = extra.get("trade_negotiation")
+        if isinstance(previous, dict) and _safe_int(previous.get("day"), 0) == day:
+            return {"changed": False, "already_done": True, "line": "> [交渉] 今日の値引き交渉はすでに終わっている。"}
+        affinity = self._npc_affinity(character)
+        target = 10
+        if affinity >= 6:
+            target = 8
+        elif affinity <= -6:
+            target = 12
+        roll = self._make_action_roll(
+            action.strip() or f"{character.name}に値引き交渉をする",
+            purpose="conversation",
+            forced_ability="cha",
+            forced_target=target,
+        )
+        if roll.get("critical_success"):
+            multiplier = 0.80
+            affinity_delta = 1
+        elif roll.get("success"):
+            multiplier = 0.90
+            affinity_delta = 0
+        elif roll.get("critical_failure"):
+            multiplier = 1.25
+            affinity_delta = -1
+        else:
+            multiplier = 1.10
+            affinity_delta = 0
+        old_multiplier = self.vendor_price_multiplier(character)
+        extra["trade_price_multiplier"] = multiplier
+        extra["trade_negotiation"] = {
+            "day": day,
+            "action": action,
+            "roll": roll,
+            "old_multiplier": old_multiplier,
+            "new_multiplier": multiplier,
+        }
+        relationship_lines: list[str] = []
+        if affinity_delta:
+            relationship_lines = self._apply_npc_affinity_delta(character, affinity_delta, source="trade_negotiation", reason="値引き交渉")
+        percent = int(round(multiplier * 100))
+        outcome = "値引き" if multiplier < 1.0 else "値上げ"
+        line = f"> [交渉] {character.name}: {outcome}（購入価格 {percent}%）"
+        event = {
+            "character": character.name,
+            "day": day,
+            "location": self.state.current_location,
+            "action": action,
+            "roll": roll,
+            "old_multiplier": old_multiplier,
+            "new_multiplier": multiplier,
+            "line": line,
+        }
+        self.state.world_data.extra.setdefault("trade_negotiation_events", []).append(event)
+        return {
+            "changed": True,
+            "character": character.name,
+            "roll": roll,
+            "multiplier": multiplier,
+            "line": line,
+            "relationship_lines": relationship_lines,
+        }
+
+    def _npc_affinity(self, character: CharacterData) -> int:
+        if not isinstance(character.extra, dict):
+            character.extra = {}
+        value = character.extra.get("affinity", character.extra.get("trust", 0))
+        return max(-10, min(10, _safe_int(value, 0)))
+
+    def _apply_npc_affinity_delta(self, character: CharacterData, delta: Any, *, source: str, reason: str = "") -> list[str]:
+        if character.flags.get("is_player"):
+            return []
+        requested_delta = max(-10, min(10, _safe_int(delta, 0)))
+        if not requested_delta:
+            return []
+        old_value = self._npc_affinity(character)
+        new_value = max(-10, min(10, old_value + requested_delta))
+        actual_delta = new_value - old_value
+        if not actual_delta:
+            return []
+        character.extra["affinity"] = new_value
+        character.extra["trust"] = new_value
+        change = {
+            "source": source,
+            "reason": reason,
+            "location": self.state.current_location,
+            "day": self.state.day,
+            "old": old_value,
+            "new": new_value,
+            "delta": actual_delta,
+        }
+        character.extra.setdefault("relationship_changes", []).append(change)
+        self.state.world_data.extra.setdefault("npc_affinity_events", []).append({"character": character.name, **change})
+        sign = f"+{actual_delta}" if actual_delta > 0 else str(actual_delta)
+        reason_text = f" {reason}" if reason else ""
+        return [f"> [好感度] {character.name}: {old_value} -> {new_value} ({sign}){reason_text}"]
+
+    def _apply_response_world_state_effects(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        default_character: CharacterData | None = None,
+        default_location: str = "",
+    ) -> list[str]:
+        lines: list[str] = []
+        lines.extend(self._apply_response_relationship_effects(response, source, default_character=default_character))
+        lines.extend(self._apply_response_npc_movements(response, source, default_character=default_character, default_location=default_location))
+        return lines
+
+    def _apply_response_relationship_effects(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        default_character: CharacterData | None = None,
+    ) -> list[str]:
+        if not isinstance(response, dict):
+            return []
+        entries: list[Any] = []
+        for key in (
+            "relationship_change",
+            "relationship_changes",
+            "npc_relationship_change",
+            "npc_relationship_changes",
+            "affinity_change",
+            "affinity_changes",
+            "npc_affinity_change",
+            "npc_affinity_changes",
+        ):
+            entries.extend(_as_list(response.get(key)))
+        lines: list[str] = []
+        for entry in entries:
+            character = self._character_from_effect_target(entry, default_character)
+            if character is None:
+                continue
+            delta = _relationship_delta(entry)
+            reason = _relationship_reason(entry)
+            lines.extend(self._apply_npc_affinity_delta(character, delta, source=source, reason=reason))
+        return lines
+
+    def _apply_response_npc_movements(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        default_character: CharacterData | None = None,
+        default_location: str = "",
+    ) -> list[str]:
+        if not isinstance(response, dict):
+            return []
+        entries: list[Any] = []
+        for key in (
+            "npc_movement",
+            "npc_movements",
+            "character_movement",
+            "character_movements",
+            "actor_movement",
+            "actor_movements",
+            "move_npc",
+            "move_npcs",
+            "moved_npcs",
+            "followers",
+            "escorted_npcs",
+        ):
+            entries.extend(_as_list(response.get(key)))
+        if not entries:
+            return []
+        fallback_location = default_location or str(response.get("location") or self.state.current_location or self.state.world_data.starting_location)
+        lines: list[str] = []
+        for entry in entries:
+            character = self._character_from_effect_target(entry, default_character)
+            if character is None or character.flags.get("is_player"):
+                continue
+            target_location = _movement_target_location(entry, fallback_location)
+            if not target_location:
+                continue
+            old_location = character.location or str(character.flags.get("current_location") or "")
+            state = _movement_target_state(entry, character.state or "present")
+            self.state.world_data.ensure_location(target_location)
+            self._set_character_presence(character, target_location, state)
+            event = {
+                "source": source,
+                "character": character.name,
+                "old_location": old_location,
+                "new_location": target_location,
+                "state": state,
+                "day": self.state.day,
+                "reason": _relationship_reason(entry),
+            }
+            self.state.world_data.extra.setdefault("npc_movement_events", []).append(event)
+            if old_location != target_location:
+                lines.append(f"> [NPC移動] {character.name}: {old_location or '-'} -> {target_location}")
+        return lines
+
+    def _character_from_effect_target(self, value: Any, default_character: CharacterData | None = None) -> CharacterData | None:
+        if isinstance(value, CharacterData):
+            return value
+        if isinstance(value, dict):
+            target = str(
+                value.get("target")
+                or value.get("character")
+                or value.get("character_name")
+                or value.get("npc")
+                or value.get("npc_name")
+                or value.get("name")
+                or ""
+            ).strip()
+        else:
+            target = str(value or "").strip()
+        if not target or target.lower() in {"npc", "character", "speaker", "target", "companion", "follower"}:
+            return default_character
+        if target in self.state.world_data.characters:
+            return self.state.world_data.characters[target]
+        lowered = target.casefold()
+        for character in self.state.world_data.characters.values():
+            if character.flags.get("is_player"):
+                continue
+            terms = _character_reference_terms(character)
+            if any(lowered == term.casefold() for term in terms if term):
+                return character
+        if default_character and lowered in {str(default_character.name).casefold(), str(default_character.role).casefold()}:
+            return default_character
+        return None
 
     def _active_visual_subjects(self, location: str) -> tuple[list[CharacterData], list[MonsterData]]:
         characters: list[CharacterData] = []
@@ -2057,7 +2373,14 @@ class GameEngine:
             player_name=player_name,
         )
 
-    def _create_trait(self, player_name: str, world: WorldData, character: CharacterData) -> dict[str, Any]:
+    def _create_trait(
+        self,
+        player_name: str,
+        world: WorldData,
+        character: CharacterData,
+        seed_name: str = "",
+        seed_description: str = "",
+    ) -> dict[str, Any]:
         world_payload = _ai_json(
             _world_ai_context(
                 world,
@@ -2069,6 +2392,7 @@ class GameEngine:
         )
         character_payload = _ai_json(_character_ai_context(character))
         power_instruction = _skill_trait_power_instruction(character)
+        seed_instruction = _character_entry_seed_instruction(seed_name, seed_description)
         messages = [
             {
                 "role": "system",
@@ -2087,6 +2411,7 @@ class GameEngine:
                     f"キャラクター名: {character.name}\n"
                     f"キャラクターデータ: {character_payload}\n"
                     f"{power_instruction}\n"
+                    f"{seed_instruction}\n"
                     "このキャラクターの性格/特徴/重症度/行動影響を生成してください。"
                 ),
             },
@@ -2099,7 +2424,15 @@ class GameEngine:
             player_name=player_name,
         )
 
-    def _create_skill(self, player_name: str, world: WorldData, character: CharacterData) -> dict[str, Any]:
+    def _create_skill(
+        self,
+        player_name: str,
+        world: WorldData,
+        character: CharacterData,
+        desired_element: str = "",
+        seed_name: str = "",
+        seed_description: str = "",
+    ) -> dict[str, Any]:
         world_payload = _ai_json(
             _world_ai_context(
                 world,
@@ -2111,6 +2444,10 @@ class GameEngine:
         )
         character_payload = _ai_json(_character_ai_context(character))
         power_instruction = _skill_trait_power_instruction(character)
+        element_id = _normalise_element_id(desired_element, fallback="fire" if desired_element else "physical")
+        element_label = tr_enum("element", element_id, "ja", fallback=element_id)
+        element_options = ", ".join(f"{value}({tr_enum('element', value, 'ja', fallback=value)})" for value in ELEMENT_IDS)
+        seed_instruction = _character_entry_seed_instruction(seed_name, seed_description)
         messages = [
             {
                 "role": "system",
@@ -2118,6 +2455,7 @@ class GameEngine:
                     "あなたはAI駆動RPGのキャラクタースキル作成担当です。"
                     "Fantasiaのcreate_skill相当として、skills を持つJSONだけを返してください。"
                     "skills は effects, skill_type, sp_cost, usefulness を含むオブジェクト配列にしてください。"
+                    "skills の各要素には element を必ず含め、指定された属性IDだけを使ってください。"
                     "各スキルには power と strength_level を1から5の整数で必ず付けてください。"
                     "回数制ではなくSP制です。強力なスキルほどsp_costを高くしてください。"
                 ),
@@ -2130,7 +2468,10 @@ class GameEngine:
                     f"キャラクター名: {character.name}\n"
                     f"キャラクターデータ: {character_payload}\n"
                     f"{power_instruction}\n"
-                    "このキャラクターのスキル、効果、種別、SPコスト、有用性を生成してください。"
+                    f"利用可能な属性ID: {element_options}\n"
+                    f"今回生成するスキルの属性ID: {element_id}（{element_label}）\n"
+                    f"{seed_instruction}\n"
+                    "このキャラクターのスキル、効果、属性、SPコスト、有用性を生成してください。"
                 ),
             },
         ]
@@ -2837,6 +3178,7 @@ class GameEngine:
             status_lines.extend(self._apply_response_hp_effects(response, "master_ai_facilitator"))
             status_lines.extend(self._apply_response_sp_effects(response, "master_ai_facilitator"))
             status_lines.extend(self._apply_response_progress_effects(response, "master_ai_facilitator"))
+            status_lines.extend(self._apply_response_world_state_effects(response, "master_ai_facilitator", default_location=location))
         if status_lines:
             self.state.display_log.extend(status_lines)
             history_entry["status_effects_applied"] = status_lines
@@ -3293,18 +3635,43 @@ class GameEngine:
         status_lines.extend(self._apply_response_hp_effects(player_response, player_manager, encounter=encounter))
         status_lines.extend(self._apply_response_sp_effects(player_response, player_manager, encounter=encounter))
         status_lines.extend(self._apply_response_progress_effects(player_response, player_manager))
+        opponent = self._encounter_opponent(encounter)
+        status_lines.extend(
+            self._apply_response_world_state_effects(
+                player_response,
+                player_manager,
+                default_character=opponent if isinstance(opponent, CharacterData) else None,
+                default_location=str(encounter.get("location") or self.state.current_location),
+            )
+        )
         npc_response = self._referee_npc(action, input_type, encounter, player_response)
         self._apply_encounter_update(encounter, npc_response.get("encounter_update"))
         self._apply_response_implied_statuses(encounter, npc_response, "player")
         status_lines.extend(self._apply_response_hp_effects(npc_response, "referee_npc", encounter=encounter))
         status_lines.extend(self._apply_response_sp_effects(npc_response, "referee_npc", encounter=encounter))
         status_lines.extend(self._apply_response_progress_effects(npc_response, "referee_npc"))
+        status_lines.extend(
+            self._apply_response_world_state_effects(
+                npc_response,
+                "referee_npc",
+                default_character=opponent if isinstance(opponent, CharacterData) else None,
+                default_location=str(encounter.get("location") or self.state.current_location),
+            )
+        )
         rewrite_response = self._referee_npc_rewrite(action, input_type, encounter, player_response, npc_response)
         self._apply_encounter_update(encounter, rewrite_response.get("encounter_update"))
         self._apply_response_implied_statuses(encounter, rewrite_response, "player")
         status_lines.extend(self._apply_response_hp_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
         status_lines.extend(self._apply_response_sp_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
         status_lines.extend(self._apply_response_progress_effects(rewrite_response, "referee_npc_rewrite"))
+        status_lines.extend(
+            self._apply_response_world_state_effects(
+                rewrite_response,
+                "referee_npc_rewrite",
+                default_character=opponent if isinstance(opponent, CharacterData) else None,
+                default_location=str(encounter.get("location") or self.state.current_location),
+            )
+        )
         status_lines.extend(self._tick_encounter_status_effects(encounter))
         outcome = self._apply_encounter_outcome(encounter)
 
@@ -4941,6 +5308,7 @@ class GameEngine:
         status_lines.extend(self._apply_response_hp_effects(response, "conversation_starter"))
         status_lines.extend(self._apply_response_sp_effects(response, "conversation_starter"))
         status_lines.extend(self._apply_response_progress_effects(response, "conversation_starter"))
+        status_lines.extend(self._apply_response_world_state_effects(response, "conversation_starter", default_character=character, default_location=location))
         if status_lines:
             self.state.display_log.extend(status_lines)
         self._apply_visual_intent(response, "conversation_starter", location, previous_location)
@@ -5050,11 +5418,13 @@ class GameEngine:
             status_lines.extend(self._apply_response_hp_effects(response, "conversation_facilitator"))
             status_lines.extend(self._apply_response_sp_effects(response, "conversation_facilitator"))
             status_lines.extend(self._apply_response_progress_effects(response, "conversation_facilitator"))
+            status_lines.extend(self._apply_response_world_state_effects(response, "conversation_facilitator", default_character=character, default_location=location))
         if resolver_response:
             status_lines.extend(self._apply_response_status_effects(resolver_response, "conversation_resolver", default_target=character.name, context_character=character))
             status_lines.extend(self._apply_response_hp_effects(resolver_response, "conversation_resolver"))
             status_lines.extend(self._apply_response_sp_effects(resolver_response, "conversation_resolver"))
             status_lines.extend(self._apply_response_progress_effects(resolver_response, "conversation_resolver"))
+            status_lines.extend(self._apply_response_world_state_effects(resolver_response, "conversation_resolver", default_character=character, default_location=location))
         if status_lines:
             self.state.display_log.extend(status_lines)
         self._apply_visual_intent(visual_response, "conversation_resolver" if resolver_response else "conversation_facilitator", location, previous_location)
@@ -5280,6 +5650,7 @@ class GameEngine:
         status_lines.extend(self._apply_response_hp_effects(response, "field_event_evaluator"))
         status_lines.extend(self._apply_response_sp_effects(response, "field_event_evaluator"))
         status_lines.extend(self._apply_response_progress_effects(response, "field_event_evaluator"))
+        status_lines.extend(self._apply_response_world_state_effects(response, "field_event_evaluator", default_location=location))
         if status_lines:
             self.state.display_log.extend(status_lines)
             event_record["status_effects_applied"] = status_lines
@@ -5426,6 +5797,7 @@ class GameEngine:
         status_lines.extend(self._apply_response_hp_effects(response, "quest_starter"))
         status_lines.extend(self._apply_response_sp_effects(response, "quest_starter"))
         status_lines.extend(self._apply_response_progress_effects(response, "quest_starter"))
+        status_lines.extend(self._apply_response_world_state_effects(response, "quest_starter", default_location=location))
         if status_lines:
             self.state.display_log.extend(status_lines)
         self._apply_visual_intent(response, "quest_starter", location, previous_location)
@@ -5486,12 +5858,13 @@ class GameEngine:
         if action_roll:
             referee.setdefault("game_side_action_roll", action_roll)
         event_resolution: dict[str, Any] | None = None
-        if referee.get("event"):
+        event_payload = referee.get("event")
+        if _quest_event_needs_resolve(event_payload):
             event_resolution = self._quest_referee_event_resolve(action, quest, referee)
 
-        narration_parts = [str(referee.get("narration") or referee.get("text") or "")]
+        narration_parts = [_quest_response_narration(referee)]
         if event_resolution:
-            narration_parts.append(str(event_resolution.get("narration") or event_resolution.get("text") or ""))
+            narration_parts.append(_quest_response_narration(event_resolution))
         narration = "\n".join(part for part in narration_parts if part).strip() or "クエストは静かに進行した。"
 
         location = str(
@@ -5504,7 +5877,14 @@ class GameEngine:
             location,
         )
         finished = _as_bool(referee.get("finished")) or _as_bool((event_resolution or {}).get("finished"))
-        finish_status = _quest_finish_status(action, referee, event_resolution) if finished else ""
+        inferred_finish_status = _infer_quest_finish_status(quest, action, referee, event_resolution, narration, location)
+        if inferred_finish_status:
+            finished = True
+            finish_status = inferred_finish_status
+            referee.setdefault("finished", True)
+            referee.setdefault("quest_status", finish_status)
+        else:
+            finish_status = _quest_finish_status(action, referee, event_resolution) if finished else ""
 
         quest.log.append(
             {
@@ -5524,6 +5904,8 @@ class GameEngine:
                 }
             )
             quest.extra["last_event_resolution"] = _strip_response_metadata(event_resolution)
+        elif event_payload:
+            quest.extra["last_event"] = _strip_response_metadata(event_payload) if isinstance(event_payload, dict) else event_payload
         if referee.get("quest_progress"):
             quest.extra["quest_progress"] = str(referee.get("quest_progress"))
         if (event_resolution or {}).get("quest_update"):
@@ -5560,11 +5942,13 @@ class GameEngine:
         status_lines.extend(self._apply_response_hp_effects(referee, "quest_referee_with_free_action"))
         status_lines.extend(self._apply_response_sp_effects(referee, "quest_referee_with_free_action"))
         status_lines.extend(self._apply_response_progress_effects(referee, "quest_referee_with_free_action"))
+        status_lines.extend(self._apply_response_world_state_effects(referee, "quest_referee_with_free_action", default_location=location))
         if event_resolution:
             status_lines.extend(self._apply_response_status_effects(event_resolution, "quest_referee_event_resolve", default_target="player"))
             status_lines.extend(self._apply_response_hp_effects(event_resolution, "quest_referee_event_resolve"))
             status_lines.extend(self._apply_response_sp_effects(event_resolution, "quest_referee_event_resolve"))
             status_lines.extend(self._apply_response_progress_effects(event_resolution, "quest_referee_event_resolve"))
+            status_lines.extend(self._apply_response_world_state_effects(event_resolution, "quest_referee_event_resolve", default_location=location))
         if status_lines:
             self.state.display_log.extend(status_lines)
         self._apply_visual_intent(visual_response, "quest_referee_event_resolve" if event_resolution else "quest_referee_with_free_action", location, previous_location)
@@ -5596,6 +5980,9 @@ class GameEngine:
                     "narration, choices を持つJSONだけを返してください。"
                     "必要なら location, quest_progress, event, finished も含めてください。"
                     "game_side_action_roll が enabled=true の場合、クエスト行動の成否はゲーム側の確定判定として必ず尊重してください。"
+                    "event は未解決で追加判定が必要な突発事象だけに使い、単なる進捗や結果済みの出来事は quest_progress に書いてください。"
+                    "救出対象を保護して依頼主へ報告し、報酬や経験値を渡す段階まで到達したら finished=true と quest_status=\"completed\" を必ず返してください。"
+                    "完了後に新しい探索フックを提示する場合も、このクエスト自体は完了として扱ってください。"
                 ),
             },
             {
@@ -5637,6 +6024,8 @@ class GameEngine:
                     "発生したイベントの結果を確定してください。"
                     "narration, choices を持つJSONだけを返してください。"
                     "必要なら location, quest_update, finished も含めてください。"
+                    "イベント解決後に元の目的が達成、失敗、撤退のいずれかに到達した場合は finished=true と quest_status を必ず返してください。"
+                    "結果済みの進捗をもう一度描写し直さず、必要な差分だけを短く返してください。"
                 ),
             },
             {
@@ -6482,6 +6871,126 @@ def _safe_int(value: Any, fallback: int = 0) -> int:
         return fallback
 
 
+def _relationship_delta(value: Any) -> int:
+    if isinstance(value, (int, float, str)):
+        return _safe_int(value, 0)
+    if not isinstance(value, dict):
+        return 0
+    for key in (
+        "delta",
+        "change",
+        "amount",
+        "value",
+        "affinity_delta",
+        "trust_delta",
+        "favor_delta",
+        "relationship_delta",
+        "affection_delta",
+        "trust",
+        "affinity",
+        "favor",
+        "affection",
+    ):
+        if key in value:
+            return max(-10, min(10, _safe_int(value.get(key), 0)))
+    if _as_bool(value.get("positive") or value.get("liked") or value.get("success")):
+        return 1
+    if _as_bool(value.get("negative") or value.get("disliked") or value.get("failure")):
+        return -1
+    return 0
+
+
+def _relationship_reason(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    reason = value.get("reason") or value.get("cause") or value.get("action") or value.get("summary") or ""
+    if isinstance(reason, (dict, list)):
+        return ""
+    return _short_text(str(reason or "").strip(), 40)
+
+
+def _movement_target_location(value: Any, fallback: str) -> str:
+    if isinstance(value, str):
+        return fallback
+    if not isinstance(value, dict):
+        return fallback
+    location = str(
+        value.get("location")
+        or value.get("to")
+        or value.get("destination")
+        or value.get("new_location")
+        or value.get("current_location")
+        or ""
+    ).strip()
+    if not location and _as_bool(value.get("follow_player") or value.get("with_player") or value.get("following")):
+        location = fallback
+    if location.lower() in {"here", "current", "current_location", "player", "with_player", "follow_player"}:
+        location = fallback
+    return location or fallback
+
+
+def _movement_target_state(value: Any, fallback: str) -> str:
+    if not isinstance(value, dict):
+        return fallback or "present"
+    state = str(value.get("state") or value.get("status") or value.get("presence") or "").strip()
+    if state:
+        return state
+    if _as_bool(value.get("left") or value.get("gone")):
+        return "gone"
+    return fallback or "present"
+
+
+def _normalise_element_id(value: Any, fallback: str = "physical") -> str:
+    text = str(value or "").strip()
+    if not text:
+        return fallback
+    key = text.casefold()
+    aliases = {
+        "phys": "physical",
+        "物理": "physical",
+        "flame": "fire",
+        "炎": "fire",
+        "水": "water",
+        "氷": "ice",
+        "thunder": "lightning",
+        "雷": "lightning",
+        "土": "earth",
+        "風": "wind",
+        "plant": "grass",
+        "草": "grass",
+        "毒": "poison",
+        "mind": "mental",
+        "精神": "mental",
+        "holy": "light",
+        "光": "light",
+        "darkness": "dark",
+        "闇": "dark",
+        "neutral": "none",
+        "無": "none",
+    }
+    if key in aliases:
+        return aliases[key]
+    for element_id in ELEMENT_IDS:
+        if key == element_id.casefold():
+            return element_id
+        if key == tr_enum("element", element_id, "ja", fallback=element_id).casefold():
+            return element_id
+        if key == tr_enum("element", element_id, "en", fallback=element_id).casefold():
+            return element_id
+    return fallback
+
+
+def _character_entry_seed_instruction(seed_name: str = "", seed_description: str = "") -> str:
+    lines: list[str] = []
+    if str(seed_name or "").strip():
+        lines.append(f"希望名: {str(seed_name).strip()}")
+    if str(seed_description or "").strip():
+        lines.append(f"希望説明: {str(seed_description).strip()}")
+    if not lines:
+        return ""
+    return "ユーザー指定を優先して反映してください。\n" + "\n".join(lines)
+
+
 def _normalise_skill(value: Any) -> dict[str, Any]:
     skill = _as_named_dict(value, "Skill")
     name = str(skill.get("name") or skill.get("skill") or skill.get("title") or "").strip()
@@ -6490,6 +6999,8 @@ def _normalise_skill(value: Any) -> dict[str, Any]:
     skill["name"] = name
     skill_type = str(skill.get("skill_type") or skill.get("type") or skill.get("category") or "physical").strip().lower()
     skill["skill_type"] = skill_type or "physical"
+    skill["element"] = _normalise_element_id(skill.get("element") or skill.get("attribute") or skill.get("element_type") or skill.get("category") or skill.get("skill_type"))
+    skill["category"] = skill["element"]
     power = _entry_power(skill, fallback=_skill_power_from_text(skill))
     skill["power"] = power
     skill["strength_level"] = power
@@ -6722,8 +7233,129 @@ def _is_settlement_location(location: LocationData) -> bool:
     return False
 
 
+def _is_non_settlement_submap(world: WorldData, location_name: str) -> bool:
+    name = str(location_name or "").strip()
+    location = world.locations.get(name) if name else None
+    if location and _is_settlement_location(location):
+        return False
+    if location and _is_facility_location(location):
+        return False
+    return _looks_like_non_settlement_area(name, location)
+
+
+def _is_facility_location(location: LocationData) -> bool:
+    if location.flags.get("facility"):
+        return True
+    extra = location.extra if isinstance(location.extra, dict) else {}
+    if extra.get("facility") or extra.get("facility_name") or extra.get("facility_type"):
+        return True
+    location_kind = str(extra.get("location_kind") or "").strip().lower()
+    return location_kind in {"facility", "shop", "inn", "guild", "temple", "clinic", "market"}
+
+
+def _looks_like_non_settlement_area(name: str, location: LocationData | None = None) -> bool:
+    pieces = [_location_area_check_name(name)]
+    if location:
+        pieces.extend(
+            [
+                location.description,
+                str(location.flags.get("location_kind") or ""),
+                str(location.flags.get("type") or ""),
+                str(location.flags.get("category") or ""),
+            ]
+        )
+        extra = location.extra if isinstance(location.extra, dict) else {}
+        pieces.extend(
+            str(extra.get(key) or "")
+            for key in (
+                "location_kind",
+                "kind",
+                "type",
+                "category",
+                "biome",
+                "terrain",
+                "danger_level",
+                "adventure_site",
+                "quest_area",
+            )
+        )
+    text = "\n".join(piece for piece in pieces if piece).lower()
+    if not text:
+        return False
+    negative_markers = (
+        "dungeon",
+        "labyrinth",
+        "cave",
+        "cavern",
+        "ruin",
+        "ruins",
+        "crypt",
+        "catacomb",
+        "sewer",
+        "mine",
+        "shaft",
+        "tunnel",
+        "lair",
+        "den",
+        "nest",
+        "wilderness",
+        "wild",
+        "forest",
+        "swamp",
+        "marsh",
+        "graveyard",
+        "tomb",
+        "battlefield",
+        "hideout",
+        "stronghold",
+        "fortress",
+        "maze",
+        "ダンジョン",
+        "迷宮",
+        "地下迷宮",
+        "洞窟",
+        "洞穴",
+        "洞",
+        "遺跡",
+        "廃墟",
+        "地下道",
+        "下水道",
+        "坑道",
+        "鉱山",
+        "墓地",
+        "墓所",
+        "墓",
+        "霊廟",
+        "森",
+        "森林",
+        "沼",
+        "湿地",
+        "巣穴",
+        "巣",
+        "野営地",
+        "荒野",
+        "魔窟",
+        "隠れ家",
+        "砦",
+        "要塞",
+    )
+    return any(marker in text for marker in negative_markers)
+
+
+def _location_area_check_name(name: str) -> str:
+    text = str(name or "").strip()
+    if "/" not in text and "\\" not in text:
+        return text
+    parts = [part.strip() for part in re.split(r"[/\\]", text) if part.strip()]
+    if len(parts) <= 1:
+        return text
+    return " / ".join(parts[1:])
+
+
 def _settlement_location_for_name(world: WorldData, location_name: str) -> LocationData | None:
     name = str(location_name or "").strip()
+    if _is_non_settlement_submap(world, name):
+        return None
     location = world.locations.get(name)
     if location and _is_settlement_location(location):
         return location
@@ -6738,6 +7370,8 @@ def _settlement_location_for_name(world: WorldData, location_name: str) -> Locat
 def _infer_settlement_parent_name(world: WorldData, location_name: str) -> str:
     name = str(location_name or "").strip()
     if not name:
+        return ""
+    if _is_non_settlement_submap(world, name):
         return ""
     location = world.locations.get(name)
     if location:
@@ -6761,6 +7395,8 @@ def _link_location_to_settlement(world: WorldData, location_name: str, settlemen
     name = str(location_name or "").strip()
     parent_name = str(settlement_name or "").strip()
     if not name or not parent_name:
+        return
+    if _is_non_settlement_submap(world, name):
         return
     settlement = world.locations.get(parent_name)
     if not settlement or not _is_settlement_location(settlement):
@@ -6788,6 +7424,8 @@ def _link_location_to_settlement(world: WorldData, location_name: str, settlemen
 
 def _location_is_guild(world: WorldData, location_name: str) -> bool:
     name = str(location_name or "").strip()
+    if _is_non_settlement_submap(world, name):
+        return False
     location = world.locations.get(name)
     if location and str(location.extra.get("facility_type") or "").lower() == "guild":
         return True
@@ -6985,6 +7623,171 @@ def _canonical_facility_name(keyword: str) -> str:
     if any(word in lowered or word in text for word in ("market", "shop", "store", "市場", "店", "道具", "雑貨")):
         return "道具屋"
     return text
+
+
+def _quest_response_narration(response: dict[str, Any] | None) -> str:
+    if not isinstance(response, dict):
+        return ""
+    return str(response.get("narration") or response.get("text") or response.get("narr") or "").strip()
+
+
+def _quest_event_needs_resolve(event: Any) -> bool:
+    if not event:
+        return False
+    if isinstance(event, list):
+        return any(_quest_event_needs_resolve(item) for item in event)
+    if not isinstance(event, dict):
+        text = str(event).strip()
+        lowered = text.lower()
+        return any(word in lowered or word in text for word in ("unresolved", "pending", "needs_resolution", "未解決", "保留", "判定待ち"))
+
+    explicit_keys = (
+        "requires_resolution",
+        "needs_resolution",
+        "unresolved",
+        "pending",
+        "choice_required",
+        "combat_required",
+    )
+    for key in explicit_keys:
+        if key in event:
+            return _as_bool(event.get(key))
+
+    status = str(event.get("status") or event.get("state") or "").strip().lower()
+    if status in {"unresolved", "pending", "open", "needs_resolution", "active", "未解決", "保留", "継続中"}:
+        return True
+    if status in {"resolved", "complete", "completed", "done", "解決", "完了"}:
+        return False
+
+    if any(key in event for key in ("result", "outcome", "resolved_result", "summary")):
+        return False
+    return True
+
+
+def _quest_payload_has_reward(payload: Any) -> bool:
+    if isinstance(payload, list):
+        return any(_quest_payload_has_reward(item) for item in payload)
+    if not isinstance(payload, dict):
+        return False
+    reward_keys = {
+        "reward",
+        "rewards",
+        "item_rewards",
+        "items",
+        "receive_items",
+        "gain_items",
+        "gold_delta",
+        "player_gold_delta",
+        "receive_gold",
+        "gain_gold",
+        "reward_gold",
+        "exp",
+        "xp",
+        "reward_exp",
+        "player_exp_delta",
+        "experience_delta",
+    }
+    for key in reward_keys:
+        value = payload.get(key)
+        if value in (None, "", [], {}):
+            continue
+        if key in {"gold_delta", "player_gold_delta", "receive_gold", "gain_gold", "reward_gold", "exp", "xp", "reward_exp", "player_exp_delta", "experience_delta"}:
+            if _safe_int(value, 0) <= 0:
+                continue
+        return True
+    for value in payload.values():
+        if isinstance(value, (dict, list)) and _quest_payload_has_reward(value):
+            return True
+    return False
+
+
+def _quest_explicit_finish_status(referee: dict[str, Any] | None, event_resolution: dict[str, Any] | None) -> str:
+    for payload in (event_resolution or {}, referee or {}):
+        status = str(
+            payload.get("quest_status")
+            or payload.get("quest_outcome")
+            or payload.get("status")
+            or payload.get("outcome")
+            or ""
+        ).strip().lower()
+        if status in {"completed", "complete", "success", "succeeded", "cleared", "達成", "成功", "完了", "解決"}:
+            return "completed"
+        if status in {"failed", "failure", "fail", "失敗"}:
+            return "failed"
+        if status in {"abandoned", "withdrawn", "retreated", "cancelled", "canceled", "撤退", "放棄", "中止"}:
+            return "abandoned"
+        if _as_bool(payload.get("quest_completed") or payload.get("complete_quest") or payload.get("completed_quest") or payload.get("completed") or payload.get("success")):
+            return "completed"
+        if _as_bool(payload.get("quest_failed") or payload.get("failed") or payload.get("failure")):
+            return "failed"
+        if _as_bool(payload.get("quest_abandoned") or payload.get("abandoned") or payload.get("withdrawn") or payload.get("retreated")):
+            return "abandoned"
+    return ""
+
+
+def _quest_completion_text(
+    quest: QuestData,
+    action: str,
+    referee: dict[str, Any],
+    event_resolution: dict[str, Any] | None,
+    narration: str,
+    location: str,
+) -> str:
+    parts: list[str] = [
+        quest.name,
+        quest.overview,
+        str(quest.extra.get("objective") or ""),
+        str(quest.extra.get("quest_progress") or ""),
+        action,
+        narration,
+        location,
+    ]
+    for payload in (referee, event_resolution or {}):
+        if not isinstance(payload, dict):
+            continue
+        for key in ("quest_progress", "quest_update", "event", "reward", "rewards"):
+            value = payload.get(key)
+            if value not in (None, "", [], {}):
+                if isinstance(value, (dict, list)):
+                    parts.append(json.dumps(value, ensure_ascii=False, default=str))
+                else:
+                    parts.append(str(value))
+    return "\n".join(part for part in parts if part)
+
+
+def _infer_quest_finish_status(
+    quest: QuestData,
+    action: str,
+    referee: dict[str, Any],
+    event_resolution: dict[str, Any] | None,
+    narration: str,
+    location: str,
+) -> str:
+    explicit = _quest_explicit_finish_status(referee, event_resolution)
+    if explicit:
+        return explicit
+    if _is_quest_abandon_action(action):
+        return "abandoned"
+
+    text = _quest_completion_text(quest, action, referee, event_resolution, narration, location)
+    lowered = text.lower()
+    quest_text = f"{quest.name}\n{quest.overview}\n{quest.extra.get('objective') or ''}"
+    quest_lowered = quest_text.lower()
+
+    rescue_quest = any(word in quest_lowered or word in quest_text for word in ("rescue", "save", "救出", "救助", "助け", "娘", "行方不明", "連れ去"))
+    rescued = any(word in lowered or word in text for word in ("rescued", "saved", "safe", "救出", "救助", "保護", "無事", "解放", "拘束を解除"))
+    returned = any(word in lowered or word in text for word in ("returned", "brought back", "帰還", "連れ戻", "戻った", "戻し", "村へ", "街へ"))
+    reported = any(word in lowered or word in text for word in ("reported", "report", "quest giver", "client", "報告", "依頼主", "村長", "ギルド"))
+    completed = any(word in lowered or word in text for word in ("complete", "completed", "cleared", "success", "reward", "達成", "完了", "完遂", "解決", "成功", "報酬", "感謝", "信頼を得"))
+    reward_seen = _quest_payload_has_reward(referee) or _quest_payload_has_reward(event_resolution)
+
+    if reward_seen and (completed or reported or (rescue_quest and rescued)):
+        return "completed"
+    if rescue_quest and rescued and returned and (reported or completed):
+        return "completed"
+    if completed and reported:
+        return "completed"
+    return ""
 
 
 def _quest_finish_status(action: str, referee: dict[str, Any], event_resolution: dict[str, Any] | None) -> str:
@@ -7782,6 +8585,10 @@ def _character_ai_context(character: CharacterData, *, details: bool = True) -> 
         "look": _short_text(character.look, 500 if details else 240),
         "gold": character.gold,
     }
+    if not character.flags.get("is_player"):
+        affinity = character.extra.get("affinity", character.extra.get("trust", 0)) if isinstance(character.extra, dict) else 0
+        data["affinity"] = max(-10, min(10, _safe_int(affinity, 0)))
+        data["affinity_scale"] = "-10: fully hostile, 0: neutral, 10: fully trusted"
     if isinstance(character.extra, dict):
         for source_key, target_key in (
             ("level", "level"),

@@ -78,6 +78,10 @@ class AppConfig:
         return str(self.ui_setting.get("font_path", "assets/fonts/JF-Dot-MPlus10.ttf"))
 
     @property
+    def font_family(self) -> str:
+        return str(self.ui_setting.get("font_family", "")).strip()
+
+    @property
     def font_size(self) -> int:
         return int(self.ui_setting.get("font_size", 14))
 

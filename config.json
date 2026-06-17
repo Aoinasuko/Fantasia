@@ -1,13 +1,16 @@
 {
   "version": 0.1,
   "device_info": {
-    "memory_size": null,
-    "vram_size": null,
-    "gpu_names": [],
-    "is_torch_cuda_usable": null,
-    "is_vulkan_usable": null,
+    "memory_size": 126,
+    "vram_size": 32,
+    "gpu_names": [
+      "NVIDIA GeForce RTX 5090"
+    ],
+    "is_torch_cuda_usable": true,
+    "is_vulkan_usable": true,
     "recommended_llm_backend": "llama_cpp_completion_cuda",
-    "recommended_image_backend": "stable_diffusion_cpp"
+    "recommended_image_backend": "stable_diffusion_cpp",
+    "notes": []
   },
   "setup": {
     "completed": false,

@@ -8,7 +8,7 @@ import uuid
 from copy import deepcopy
 from typing import Any
 
-from .i18n import tr_enum
+from .i18n import ELEMENT_IDS, tr_enum
 
 
 FANTASIA_ITEM_CATEGORY_COUNTS: dict[str, int] = {
@@ -107,24 +107,38 @@ WEAPON_CATEGORIES = {
     "throwable_weapon",
 }
 
-EQUIPMENT_SLOTS = ("weapon", "head", "body", "feet", "accessory")
+EQUIPMENT_SLOTS = (
+    "weapon",
+    "shield",
+    "body_armor",
+    "headgear",
+    "gauntlets",
+    "leg_armor",
+    "clothing",
+    "legwear",
+    "accessory",
+)
 
 EQUIPMENT_SLOT_LABELS = {
     "weapon": "武器",
-    "head": "頭",
-    "body": "胴体",
-    "feet": "足",
+    "shield": "盾",
+    "body_armor": "胴防具",
+    "headgear": "頭防具",
+    "gauntlets": "腕防具",
+    "leg_armor": "脚防具",
+    "clothing": "衣服",
+    "legwear": "脚衣",
     "accessory": "アクセサリー",
 }
 
 ARMOR_SLOT_BY_CATEGORY = {
-    "headgear": "head",
-    "body_armor": "body",
-    "clothing": "body",
-    "gauntlets": "body",
-    "shield": "body",
-    "leg_armor": "feet",
-    "legwear": "feet",
+    "headgear": "headgear",
+    "body_armor": "body_armor",
+    "clothing": "clothing",
+    "gauntlets": "gauntlets",
+    "shield": "shield",
+    "leg_armor": "leg_armor",
+    "legwear": "legwear",
     "accessory": "accessory",
 }
 
@@ -242,152 +256,166 @@ CATEGORY_BASE_VALUE = {
 
 ITEM_TEMPLATES: dict[str, list[tuple[str, str, int]]] = {
     "food": [
-        ("旅糧パン", "硬く焼いた携帯食。長旅でも腹を満たせる。", 5),
-        ("干し果物", "小袋に詰められた甘い保存食。", 7),
-        ("燻製肉", "煙の香りが残る肉片。", 10),
+        ("ドロップフルーツ", "小袋に詰められた小さな飴、おやつに最適。", 1),
+        ("携帯食料", "乾パンなどの長旅に適した食料。", 5),
+        ("ドライフルーツ", "小袋に詰められた干し果物。", 7),
+        ("ジャーキー", "肉の燻製、豪華な保存食。", 10),
     ],
     "drink": [
-        ("水袋", "澄んだ水を入れた革袋。", 4),
-        ("薄いエール", "喉を湿らせる軽い酒。", 6),
-        ("薬草茶", "体を温める苦い茶。", 8),
+        ("水袋", "飲料水を入れた革袋。", 4),
+        ("エール", "普遍的な酒。", 6),
+        ("ハーブティー", "薬草を使った暖かいお茶。", 8),
     ],
     "medicine": [
-        ("止血薬", "浅い傷に効く基礎的な薬。", 18),
-        ("解毒薬", "毒やしびれを抑える薬。", 24),
-        ("癒やしの軟膏", "傷口に塗る軟膏。", 20),
-        ("気付け薬", "意識をはっきりさせる刺激薬。", 16),
+        ("止血薬", "浅い傷に効く基礎的な薬。", 10),
+        ("治癒促進薬", "傷の治りを早くする薬。", 20),
+        ("解毒薬", "毒や麻痺を治癒する薬。", 30),
     ],
     "potion": [
-        ("小瓶の治癒薬", "淡く光る赤い薬液。", 30),
-        ("澄んだ魔力薬", "魔力を帯びた青い薬液。", 34),
-        ("耐毒の霊薬", "毒気に抗うための霊薬。", 42),
+        ("治癒のポーション", "体力を回復するポーション。", 30),
+        ("強心のポーション", "魔力や活力を回復するポーション。", 30),
+        ("大治癒のポーション", "体力を大きく回復するポーション。", 100),
+        ("大強心のポーション", "魔力や活力を大きく回復するポーション。", 100),
+        ("完治のポーション", "体力を完全に回復するポーション。", 300),
     ],
     "tool": [
-        ("松明", "暗所を照らすための松明。", 8),
-        ("古いロープ", "まだ使える丈夫なロープ。", 12),
+        ("松明", "暗所を照らすための松明。", 10),
+        ("ロープ", "丈夫なロープ。", 5),
         ("火打ち石", "火を起こすための小道具。", 10),
         ("携帯ランタン", "油を入れて使う小さなランタン。", 20),
+        ("つるはし", "鉱石を掘るのに使える道具。", 30),
+        ("伐採用の斧", "伐採に使える道具。", 30),
     ],
     "scrap": [
-        ("錆びた釘束", "修理や罠作りに使えそうな釘。", 2),
-        ("壊れた歯車", "古い機械から外れた部品。", 3),
-        ("裂けた布切れ", "包帯や詰め物にできる布。", 2),
-        ("曲がった金具", "鍛冶屋なら再利用できそうな金具。", 4),
+        ("金属のくず", "様々な金属くず。", 2),
+        ("壊れた部品", "古い機械の部品。", 5),
+        ("破れた布切れ", "包帯や詰め物に再利用できそうな布。", 2),
     ],
     "other_material": [
-        ("丈夫な紐", "荷造りや簡単な修理に使える。", 4),
-        ("獣脂の塊", "灯火や薬の材料になる。", 5),
-        ("骨片", "小さな加工素材。", 4),
+        ("頑丈な紐", "簡単な修理にも使える汎用性の高い紐。", 5),
+        ("獣脂", "灯火や薬の材料になる素材。", 5),
+        ("骨片", "小さな加工素材。", 5),
+        ("木材", "小さな加工素材。", 10),
+        ("石材", "小さな加工素材。", 10),
     ],
     "plant": [
         ("薬草", "薬の材料になる青い草。", 5),
-        ("香草の束", "食事や薬に香りを加える草。", 6),
-        ("夜露草", "夜明けにだけ採れる湿った草。", 9),
+        ("香草", "食事や薬に香りを加える草。", 5),
+        ("増幅草", "ポーションの効能を高める草。", 10),
+        ("毒草", "毒を含んだ草。", 10),
     ],
     "mushroom": [
-        ("白まだら茸", "食用か薬用か判別が必要な茸。", 6),
-        ("月影茸", "薄く光る珍しい茸。", 14),
+        ("フツウタケ", "一般的な食用茸。", 6),
+        ("マヒシメジ", "麻痺効果がある毒茸。", 30),
+        ("ドクリンギ", "毒効果がある毒茸。", 30),
     ],
     "ore": [
-        ("鉄鉱石", "精錬すれば武具の材料になる。", 10),
-        ("銅鉱石", "扱いやすい赤みがかった鉱石。", 8),
-        ("黒曜石片", "鋭く割れる黒い石。", 12),
+        ("銅鉱石", "初心者でも加工しやすい鉱石。", 5),
+        ("鉄鉱石", "一般的な武具の材料になる鉱石。", 10),
+        ("金鉱石", "装飾品の材料として人気の鉱石。", 15),
+        ("黒曜石", "鋭く割れる黒い石。", 20),
+        ("金剛石", "とても頑丈で、強力な武具の材料になる石。", 30),
     ],
     "metal": [
-        ("鉄の延べ棒", "鍛冶に使う精錬済みの金属。", 18),
-        ("銀片", "魔除けにも使われる金属片。", 24),
+        ("鉄のインゴット", "鍛冶に使う精錬済みの金属。", 15),
+        ("金のインゴット", "換金によく使われる金属。", 30),
+        ("金片", "魔除けなどの材料になる金属片。", 20),
+        ("銀片", "魔除けなどの材料になる金属片。", 15),
     ],
     "gem": [
-        ("曇った水晶", "内側に淡い光を含む水晶。", 35),
-        ("小さな紅玉", "傷はあるが価値のある宝石。", 55),
-        ("青い輝石", "魔法触媒として扱われる石。", 48),
+        ("魔力水晶", "小さな魔力を含んだ水晶。", 35),
+        ("サファイア", "価値のある青い宝石。", 60),
+        ("ルビー", "価値のある赤い宝石。", 60),
+        ("エメラルド", "価値のある緑色の宝石。", 60),
     ],
     "treasure": [
-        ("古い硬貨", "今も交換価値が残る硬貨。", 12),
-        ("銀の小杯", "細工の入った小さな杯。", 38),
-        ("細工箱", "鍵の壊れた装飾箱。", 45),
+        ("記念硬貨", "何らかの記念に作られた珍しい硬貨。", 20),
+        ("銀の杯", "細工の入った珍しい杯。", 40),
+        ("装飾箱", "煌びやかな装飾が施された箱。", 60),
+        ("宝石の芸術品", "宝石で作られた見事な芸術品。", 80),
     ],
     "document": [
-        ("濡れた手紙", "差出人の名がにじんだ手紙。", 8),
-        ("古い地図片", "周辺の道筋が描かれた紙片。", 18),
-        ("店の覚書", "取引の記録が残る帳面。", 12),
+        ("掠れたメモ", "何かが書かれていたようだがもう読めないメモ。", 1),
+        ("破れた手紙", "ところどころ破れている手紙。", 5),
+        ("古い地図片", "周辺の地形等が描かれた紙片。", 20),
+        ("宝の地図", "宝のありかが書かれた地図。", 100),
     ],
     "scroll": [
-        ("封じた巻物", "簡単な術式が記された巻物。", 36),
-        ("護符の紙片", "災い避けの印が書かれている。", 22),
+        ("何かの巻物", "何らかの簡単な魔法が記された巻物。", 20),
+        ("炎の巻物", "炎の弾を飛ばせる使い捨ての巻物。", 30),
+        ("回復の巻物", "読んだものを回復する使い捨ての巻物。", 30),
+        ("結界の巻物", "敵対する存在から身を一時的に護れる使い捨ての巻物。", 40),
     ],
     "magical_material": [
-        ("魔力の粉", "術式に混ぜるきらめく粉。", 24),
-        ("星硝子", "夜空のように光る硝子片。", 34),
+        ("魔力の粉", "ポーションの素材にもなる魔法の粉。", 20),
     ],
     "relic": [
-        ("欠けた聖印", "古い祈りの痕跡が残る遺物。", 70),
-        ("記憶石", "触れると微かな声が響く石。", 95),
+        ("妖精の石", "妖精が封じられた石。", 50),
+        ("聖なる石", "邪気を払いのけると言われている石。", 75),
     ],
     "small_weapon": [
-        ("短剣", "扱いやすい小型の刃物。", 28),
-        ("狩猟ナイフ", "野外で役立つ刃物。", 24),
+        ("短剣", "扱いやすい小型の刃物。", 25),
+        ("狩猟ナイフ", "野外で役立つ刃物。", 20),
     ],
     "medium_weapon": [
         ("鉄の剣", "標準的な片手剣。", 45),
-        ("片手斧", "木を割るにも戦うにも使える斧。", 42),
+        ("片手斧", "木を割るにも戦うにも使える斧。", 30),
     ],
     "large_weapon": [
-        ("大剣", "両手で扱う重い剣。", 72),
-        ("戦槌", "鎧ごと叩き潰す重い槌。", 68),
+        ("大剣", "両手で扱う重い剣。", 70),
+        ("戦槌", "鎧ごと叩き潰す重い槌。", 60),
     ],
     "long_weapon": [
         ("槍", "間合いを取れる長柄武器。", 50),
-        ("古い薙刀", "刃こぼれした長柄武器。", 44),
+        ("古い薙刀", "刃こぼれした長柄武器。", 40),
     ],
     "throwable_weapon": [
-        ("投げナイフ", "軽く投げやすい短い刃。", 12),
-        ("投石袋", "丸石を入れた簡易武器。", 6),
+        ("投げナイフ", "軽く投げやすい短い刃。", 15),
+        ("投石袋", "丸石を入れた簡易武器。", 5),
     ],
     "shield": [
-        ("木の盾", "軽く扱いやすい盾。", 28),
-        ("丸盾", "金属縁の小型盾。", 38),
+        ("木の盾", "軽く扱いやすい盾。", 30),
+        ("丸盾", "金属縁の小型盾。", 40),
     ],
     "body_armor": [
-        ("革鎧", "動きやすい軽装の鎧。", 55),
-        ("鎖帷子", "刃を受け流す鎖の鎧。", 75),
+        ("革鎧", "動きやすい軽装の鎧。", 50),
+        ("鎖帷子", "刃を受け流す鎖の鎧。", 60),
     ],
     "headgear": [
-        ("旅人の帽子", "雨風をしのぐ帽子。", 12),
-        ("革の兜", "頭を守る簡素な兜。", 26),
+        ("旅人の帽子", "雨風をしのぐ帽子。", 10),
+        ("革の兜", "頭を守る簡素な兜。", 30),
     ],
     "gauntlets": [
-        ("革手袋", "手を守る厚手の手袋。", 16),
-        ("鉄の篭手", "前腕まで覆う金属防具。", 32),
+        ("革手袋", "手を守る厚手の手袋。", 15),
+        ("鉄の篭手", "前腕まで覆う金属防具。", 30),
     ],
     "leg_armor": [
-        ("革の脛当て", "足元を守る軽い防具。", 24),
-        ("鉄の脚甲", "重いが頼れる脚防具。", 38),
+        ("革の脛当て", "足元を守る軽い防具。", 25),
+        ("鉄の脚甲", "重いが頼れる脚防具。", 40),
     ],
     "clothing": [
-        ("旅装束", "埃に強い外套つきの服。", 16),
-        ("町人の服", "目立たない日常着。", 12),
+        ("旅装束", "埃に強い外套つきの服。", 20),
+        ("町人の服", "目立たない日常着。", 15),
     ],
     "legwear": [
         ("丈夫な靴下", "長歩きで足を守る布。", 5),
-        ("旅靴", "道歩きに向いた靴。", 18),
+        ("旅靴", "道歩きに向いた靴。", 20),
     ],
     "accessory": [
-        ("銅の指輪", "簡素な銅製の指輪。", 24),
-        ("旅のお守り", "小さな祈り札を束ねた飾り。", 28),
+        ("銀の指輪", "簡素な銀製の指輪。", 30),
+        ("護符", "守りの魔力が込められた飾り。", 30),
     ],
     "creature_part": [
-        ("獣の牙", "加工すれば矢じりにもなる牙。", 8),
+        ("獣の牙", "加工すれば矢じりにもなる牙。", 10),
         ("硬い鱗", "防具素材になりそうな鱗。", 10),
-        ("魔物の爪", "微かな魔力を帯びた爪。", 12),
+        ("魔物の爪", "微かな魔力を帯びた爪。", 15),
     ],
     "liquid_material": [
         ("澄んだ油", "ランタンや調合に使える油。", 10),
-        ("粘つく樹液", "接着や薬の材料になる樹液。", 12),
+        ("粘つく樹液", "接着や薬の材料になる樹液。", 15),
     ],
     "creature": [
-        ("小さな使い魔", "籠の中で眠る奇妙な生き物。", 45),
-        ("荷運び虫", "小荷物を運べる大きな虫。", 30),
+        ("小さな妖精", "周囲を跳ね回るかわいい妖精。", 45),
     ],
 }
 
@@ -587,7 +615,7 @@ def normalise_item(raw: Any, source: str = "", fallback_category: str = "scrap")
     item["rarity_label"] = tr_enum("rarity", str(item.get("rarity")), fallback=RARITY_LABELS.get(str(item.get("rarity")), str(item.get("rarity"))))
     item["rarity_color"] = RARITY_COLORS.get(str(item.get("rarity")), "white")
     if category in EQUIPMENT_CATEGORIES:
-        item["equipment_slot"] = str(item.get("equipment_slot") or equipment_slot_for_category(category))
+        item["equipment_slot"] = equipment_slot_for_category(category) or str(item.get("equipment_slot") or "")
         item["instance_id"] = str(item.get("instance_id") or _new_item_instance_id(category, name))
         item["attack"] = _safe_int(item.get("attack"), _base_equipment_attack(category, str(item.get("rarity"))))
         item["defense"] = _safe_int(item.get("defense"), _base_equipment_defense(category, str(item.get("rarity"))))
@@ -928,6 +956,7 @@ def calculate_equipment_summary(equipment: dict[str, Any] | None) -> dict[str, A
         "sp_regen": 0,
         "attributes": {"str": 0, "dex": 0, "con": 0, "int": 0, "wis": 0, "cha": 0},
         "status_immunities": [],
+        "element_resistances": {},
         "llm_effects": [],
         "items": [],
     }
@@ -969,6 +998,11 @@ def calculate_equipment_summary(equipment: dict[str, Any] | None) -> dict[str, A
                 immunity = str(effect.get("status") or effect.get("status_id") or effect.get("target") or effect.get("value") or "").strip()
                 if immunity:
                     immunities.append(immunity)
+            elif effect_type in {"element_resistance", "element_damage_reduction", "resist_element"}:
+                element = str(effect.get("element") or effect.get("target") or effect.get("attribute") or "").strip()
+                if element:
+                    resistances = summary["element_resistances"]
+                    resistances[element] = max(_safe_int(resistances.get(element), 0), value)
         if isinstance(item.get("llm_effects"), list):
             llm_effects.extend(item.get("llm_effects") or [])
     summary["status_immunities"] = _dedupe_texts(immunities)
@@ -1006,7 +1040,7 @@ def item_tooltip_text(item: dict[str, Any], price_mode: str = "", language: str 
         if defense:
             lines.append(f"{tip('defense')} +{defense}")
         for effect in normalised.get("effects") if isinstance(normalised.get("effects"), list) else []:
-            text = _equipment_effect_label(effect)
+            text = _equipment_effect_label(effect, language)
             if text:
                 lines.append(text)
         llm_effects = normalised.get("llm_effects") if isinstance(normalised.get("llm_effects"), list) else []
@@ -1320,6 +1354,8 @@ def _equipment_effects(category: str, rarity: str, name: str) -> list[dict[str, 
         "sp_regen",
         "status_immunity",
     ]
+    if category not in WEAPON_CATEGORIES:
+        pool.append("element_resistance")
     selected = rng.sample(pool, k=min(count, len(pool)))
     power = RARITY_POWER.get(rarity, 1)
     effects: list[dict[str, Any]] = []
@@ -1337,6 +1373,11 @@ def _equipment_effects(category: str, rarity: str, name: str) -> list[dict[str, 
         elif effect_type == "status_immunity":
             status = rng.choice(["poison", "bleed", "burn", "freeze", "sleep", "paralysis", "fear", "curse"])
             effects.append({"type": "status_immunity", "status": status, "value": 1})
+        elif effect_type == "element_resistance":
+            elements = [element_id for element_id in ELEMENT_IDS if element_id != "none"]
+            element_id = rng.choice(elements)
+            value = max(10, min(50, 10 + power * 2 + rng.randrange(0, 11)))
+            effects.append({"type": "element_resistance", "element": element_id, "value": value})
     return effects
 
 
@@ -1357,7 +1398,7 @@ def _equipment_llm_effects(category: str, rarity: str, name: str) -> list[dict[s
     return rng.sample(pool, k=min(count, len(pool)))
 
 
-def _equipment_effect_label(effect: Any) -> str:
+def _equipment_effect_label(effect: Any, language: str = "ja") -> str:
     if not isinstance(effect, dict):
         return ""
     effect_type = str(effect.get("type") or effect.get("stat") or effect.get("name") or "").strip().lower()
@@ -1380,6 +1421,12 @@ def _equipment_effect_label(effect: Any) -> str:
     if effect_type in {"status_immunity", "immunity", "immune"}:
         status = effect.get("status") or effect.get("status_id") or effect.get("target") or effect.get("value")
         return f"状態異常無効: {status}"
+    if effect_type in {"element_resistance", "element_damage_reduction", "resist_element"}:
+        element = str(effect.get("element") or effect.get("target") or effect.get("attribute") or "").strip()
+        label = tr_enum("element", element, language, fallback=element)
+        if str(language or "").strip().lower().startswith("en"):
+            return f"{label} damage reduction {value}%"
+        return f"{label}ダメージ軽減 {value}%"
     label = labels.get(effect_type)
     if not label:
         return ""

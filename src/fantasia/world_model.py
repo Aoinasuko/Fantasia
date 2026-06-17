@@ -77,6 +77,7 @@ class CharacterData:
         kwargs["image_paths"] = _as_dict(kwargs.get("image_paths"))
         kwargs["prompts"] = _as_dict(kwargs.get("prompts"))
         kwargs["flags"] = _as_dict(kwargs.get("flags"))
+        kwargs["extra"] = _as_dict(kwargs.get("extra"))
         kwargs["gold"] = int(kwargs.get("gold") or 0)
         return cls(**kwargs)
 

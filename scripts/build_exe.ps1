@@ -24,6 +24,9 @@ $publishRoot = Join-Path $root "publish"
 $runtimeRoot = Join-Path $publishRoot ".fantasia_runtime"
 $configPath = Join-Path $root "config.json"
 $playGuideSource = Join-Path $root "docs\PLAY_GUIDE.txt"
+$dllLicenseSource = Join-Path $root "docs\DLL_LICENSES.txt"
+$iconSource = Join-Path $root "docs\icon.png"
+$iconPath = Join-Path $buildRoot "Fantasia.ico"
 
 . (Join-Path $PSScriptRoot "runtime_binaries.ps1")
 
@@ -71,8 +74,34 @@ function Write-PlayGuide([string]$Path) {
     [System.IO.File]::WriteAllLines($Path, $lines, $utf8NoBom)
 }
 
+function Convert-PngToIcon([string]$SourcePath, [string]$TargetPath) {
+    if (-not (Test-Path $SourcePath)) {
+        Write-Warning "Icon source not found: $SourcePath"
+        return $false
+    }
+    $script = @'
+from pathlib import Path
+import sys
+from PIL import Image
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+target.parent.mkdir(parents=True, exist_ok=True)
+image = Image.open(source).convert("RGBA")
+image.save(
+    target,
+    format="ICO",
+    sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)],
+)
+'@
+    & $python -c $script $SourcePath $TargetPath
+    return (Test-Path $TargetPath)
+}
+
 Reset-Directory $buildRoot
 Reset-Directory $publishRoot
+
+$hasIcon = Convert-PngToIcon -SourcePath $iconSource -TargetPath $iconPath
 
 $previousPythonPath = $env:PYTHONPATH
 if ([string]::IsNullOrWhiteSpace($previousPythonPath)) {
@@ -82,16 +111,20 @@ if ([string]::IsNullOrWhiteSpace($previousPythonPath)) {
 }
 
 try {
-    & $python -m nuitka `
-        --standalone `
-        --assume-yes-for-downloads `
-        --enable-plugin=tk-inter `
-        --include-package=fantasia `
-        --output-dir=$buildRoot `
-        --output-filename=fantasia.exe `
-        --include-data-files="$root\config.json=config.json" `
-        --include-data-dir="$root\assets=assets" `
-        $entry
+    $nuitkaArgs = @(
+        "--standalone",
+        "--assume-yes-for-downloads",
+        "--enable-plugin=tk-inter",
+        "--include-package=fantasia",
+        "--output-dir=$buildRoot",
+        "--output-filename=fantasia.exe",
+        "--include-data-files=$root\config.json=config.json",
+        "--include-data-dir=$root\assets=assets"
+    )
+    if ($hasIcon) {
+        $nuitkaArgs += "--windows-icon-from-ico=$iconPath"
+    }
+    & $python -m nuitka @nuitkaArgs $entry
 } finally {
     $env:PYTHONPATH = $previousPythonPath
 }
@@ -118,13 +151,23 @@ $runtimeItem.Attributes = $runtimeItem.Attributes -bor [System.IO.FileAttributes
 $csc = Get-CSharpCompiler
 $launcherSource = Join-Path $PSScriptRoot "FantasiaLauncher.cs"
 $launcherExe = Join-Path $publishRoot "Fantasia.exe"
-& $csc /nologo /target:winexe /out:$launcherExe $launcherSource
+$cscArgs = @("/nologo", "/target:winexe", "/out:$launcherExe")
+if ($hasIcon) {
+    $cscArgs += "/win32icon:$iconPath"
+}
+$cscArgs += $launcherSource
+& $csc @cscArgs
 
 $playGuideTarget = Join-Path $publishRoot "PLAY_GUIDE.txt"
 if (Test-Path $playGuideSource) {
     Copy-Item -LiteralPath $playGuideSource -Destination $playGuideTarget -Force
 } else {
     Write-PlayGuide $playGuideTarget
+}
+
+$dllLicenseTarget = Join-Path $publishRoot "DLL_LICENSES.txt"
+if (Test-Path $dllLicenseSource) {
+    Copy-Item -LiteralPath $dllLicenseSource -Destination $dllLicenseTarget -Force
 }
 
 Write-Host "Built publish folder: $publishRoot"

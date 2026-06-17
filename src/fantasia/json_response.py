@@ -82,7 +82,7 @@ class ManagerSchema:
             )
         if any(field.name in {"equip_item", "unequip_item", "equipment_changes"} for field in self.fields):
             lines.append(
-                "- Equipment changes: use equip_item/equip_items to equip a named item or item object, unequip_item/remove_equipment to remove equipment, or equipment_changes with action=equip/unequip and slot/item. Slots are weapon/head/body/feet/accessory."
+                "- Equipment changes: use equip_item/equip_items to equip a named item or item object, unequip_item/remove_equipment to remove equipment, or equipment_changes with action=equip/unequip and slot/item. Slots are weapon/shield/body_armor/headgear/gauntlets/leg_armor/clothing/legwear/accessory."
             )
         if any(field.name == "display_cg" for field in self.fields):
             lines.append(
@@ -111,7 +111,7 @@ class ManagerSchema:
                 "name には (討伐時入手)、(報酬)、drop、loot などの入手条件を書かず、入手条件は description/source/reason に分けてください。"
             )
             lines.append(
-                "- 装備品は category に weapon/small_weapon/medium_weapon/large_weapon/long_weapon/headgear/body_armor/leg_armor/accessory 等を使い、rarity は common/uncommon/rare/epic/legendary/artifact から選べます。拾った物を即装備する場合は equip_item も返してください。"
+                "- 装備品は category に small_weapon/medium_weapon/large_weapon/long_weapon/throwable_weapon/shield/body_armor/headgear/gauntlets/leg_armor/clothing/legwear/accessory 等を使い、rarity は common/uncommon/rare/epic/legendary/artifact から選べます。拾った物を即装備する場合は equip_item も返してください。"
             )
         if any(field.name in {"item_rewards", "items", "rewards", "gold", "lost_items", "stolen_items", "given_items"} for field in self.fields):
             lines.append(
@@ -125,6 +125,16 @@ class ManagerSchema:
             lines.append(
                 "- プレイヤー、主人公、あなた、自分、PC はNPCとして生成しないでください。"
                 "現在地にいる既存NPCの名前、役割、別名を指す場合は new_npc_requests に入れないでください。"
+            )
+        if any(field.name in {"relationship_change", "relationship_changes", "npc_relationship_change", "affinity_change", "affinity_changes"} for field in self.fields):
+            lines.append(
+                "- NPC好感度が変化する場合は relationship_change または affinity_changes に "
+                "{target/name/npc_name, delta, reason} を返してください。delta は差分で、0が中立、-10が完全敵対、10が完全信頼です。"
+            )
+        if any(field.name in {"npc_movement", "npc_movements", "character_movement", "character_movements", "move_npc", "move_npcs"} for field in self.fields):
+            lines.append(
+                "- NPCが同行・離脱・別地点へ移動した場合は npc_movements に "
+                "{target/name/npc_name, location/to/destination, state, reason} を返してください。文章だけで同行させず、必ず実データ更新用に返してください。"
             )
         lines.append(json.dumps(self.example, ensure_ascii=False, indent=2))
         return "\n".join(lines)
@@ -180,6 +190,25 @@ STATUS_EFFECT_FIELDS = (
     FieldRule("resolved_player_status_effects", (list, dict, str), required=False, non_empty=False, string_items=False),
     FieldRule("resolved_character_status_effects", (list, dict, str), required=False, non_empty=False, string_items=False),
     FieldRule("resolved_npc_status_effects", (list, dict, str), required=False, non_empty=False, string_items=False),
+    FieldRule("relationship_change", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("relationship_changes", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("npc_relationship_change", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("npc_relationship_changes", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("affinity_change", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("affinity_changes", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("npc_affinity_change", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("npc_affinity_changes", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("npc_movement", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("npc_movements", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("character_movement", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("character_movements", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("actor_movement", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("actor_movements", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("move_npc", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("move_npcs", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("moved_npcs", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("followers", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("escorted_npcs", (dict, list, str), required=False, non_empty=False, string_items=False),
     FieldRule("player_hp_delta", (int, str), required=False, non_empty=False),
     FieldRule("hp_delta", (int, str), required=False, non_empty=False),
     FieldRule("heal_hp", (int, str), required=False, non_empty=False),
@@ -393,7 +422,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "quest_starter": ManagerSchema(
         manager_name="quest_starter",
         fields=(
-            FieldRule("narration", (str,), aliases=("text",)),
+            FieldRule("narration", (str,), aliases=("text", "narr")),
             FieldRule("choices", (list,)),
             FieldRule("quest_name", (str,), required=False),
             FieldRule("objective", (str,), required=False),
@@ -413,12 +442,13 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "quest_referee_with_free_action": ManagerSchema(
         manager_name="quest_referee_with_free_action",
         fields=(
-            FieldRule("narration", (str,), aliases=("text",)),
+            FieldRule("narration", (str,), aliases=("text", "narr")),
             FieldRule("choices", (list,)),
             FieldRule("location", (str,), required=False),
             FieldRule("quest_progress", (str,), required=False),
             FieldRule("event", (dict, list), required=False, non_empty=False, string_items=False),
             FieldRule("finished", (bool,), required=False, non_empty=False),
+            FieldRule("quest_status", (str,), required=False, non_empty=False),
             *STATUS_EFFECT_FIELDS,
             *REWARD_FIELDS,
             *VISUAL_FIELDS,
@@ -435,11 +465,12 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "quest_referee_event_resolve": ManagerSchema(
         manager_name="quest_referee_event_resolve",
         fields=(
-            FieldRule("narration", (str,), aliases=("text",)),
+            FieldRule("narration", (str,), aliases=("text", "narr")),
             FieldRule("choices", (list,)),
             FieldRule("location", (str,), required=False),
             FieldRule("quest_update", (dict, list), required=False, non_empty=False, string_items=False),
             FieldRule("finished", (bool,), required=False, non_empty=False),
+            FieldRule("quest_status", (str,), required=False, non_empty=False),
             *STATUS_EFFECT_FIELDS,
             *REWARD_FIELDS,
             *VISUAL_FIELDS,
@@ -928,6 +959,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
                 {
                     "name": "噂の照合",
                     "description": "旅人の証言と古い地図を照らし合わせる。",
+                    "element": "light",
                     "skill_type": "support",
                     "effects": [{"name": "手がかり発見", "value": 1}],
                     "sp_cost": 3,
@@ -1135,7 +1167,7 @@ def _canonicalize_manager_response(manager_name: str, value: Any) -> Any:
             value,
             "skills",
             aliases=("skill", "generated_skill", "skill_list"),
-            item_keys=("name", "description", "skill_type", "effects", "sp_cost", "usefulness"),
+            item_keys=("name", "description", "element", "skill_type", "effects", "sp_cost", "power", "strength_level", "usefulness"),
         )
     if manager_name == "create_trait":
         return _wrap_collection_response(

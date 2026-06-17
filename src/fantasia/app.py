@@ -8,18 +8,18 @@ import tkinter as tk
 import time
 import traceback
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 
-from PIL import Image, ImageTk
+from PIL import Image, ImageGrab, ImageTk
 
 from .assets import check_runtime_assets, format_asset_report
 from .cloud_models import cached_cloud_model_ids, fetch_cloud_model_ids
 from .config import load_config
 from .crashlog import install_crash_logging, install_tk_crash_logging
 from .device import detect_device, device_report
-from .game import DEFAULT_GUILD_NAME, GameEngine
+from .game import DEFAULT_GUILD_NAME, INITIAL_WORLD_TIME_HOURS, GameEngine
 from .generation_log import append_task_event, format_generation_log_detail, list_generation_logs
-from .i18n import tr_enum, tr_enum_format
+from .i18n import ELEMENT_IDS, tr_enum, tr_enum_format
 from .imagegen import QUALITY_PRESETS, MockSdxlBackend, create_image_backend
 from .items import (
     add_item_stack,
@@ -48,7 +48,7 @@ from .model_catalog import (
     option_to_local_llm,
     sdxl_model_options,
 )
-from .paths import CONFIG_PATH, CRASHLOG_DIR, LOG_DIR, OUTPUT_DIR, PORTABLE_ROOT, RUNTIME_DIR
+from .paths import ASSETS_DIR, CONFIG_PATH, CRASHLOG_DIR, LOG_DIR, MODEL_GRAPHIC_DIR, MODEL_TEXT_DIR, OUTPUT_DIR, PORTABLE_ROOT, RUNTIME_DIR
 from .prompt_templates import PromptTemplateStore, resolve_prompt_template_dir
 from .save_store import SaveStore
 from .text_encoding import check_project_encoding, configure_stdio_encoding, format_encoding_report
@@ -63,6 +63,145 @@ GAME_LOG_PANEL_HEIGHT = 176
 CHARACTER_STAT_BASE = 8
 CHARACTER_BONUS_POINTS = 12
 CHARACTER_STAT_MAX = CHARACTER_STAT_BASE + CHARACTER_BONUS_POINTS
+APP_GRADIENT_TOP = "#000000"
+APP_GRADIENT_BOTTOM = "#07152d"
+APP_DEEP_BG = "#061126"
+APP_PANEL_BG = "#050914"
+APP_PANEL_ACTIVE_BG = "#10182a"
+APP_BUTTON_BORDER = "#f2f2f2"
+UI_BUTTON_ICON_DIR = ASSETS_DIR / "ui" / "buttons"
+UI_TOOL_ICON_DISPLAY_SIZE = 56
+UI_TOOL_BUTTON_SIZE = 64
+UI_PLAYER_SLOT_HEIGHT = 132
+BUILTIN_FONT_PATH = "assets/fonts/JF-Dot-MPlus10.ttf"
+BUILTIN_FONT_NAME = "JF-Dot-MPlus10"
+
+
+class GradientCanvas(tk.Canvas):
+    def __init__(self, parent: tk.Widget, top: str = APP_GRADIENT_TOP, bottom: str = APP_GRADIENT_BOTTOM, **kwargs) -> None:
+        super().__init__(parent, bd=0, highlightthickness=0, bg=bottom, **kwargs)
+        self._gradient_top = top
+        self._gradient_bottom = bottom
+        self._gradient_size: tuple[int, int] = (0, 0)
+        self.bind("<Configure>", self._draw_gradient, add="+")
+
+    def _draw_gradient(self, event=None) -> None:
+        width = max(1, int(event.width if event is not None else self.winfo_width()))
+        height = max(1, int(event.height if event is not None else self.winfo_height()))
+        if self._gradient_size == (width, height):
+            return
+        self._gradient_size = (width, height)
+        self.delete("app_gradient")
+        top = self._rgb(self._gradient_top)
+        bottom = self._rgb(self._gradient_bottom)
+        step = 2
+        denominator = max(1, height - 1)
+        for y in range(0, height, step):
+            ratio = y / denominator
+            color = "#%02x%02x%02x" % tuple(
+                int(top[index] + (bottom[index] - top[index]) * ratio)
+                for index in range(3)
+            )
+            self.create_rectangle(0, y, width, min(height, y + step), fill=color, outline=color, tags="app_gradient")
+        self.tag_lower("app_gradient")
+
+    def _rgb(self, value: str) -> tuple[int, int, int]:
+        red, green, blue = self.winfo_rgb(value)
+        return red // 256, green // 256, blue // 256
+
+    def tkraise(self, aboveThis: tk.Widget | str | None = None) -> None:
+        if aboveThis is None:
+            self.tk.call("raise", self._w)
+            return
+        target = aboveThis._w if isinstance(aboveThis, tk.Widget) else aboveThis
+        self.tk.call("raise", self._w, target)
+
+
+class ModalDialog(tk.Frame):
+    def __init__(self, owner: "FantasiaApp", title: str = "", width: int = 820, height: int = 560) -> None:
+        self._overlay = tk.Frame(owner.screen_container, bg="#303030")
+        self._overlay_bg_image: ImageTk.PhotoImage | None = self._make_overlay_background(owner)
+        self._overlay.grid(row=0, column=0, sticky="nsew")
+        self._overlay.tkraise()
+        if self._overlay_bg_image is not None:
+            tk.Label(self._overlay, image=self._overlay_bg_image, bd=0, highlightthickness=0).place(relx=0, rely=0, relwidth=1, relheight=1)
+        super().__init__(
+            self._overlay,
+            bg=APP_DEEP_BG,
+            highlightbackground="#f2f2f2",
+            highlightcolor="#f2f2f2",
+            highlightthickness=2,
+        )
+        self._title = title
+        self._close_callback = None
+        self._destroying = False
+        self.place(relx=0.5, rely=0.5, anchor="center", width=width, height=height)
+        self.bind("<Escape>", lambda _event: self._handle_close(), add="+")
+        self._overlay.bind("<Button-1>", lambda _event: "break", add="+")
+        self.focus_set()
+        self.grab_set()
+
+    def _make_overlay_background(self, owner: "FantasiaApp") -> ImageTk.PhotoImage | None:
+        try:
+            owner.update_idletasks()
+            width = max(owner.winfo_width(), 1)
+            height = max(owner.winfo_height(), 1)
+            left = owner.winfo_rootx()
+            top = owner.winfo_rooty()
+            snapshot = ImageGrab.grab((left, top, left + width, top + height)).convert("RGBA")
+            mask = Image.new("RGBA", snapshot.size, (48, 48, 48, 150))
+            dimmed = Image.alpha_composite(snapshot, mask)
+            return ImageTk.PhotoImage(dimmed)
+        except Exception:
+            return None
+
+    def title(self, value: str) -> None:
+        self._title = value
+
+    def geometry(self, value: str) -> None:
+        size = str(value).split("+", 1)[0]
+        if "x" not in size:
+            return
+        width, height = size.split("x", 1)
+        try:
+            self.place_configure(width=int(width), height=int(height))
+        except ValueError:
+            return
+
+    def transient(self, _owner=None) -> None:
+        return
+
+    def resizable(self, _width=None, _height=None) -> None:
+        return
+
+    def protocol(self, name: str, callback=None) -> None:
+        if name == "WM_DELETE_WINDOW":
+            self._close_callback = callback
+
+    def _handle_close(self) -> None:
+        if self._close_callback is not None:
+            self._close_callback()
+            return
+        self.destroy()
+
+    def destroy(self) -> None:
+        if self._destroying:
+            return
+        self._destroying = True
+        try:
+            if self.grab_current() is self:
+                self.grab_release()
+        except tk.TclError:
+            pass
+        overlay = self._overlay
+        try:
+            super().destroy()
+        finally:
+            try:
+                if overlay.winfo_exists():
+                    overlay.destroy()
+            except tk.TclError:
+                pass
 
 
 class FantasiaApp(tk.Tk):
@@ -94,7 +233,8 @@ class FantasiaApp(tk.Tk):
         self.roster_hitboxes: dict[int, list[tuple[int, int, int, int, dict[str, object]]]] = {}
         self.character_preview_image: ImageTk.PhotoImage | None = None
         self.image_cache: dict[str, Image.Image] = {}
-        self.choice_buttons: list[ttk.Button] = []
+        self.tool_icon_images: dict[str, ImageTk.PhotoImage] = {}
+        self.choice_buttons: list[tk.Button] = []
         self.task_buttons: list[tk.Widget] = []
         self.screens: dict[str, tk.Frame] = {}
         self.generation_log_entries = []
@@ -103,12 +243,17 @@ class FantasiaApp(tk.Tk):
         self.current_task_name = ""
         self.current_task_started_at = 0.0
         self.current_task_cancel_requested = False
+        self.current_task_auto_status = True
+        self.current_task_log_animation_enabled = True
         self.task_tick_after_id: str | None = None
         self.visual_task_after_id: str | None = None
         self.typewriter_after_id: str | None = None
         self.typewriter_target_text = ""
         self.typewriter_index = 0
         self.log_typewriter_base_text = ""
+        self.task_log_animation_base_text = ""
+        self.task_log_animation_last_text = ""
+        self.task_log_animation_frame = 0
         self.current_screen_name = "title"
         self.settings_back_screen = "title"
         self.generation_logs_back_screen = "title"
@@ -121,25 +266,13 @@ class FantasiaApp(tk.Tk):
         self._build_menu()
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.after(300, self._maybe_open_first_run_wizard)
+        self.after(300, self._maybe_open_first_run_notice)
 
     def _build_menu(self) -> None:
-        menu_bar = tk.Menu(self)
-        world_menu = tk.Menu(menu_bar, tearoff=False)
-        world_menu.add_command(label=_ui_text(self.config_data, "menu_import_world"), command=self._import_world_dialog)
-        world_menu.add_command(label=_ui_text(self.config_data, "menu_export_world"), command=self._export_world_dialog)
-        menu_bar.add_cascade(label=_ui_text(self.config_data, "menu_world"), menu=world_menu)
-        navigate_menu = tk.Menu(menu_bar, tearoff=False)
-        navigate_menu.add_command(label=_ui_text(self.config_data, "menu_title"), command=lambda: self._show_screen("title"))
-        navigate_menu.add_command(label=_ui_text(self.config_data, "menu_world_select"), command=lambda: self._show_screen("world_select"))
-        navigate_menu.add_command(label=_ui_text(self.config_data, "menu_settings"), command=self._open_settings_screen)
-        navigate_menu.add_command(label=_ui_text(self.config_data, "menu_generation_logs"), command=self._open_generation_logs_screen)
-        navigate_menu.add_command(label=_ui_text(self.config_data, "menu_game"), command=lambda: self._show_screen("game"))
-        menu_bar.add_cascade(label=_ui_text(self.config_data, "menu_navigate"), menu=navigate_menu)
-        self.config(menu=menu_bar)
+        self.config(menu="")
 
     def _build_ui(self) -> None:
-        self.configure(bg="#0d1017")
+        self.configure(bg=APP_GRADIENT_BOTTOM)
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
@@ -150,7 +283,10 @@ class FantasiaApp(tk.Tk):
         self.action_label_var = tk.StringVar(value=tr_enum("mode_action_label", "exploration", language))
         self.task_status_var = tk.StringVar(value="")
         self.llm_backend_var = tk.StringVar(value=self.config_data.llm_backend)
+        self.llm_backend_label_var = tk.StringVar(value=_llm_backend_label(self.config_data.llm_backend, language))
         self.llm_context_size_var = tk.StringVar(value=str(self.config_data.llm_context_size))
+        self.llm_temperature_var = tk.StringVar(value=_llm_temperature_text(self.config_data))
+        self.llm_repeat_suppression_var = tk.BooleanVar(value=_llm_repeat_suppression_enabled(self.config_data))
         self.local_model_var = tk.StringVar(value=_selected_model_label(self.config_data))
         self.cloud_openai_model_var = tk.StringVar(value=_cloud_model_text(self.config_data.cloud_llm, "openai"))
         self.cloud_xai_model_var = tk.StringVar(value=_cloud_model_text(self.config_data.cloud_llm, "xai"))
@@ -172,10 +308,13 @@ class FantasiaApp(tk.Tk):
         self.image_negative_background_var = tk.StringVar(value=str(negative_prompts.get("background", "")))
         self.image_negative_character_var = tk.StringVar(value=str(negative_prompts.get("character", "")))
         self.image_negative_monster_var = tk.StringVar(value=str(negative_prompts.get("monster", "")))
+        self.image_negative_cg_var = tk.StringVar(value=str(negative_prompts.get("cg", "")))
+        self.ui_font_var = tk.StringVar(value=_font_label_from_config(self.config_data, self))
         self.ui_font_path_var = tk.StringVar(value=str(self.config_data.font_path))
         self.ui_font_size_var = tk.StringVar(value=str(self.config_data.font_size))
         self.ui_text_speed_var = tk.StringVar(value=str(self.config_data.ui_setting.get("text_speed", 0.02)))
         self.ui_language_var = tk.StringVar(value=_language_label(self.config_data.language))
+        self.ui_generate_images_var = tk.BooleanVar(value=_image_generation_enabled_config(self.config_data))
         self.world_name_var = tk.StringVar(value="Misty Frontier")
         self.player_var = tk.StringVar(value="Nana")
         self.character_gender_var = tk.StringVar(value="female")
@@ -187,7 +326,7 @@ class FantasiaApp(tk.Tk):
         self.character_int_var = tk.StringVar(value=str(CHARACTER_STAT_BASE))
         self.character_wis_var = tk.StringVar(value=str(CHARACTER_STAT_BASE))
         self.character_cha_var = tk.StringVar(value=str(CHARACTER_STAT_BASE))
-        self.character_gold_var = tk.StringVar(value="0")
+        self.character_gold_var = tk.StringVar(value="100")
         self.character_ability_points_var = tk.StringVar(value=f"BP:{CHARACTER_BONUS_POINTS}")
         self.premise_var = tk.StringVar(value="Misty frontier, old magic, exploration")
         self.action_var = tk.StringVar(value=tr_enum("initial_choice", "look_around", language))
@@ -200,7 +339,7 @@ class FantasiaApp(tk.Tk):
         self.last_character_preview_path = ""
         self.last_character_preview_name = ""
 
-        self.screen_container = tk.Frame(self, bg="#0d1017")
+        self.screen_container = tk.Frame(self, bg=APP_GRADIENT_BOTTOM)
         self.screen_container.grid(row=0, column=0, sticky="nsew")
         self.screen_container.columnconfigure(0, weight=1)
         self.screen_container.rowconfigure(0, weight=1)
@@ -209,6 +348,7 @@ class FantasiaApp(tk.Tk):
         self._build_world_create_screen()
         self._build_character_setup_screen_v2()
         self._build_world_select_screen()
+        self._build_continue_select_screen()
         self._build_settings_screen()
         self._build_generation_log_screen()
         self._build_game_screen_v2()
@@ -238,14 +378,14 @@ class FantasiaApp(tk.Tk):
             CONFIG_PATH.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             self.config_data = load_config()
 
-    def _maybe_open_first_run_wizard(self) -> None:
+    def _maybe_open_first_run_notice(self) -> None:
         setup = self.config_data.raw.get("setup", {})
         if isinstance(setup, dict) and setup.get("completed"):
             return
-        self._open_first_run_wizard()
+        self._open_first_run_notice()
 
-    def _create_screen(self, name: str) -> tk.Frame:
-        frame = tk.Frame(self.screen_container, bg="#0d1017")
+    def _create_screen(self, name: str) -> GradientCanvas:
+        frame = GradientCanvas(self.screen_container)
         frame.grid(row=0, column=0, sticky="nsew")
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
@@ -255,6 +395,8 @@ class FantasiaApp(tk.Tk):
     def _show_screen(self, name: str) -> None:
         if name == "world_select":
             self._refresh_world_select_screen()
+        if name == "continue_select":
+            self._refresh_continue_select_screen()
         if name == "settings":
             self._refresh_settings_screen()
         if name == "generation_logs":
@@ -277,12 +419,11 @@ class FantasiaApp(tk.Tk):
         self._show_screen(self.settings_back_screen or "title")
 
     def _open_generation_logs_screen(self) -> None:
-        if self.current_screen_name != "generation_logs":
-            self.generation_logs_back_screen = self.current_screen_name
+        self.generation_logs_back_screen = "settings"
         self._show_screen("generation_logs")
 
     def _back_from_generation_logs_screen(self) -> None:
-        self._show_screen(self.generation_logs_back_screen or "title")
+        self._show_screen(self.generation_logs_back_screen or "settings")
 
     def _rebuild_settings_screen(self) -> None:
         existing = self.screens.get("settings")
@@ -294,18 +435,17 @@ class FantasiaApp(tk.Tk):
 
     def _build_title_screen(self) -> None:
         screen = self._create_screen("title")
-        panel = tk.Frame(screen, bg="#111722", padx=36, pady=32, highlightbackground="#2b3142", highlightthickness=1)
+        panel = tk.Frame(screen, bg=APP_PANEL_BG, padx=28, pady=10, highlightbackground=APP_BUTTON_BORDER, highlightthickness=2)
         panel.grid(row=0, column=0)
         panel.columnconfigure(0, weight=1)
 
-        tk.Label(panel, text="Fantasia", bg="#111722", fg="#f4d27a", font=self.ui_fonts.bold(20)).grid(row=0, column=0, sticky="ew")
-        tk.Label(panel, text=_ui_text(self.config_data, "title_subtitle"), bg="#111722", fg="#b8c0d5", font=self.ui_fonts.normal(-1)).grid(row=1, column=0, sticky="ew", pady=(0, 28))
-        self._screen_button(panel, _ui_text(self.config_data, "title_continue_latest"), self._continue_latest, 2)
-        self._screen_button(panel, _ui_text(self.config_data, "title_new_world"), lambda: self._show_screen("world_create"), 3)
-        self._screen_button(panel, _ui_text(self.config_data, "title_world_select"), lambda: self._show_screen("world_select"), 4)
-        self._screen_button(panel, _ui_text(self.config_data, "title_settings"), self._open_settings_screen, 5)
-        self._screen_button(panel, _ui_text(self.config_data, "title_generation_logs"), self._open_generation_logs_screen, 6)
-        self._screen_button(panel, _ui_text(self.config_data, "title_exit"), self._on_close, 7)
+        tk.Label(panel, text="Fantasia", bg=APP_PANEL_BG, fg="#f2f2f2", font=self.ui_fonts.bold(14)).grid(row=0, column=0, sticky="ew")
+        tk.Label(panel, text=_ui_text(self.config_data, "title_subtitle"), bg=APP_PANEL_BG, fg="#f2f2f2", font=self.ui_fonts.bold(2)).grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        self._title_menu_button(panel, _ui_text(self.config_data, "title_new_world"), lambda: self._show_screen("world_create"), 2)
+        self._title_menu_button(panel, _ui_text(self.config_data, "title_world_select"), lambda: self._show_screen("world_select"), 3)
+        self._title_menu_button(panel, _ui_text(self.config_data, "title_continue_latest"), lambda: self._show_screen("continue_select"), 4)
+        self._title_menu_button(panel, _ui_text(self.config_data, "title_settings"), self._open_settings_screen, 5)
+        self._title_menu_button(panel, _ui_text(self.config_data, "title_exit"), self._on_close, 6, pady=(12, 14), ipady=12)
 
     def _build_world_create_screen(self) -> None:
         screen = self._create_screen("world_create")
@@ -444,30 +584,91 @@ class FantasiaApp(tk.Tk):
 
     def _build_world_select_screen(self) -> None:
         screen = self._create_screen("world_select")
-        screen.rowconfigure(1, weight=1)
+        screen.columnconfigure(0, weight=1)
+        screen.rowconfigure(0, weight=1)
 
-        header = self._screen_topbar(screen, _ui_text(self.config_data, "world_select_title"))
-        self._screen_button(header, _ui_text(self.config_data, "common_back"), self._back_from_settings_screen, 0, column=1, sticky="e")
+        panel = self._selection_screen_panel(screen)
+        panel.columnconfigure(0, weight=1)
+        panel.rowconfigure(1, weight=1)
 
-        content = tk.Frame(screen, bg="#0d1017", padx=14, pady=14)
-        content.grid(row=1, column=0, sticky="nsew")
-        content.columnconfigure(0, weight=1)
-        content.columnconfigure(1, weight=1)
-        content.rowconfigure(1, weight=1)
+        top = tk.Frame(panel, bg=APP_PANEL_BG)
+        top.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        top.columnconfigure(0, weight=1)
+        tk.Label(top, text=_ui_text(self.config_data, "world_select_title"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(4)).grid(row=0, column=0, sticky="ew")
+        self._grid_settings_button(top, _ui_text(self.config_data, "common_back"), lambda: self._show_screen("title"), row=0, column=1, sticky="e", ipadx=14, ipady=7)
 
-        tk.Label(content, text=_ui_text(self.config_data, "saved_games"), bg="#0d1017", fg="#f4d27a", font=self.ui_fonts.bold(-2)).grid(row=0, column=0, sticky="w")
-        tk.Label(content, text=_ui_text(self.config_data, "world_data"), bg="#0d1017", fg="#f4d27a", font=self.ui_fonts.bold(-2)).grid(row=0, column=1, sticky="w", padx=(12, 0))
-        self.save_listbox = tk.Listbox(content, bg="#111722", fg="#e6edf7", selectbackground="#2d3850", relief="flat")
-        self.save_listbox.grid(row=1, column=0, sticky="nsew", pady=(6, 10), padx=(0, 6))
-        self.world_listbox = tk.Listbox(content, bg="#111722", fg="#e6edf7", selectbackground="#2d3850", relief="flat")
-        self.world_listbox.grid(row=1, column=1, sticky="nsew", pady=(6, 10), padx=(6, 0))
-        tk.Label(content, text=_ui_text(self.config_data, "world_start_note"), bg="#0d1017", fg="#b8c0d5").grid(row=2, column=1, sticky="w", padx=(12, 0))
-        self._screen_button(content, _ui_text(self.config_data, "load_save"), self._load_selected_save, 3, column=0, sticky="w")
-        self._screen_button(content, _ui_text(self.config_data, "common_refresh"), self._refresh_world_select_screen, 4, column=0, sticky="w")
-        self._screen_button(content, _ui_text(self.config_data, "start_selected_world"), self._start_selected_world, 4, column=1, sticky="e")
-        self._screen_button(content, _ui_text(self.config_data, "import_world"), self._import_world_dialog, 5, column=1, sticky="e")
+        self.world_listbox = self._selection_listbox(panel)
+        self.world_listbox.grid(row=1, column=0, sticky="nsew", pady=(0, 8))
 
-    def _build_settings_screen(self) -> None:
+        actions = tk.Frame(panel, bg=APP_PANEL_BG)
+        actions.grid(row=2, column=0, sticky="ew")
+        for column in range(3):
+            actions.columnconfigure(column, weight=1)
+        self._grid_settings_button(actions, _ui_text(self.config_data, "export_selected_world"), self._export_selected_world_dialog, row=0, column=0, sticky="ew", padx=(0, 6), ipadx=8, ipady=8)
+        self._grid_settings_button(actions, _ui_text(self.config_data, "import_world"), self._import_world_dialog, row=0, column=1, sticky="ew", padx=6, ipadx=8, ipady=8)
+        self._grid_settings_button(actions, _ui_text(self.config_data, "start_selected_world"), self._start_selected_world, row=0, column=2, sticky="ew", padx=(6, 0), ipadx=8, ipady=8)
+
+    def _build_continue_select_screen(self) -> None:
+        screen = self._create_screen("continue_select")
+        screen.columnconfigure(0, weight=1)
+        screen.rowconfigure(0, weight=1)
+
+        panel = self._selection_screen_panel(screen)
+        panel.columnconfigure(0, weight=1)
+        panel.rowconfigure(1, weight=1)
+
+        top = tk.Frame(panel, bg=APP_PANEL_BG)
+        top.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        top.columnconfigure(0, weight=1)
+        tk.Label(top, text=_ui_text(self.config_data, "continue_select_title"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(4)).grid(row=0, column=0, sticky="ew")
+        self._grid_settings_button(top, _ui_text(self.config_data, "common_back"), lambda: self._show_screen("title"), row=0, column=1, sticky="e", ipadx=14, ipady=7)
+
+        self.continue_save_listbox = self._selection_listbox(panel)
+        self.continue_save_listbox.grid(row=1, column=0, sticky="nsew", pady=(0, 8))
+        self.continue_save_listbox.bind("<Double-Button-1>", lambda _event: self._load_selected_continue_save())
+
+        actions = tk.Frame(panel, bg=APP_PANEL_BG)
+        actions.grid(row=2, column=0, sticky="ew")
+        actions.columnconfigure(0, weight=1)
+        self._grid_settings_button(actions, _ui_text(self.config_data, "continue_selected_character"), self._load_selected_continue_save, row=0, column=1, sticky="e", ipadx=26, ipady=8)
+
+    def _title_menu_button(self, parent: tk.Widget, text: str, command, row: int, *, pady=(4, 4), ipady: int = 7) -> tk.Button:
+        button = self._instant_button(parent, text, command)
+        button.configure(font=self.ui_fonts.bold(1))
+        button.grid(row=row, column=0, sticky="ew", padx=0, pady=pady, ipady=ipady)
+        return button
+
+    def _selection_screen_panel(self, parent: tk.Widget) -> tk.Frame:
+        panel = tk.Frame(
+            parent,
+            bg=APP_PANEL_BG,
+            padx=14,
+            pady=12,
+            highlightbackground=APP_BUTTON_BORDER,
+            highlightcolor=APP_BUTTON_BORDER,
+            highlightthickness=2,
+        )
+        panel.grid(row=0, column=0, sticky="nsew", padx=10, pady=12)
+        return panel
+
+    def _selection_listbox(self, parent: tk.Widget) -> tk.Listbox:
+        return tk.Listbox(
+            parent,
+            bg=APP_PANEL_BG,
+            fg="#f2f2f2",
+            selectbackground=APP_PANEL_ACTIVE_BG,
+            selectforeground="#ffffff",
+            relief="flat",
+            bd=0,
+            exportselection=False,
+            highlightbackground=APP_BUTTON_BORDER,
+            highlightcolor=APP_BUTTON_BORDER,
+            highlightthickness=2,
+            activestyle="none",
+            font=self.ui_fonts.normal(-2),
+        )
+
+    def _build_settings_screen_legacy(self) -> None:
         screen = self._create_screen("settings")
         screen.rowconfigure(0, weight=1)
 
@@ -642,57 +843,377 @@ class FantasiaApp(tk.Tk):
         self._screen_button(storage_actions, _ui_text(self.config_data, "settings_check_assets"), self._check_assets_dialog, 0, column=1)
         self._screen_button(storage_actions, _ui_text(self.config_data, "settings_import_world"), self._import_world_dialog, 0, column=2)
         self._screen_button(storage_actions, _ui_text(self.config_data, "settings_export_current"), self._export_world_dialog, 0, column=3)
-        self._screen_button(storage_actions, _ui_text(self.config_data, "settings_generation_logs"), self._open_generation_logs_screen, 0, column=4)
         self._screen_button(storage_actions, _ui_text(self.config_data, "settings_back"), self._back_from_settings_screen, 0, column=6, sticky="e")
+
+    def _build_settings_screen(self) -> None:
+        screen = self._create_screen("settings")
+        screen.configure(bg=APP_GRADIENT_BOTTOM)
+        screen.columnconfigure(0, weight=1)
+        screen.rowconfigure(0, weight=1)
+
+        panel = tk.Frame(screen, bg=APP_PANEL_BG, padx=12, pady=12, highlightbackground="#f2f2f2", highlightthickness=2)
+        panel.grid(row=0, column=0, sticky="nsew", padx=14, pady=14)
+        panel.columnconfigure(0, weight=1)
+        panel.rowconfigure(1, weight=1)
+
+        nav = tk.Frame(panel, bg=APP_PANEL_BG)
+        nav.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        nav.columnconfigure(3, weight=1)
+        self.settings_category_buttons: dict[str, tk.Button] = {}
+        categories = (
+            ("llm", _ui_text(self.config_data, "settings_category_llm")),
+            ("images", _ui_text(self.config_data, "settings_category_images")),
+            ("ui", _ui_text(self.config_data, "settings_category_ui")),
+            ("debug", _ui_text(self.config_data, "settings_category_debug")),
+        )
+        for column, (category, label) in enumerate(categories):
+            button = self._grid_settings_button(
+                nav,
+                label,
+                lambda name=category: self._show_settings_category(name),
+                row=0,
+                column=column if category != "debug" else 4,
+                sticky="w" if category != "debug" else "e",
+                padx=(0, 10) if category != "debug" else (10, 0),
+                ipady=8,
+                ipadx=14,
+            )
+            self.settings_category_buttons[category] = button
+
+        self.settings_content_frame = tk.Frame(panel, bg=APP_PANEL_BG)
+        self.settings_content_frame.grid(row=1, column=0, sticky="nsew")
+        self.settings_content_frame.columnconfigure(0, weight=1)
+        self.settings_content_frame.rowconfigure(0, weight=1)
+        self.settings_category_frames: dict[str, tk.Frame] = {}
+        self._build_settings_llm_category()
+        self._build_settings_image_category()
+        self._build_settings_ui_category()
+        self._build_settings_debug_category()
+        self._show_settings_category("llm")
+
+    def _settings_category_frame(self, category: str) -> tk.Frame:
+        frame = tk.Frame(self.settings_content_frame, bg=APP_PANEL_BG)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(20, weight=1)
+        self.settings_category_frames[category] = frame
+        return frame
+
+    def _show_settings_category(self, category: str) -> None:
+        frame = self.settings_category_frames.get(category)
+        if frame is None:
+            return
+        frame.tkraise()
+        for name, button in getattr(self, "settings_category_buttons", {}).items():
+            button.configure(bg=APP_PANEL_ACTIVE_BG if name == category else APP_PANEL_BG)
+        if category == "llm":
+            self._refresh_llm_backend_fields()
+
+    def _settings_action_row(self, parent: tk.Widget, row: int, apply_command) -> tk.Frame:
+        actions = tk.Frame(parent, bg=APP_PANEL_BG)
+        actions.grid(row=row, column=0, columnspan=4, sticky="ew", pady=(18, 0))
+        actions.columnconfigure(0, weight=1)
+        self._grid_settings_button(actions, _ui_text(self.config_data, "settings_apply"), apply_command, row=0, column=1, sticky="e", padx=(0, 8), ipadx=18, ipady=8)
+        self._grid_settings_button(actions, _ui_text(self.config_data, "settings_close"), self._back_from_settings_screen, row=0, column=2, sticky="e", ipadx=18, ipady=8)
+        return actions
+
+    def _settings_button(self, parent: tk.Widget, text: str, command, fg: str = "#f2f2f2") -> tk.Button:
+        border = tk.Frame(parent, bg=APP_BUTTON_BORDER)
+        border.columnconfigure(0, weight=1)
+        border.rowconfigure(0, weight=1)
+        button = tk.Button(
+            border,
+            text=text,
+            command=command,
+            bg=APP_PANEL_BG,
+            fg=fg,
+            activebackground=APP_PANEL_ACTIVE_BG,
+            activeforeground="#ffffff",
+            relief="flat",
+            bd=0,
+            highlightthickness=0,
+            font=self.ui_fonts.bold(-3),
+            padx=8,
+            pady=4,
+        )
+        button.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
+        button._border_frame = border  # type: ignore[attr-defined]
+        return button
+
+    def _grid_settings_button(
+        self,
+        parent: tk.Widget,
+        text: str,
+        command,
+        *,
+        row: int,
+        column: int = 0,
+        sticky: str = "ew",
+        padx=0,
+        pady=0,
+        ipadx=0,
+        ipady=0,
+    ) -> tk.Button:
+        button = self._settings_button(parent, text, command)
+        button.grid_configure(ipadx=ipadx, ipady=ipady)
+        button._border_frame.grid(row=row, column=column, sticky=sticky, padx=padx, pady=pady)  # type: ignore[attr-defined]
+        return button
+
+    def _settings_checkbutton(self, parent: tk.Widget, variable: tk.Variable) -> tk.Checkbutton:
+        return tk.Checkbutton(
+            parent,
+            variable=variable,
+            bg=APP_PANEL_BG,
+            fg="#f2f2f2",
+            activebackground=APP_PANEL_BG,
+            activeforeground="#ffffff",
+            selectcolor=APP_PANEL_BG,
+            highlightbackground=APP_BUTTON_BORDER,
+            highlightcolor=APP_BUTTON_BORDER,
+            highlightthickness=2,
+            bd=0,
+        )
+
+    def _build_settings_llm_category(self) -> None:
+        frame = self._settings_category_frame("llm")
+        frame.columnconfigure(1, weight=1)
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_llm_title"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(4)).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 8))
+
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_llm_backend"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=1, column=0, sticky="w", padx=(0, 8), pady=4)
+        self.llm_backend_combo = ttk.Combobox(
+            frame,
+            textvariable=self.llm_backend_label_var,
+            values=_llm_backend_label_options(self.config_data.language),
+            state="readonly",
+        )
+        self.llm_backend_combo.grid(row=1, column=1, columnspan=3, sticky="ew", pady=4)
+        self.llm_backend_combo.bind("<<ComboboxSelected>>", lambda _event: self._on_llm_backend_label_changed())
+
+        self.llm_backend_detail_frame = tk.Frame(frame, bg=APP_PANEL_BG)
+        self.llm_backend_detail_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(4, 0))
+        self.llm_backend_detail_frame.columnconfigure(1, weight=1)
+
+        tk.Frame(frame, bg="#f2f2f2", height=2).grid(row=3, column=0, columnspan=4, sticky="ew", pady=(14, 10))
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_context_tokens"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=4, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Entry(frame, textvariable=self.llm_context_size_var, width=14).grid(row=4, column=1, sticky="w", pady=3)
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_context_hint"), bg=APP_PANEL_BG, fg="#d8d4cf", anchor="w", font=self.ui_fonts.normal(-4)).grid(row=5, column=0, columnspan=4, sticky="w", pady=(0, 8))
+
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_repeat_suppression"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=6, column=0, sticky="w", padx=(0, 8), pady=3)
+        self._settings_checkbutton(frame, self.llm_repeat_suppression_var).grid(row=6, column=1, sticky="w", pady=3)
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_repeat_hint"), bg=APP_PANEL_BG, fg="#d8d4cf", anchor="w", font=self.ui_fonts.normal(-4)).grid(row=7, column=0, columnspan=4, sticky="w", pady=(0, 8))
+
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_temperature"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=8, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Entry(frame, textvariable=self.llm_temperature_var, width=14).grid(row=8, column=1, sticky="w", pady=3)
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_temperature_hint"), bg=APP_PANEL_BG, fg="#d8d4cf", anchor="w", font=self.ui_fonts.normal(-4)).grid(row=9, column=0, columnspan=4, sticky="w", pady=(0, 8))
+
+        self._settings_action_row(frame, 21, self._apply_llm_backend_setting)
+        self._refresh_llm_backend_fields()
+
+    def _on_llm_backend_label_changed(self) -> None:
+        backend = _llm_backend_from_label(self.llm_backend_label_var.get(), self.config_data.language)
+        self.llm_backend_var.set(backend)
+        self._refresh_llm_backend_fields()
+
+    def _refresh_llm_backend_fields(self) -> None:
+        if not hasattr(self, "llm_backend_detail_frame"):
+            return
+        for child in self.llm_backend_detail_frame.winfo_children():
+            child.destroy()
+        backend = _llm_backend_from_label(self.llm_backend_label_var.get(), self.config_data.language)
+        self.llm_backend_var.set(backend)
+        row = 0
+        if backend.startswith("cloud_"):
+            provider = backend.removeprefix("cloud_")
+            model_var = self._cloud_model_var(provider)
+            key_var = self._cloud_key_var(provider)
+            tk.Label(self.llm_backend_detail_frame, text=_ui_text(self.config_data, "settings_api_key"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=4)
+            ttk.Entry(self.llm_backend_detail_frame, textvariable=key_var, show="*").grid(row=row, column=1, sticky="ew", pady=4, padx=(0, 8))
+            self._grid_settings_button(self.llm_backend_detail_frame, _ui_text(self.config_data, "settings_fetch_cloud_models"), lambda p=provider: self._fetch_cloud_models(p), row=row, column=2, sticky="e", pady=4)
+            row += 1
+            tk.Label(self.llm_backend_detail_frame, text=_ui_text(self.config_data, "settings_model"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=4)
+            combo = ttk.Combobox(self.llm_backend_detail_frame, textvariable=model_var, values=_cloud_model_options(provider, self.config_data), state="normal")
+            combo.grid(row=row, column=1, sticky="ew", pady=4)
+            if not hasattr(self, "cloud_model_combos"):
+                self.cloud_model_combos = {}
+            self.cloud_model_combos[provider] = combo
+            return
+
+        tk.Label(self.llm_backend_detail_frame, text=_ui_text(self.config_data, "settings_model"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=4)
+        self.local_model_combo = ttk.Combobox(
+            self.llm_backend_detail_frame,
+            textvariable=self.local_model_var,
+            values=_local_model_labels(self.config_data, self.config_data.language),
+            state="readonly",
+        )
+        self.local_model_combo.grid(row=row, column=1, sticky="ew", pady=4, padx=(0, 8))
+        self._grid_settings_button(self.llm_backend_detail_frame, _ui_text(self.config_data, "settings_download_model"), self._download_selected_local_model, row=row, column=2, sticky="e", pady=4)
+        row += 1
+        tk.Label(self.llm_backend_detail_frame, textvariable=self.task_status_var, bg=APP_PANEL_BG, fg="#d8d4cf", anchor="w", font=self.ui_fonts.normal(-4)).grid(row=row, column=0, columnspan=3, sticky="ew", pady=(4, 8))
+        row += 1
+        tk.Label(self.llm_backend_detail_frame, text=_ui_text(self.config_data, "settings_local_model_folder_hint"), bg=APP_PANEL_BG, fg="#d8d4cf", anchor="w", justify="left", wraplength=760, font=self.ui_fonts.normal(-4)).grid(row=row, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        self._grid_settings_button(self.llm_backend_detail_frame, _ui_text(self.config_data, "settings_open_text_model_folder"), self._open_text_model_folder, row=row, column=2, sticky="e", pady=(4, 0))
+
+    def _build_settings_image_category(self) -> None:
+        frame = self._settings_category_frame("images")
+        frame.columnconfigure(1, weight=1)
+        frame.columnconfigure(3, weight=1)
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_image_title"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(4)).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 8))
+
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_model"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=1, column=0, sticky="w", padx=(0, 8), pady=3)
+        self.sdxl_model_combo = ttk.Combobox(frame, textvariable=self.sdxl_model_var, values=_sdxl_model_labels(self.config_data, self.config_data.language), state="readonly")
+        self.sdxl_model_combo.grid(row=1, column=1, sticky="ew", pady=3, padx=(0, 24))
+        self._grid_settings_button(frame, _ui_text(self.config_data, "settings_download_sdxl_model"), self._download_selected_sdxl_model, row=1, column=3, sticky="e", pady=3, ipadx=18, ipady=6)
+        tk.Label(frame, textvariable=self.task_status_var, bg=APP_PANEL_BG, fg="#d8d4cf", anchor="w", font=self.ui_fonts.normal(-4)).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(2, 6))
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_graphic_model_folder_hint"), bg=APP_PANEL_BG, fg="#d8d4cf", anchor="w", justify="left", wraplength=780, font=self.ui_fonts.normal(-4)).grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        self._grid_settings_button(frame, _ui_text(self.config_data, "settings_open_graphic_model_folder"), self._open_graphic_model_folder, row=3, column=3, sticky="e", pady=(0, 8), ipadx=18, ipady=6)
+
+        tk.Frame(frame, bg=APP_BUTTON_BORDER, height=2).grid(row=4, column=0, columnspan=4, sticky="ew", pady=(10, 12))
+
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_quality"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=5, column=0, sticky="w", padx=(0, 8), pady=3)
+        self.image_quality_combo = ttk.Combobox(frame, textvariable=self.image_quality_var, values=_quality_preset_options(self.config_data.image_backend), state="readonly")
+        self.image_quality_combo.grid(row=5, column=1, sticky="ew", pady=3, padx=(0, 24))
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_sampler"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=6, column=0, sticky="w", padx=(0, 8), pady=3)
+        self.image_sampler_combo = ttk.Combobox(frame, textvariable=self.image_sampler_var, values=_sampler_options(), state="normal")
+        self.image_sampler_combo.grid(row=6, column=1, sticky="ew", pady=3, padx=(0, 24))
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_scheduler"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=7, column=0, sticky="w", padx=(0, 8), pady=3)
+        self.image_scheduler_combo = ttk.Combobox(frame, textvariable=self.image_scheduler_var, values=_scheduler_options(), state="normal")
+        self.image_scheduler_combo.grid(row=7, column=1, sticky="ew", pady=3, padx=(0, 24))
+
+        tk.Frame(frame, bg=APP_BUTTON_BORDER, height=2).grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 10))
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_negative_prompt"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=9, column=0, columnspan=4, sticky="w", pady=(0, 4))
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_negative_background"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.normal(-2)).grid(row=10, column=0, sticky="w", padx=(12, 8), pady=3)
+        ttk.Entry(frame, textvariable=self.image_negative_background_var).grid(row=10, column=1, columnspan=3, sticky="ew", pady=3)
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_negative_character"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.normal(-2)).grid(row=11, column=0, sticky="w", padx=(12, 8), pady=3)
+        ttk.Entry(frame, textvariable=self.image_negative_character_var).grid(row=11, column=1, columnspan=3, sticky="ew", pady=3)
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_negative_monster"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.normal(-2)).grid(row=12, column=0, sticky="w", padx=(12, 8), pady=3)
+        ttk.Entry(frame, textvariable=self.image_negative_monster_var).grid(row=12, column=1, columnspan=3, sticky="ew", pady=3)
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_negative_cg"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.normal(-2)).grid(row=13, column=0, sticky="w", padx=(12, 8), pady=3)
+        ttk.Entry(frame, textvariable=self.image_negative_cg_var).grid(row=13, column=1, columnspan=3, sticky="ew", pady=3)
+        self._settings_action_row(frame, 21, self._apply_image_generation_setting)
+
+    def _build_settings_ui_category(self) -> None:
+        frame = self._settings_category_frame("ui")
+        frame.columnconfigure(1, weight=1)
+        frame.columnconfigure(3, weight=1)
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_ui_title"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(4)).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 8))
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_language"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=1, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Combobox(frame, textvariable=self.ui_language_var, values=_language_options(), state="readonly", width=24).grid(row=1, column=1, sticky="ew", pady=3, padx=(0, 24))
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_font"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=2, column=0, sticky="w", padx=(0, 8), pady=3)
+        self.ui_font_combo = ttk.Combobox(
+            frame,
+            textvariable=self.ui_font_var,
+            values=_font_options(self, self.config_data.language),
+            state="readonly",
+            width=28,
+        )
+        self.ui_font_combo.grid(row=2, column=1, sticky="ew", pady=3, padx=(0, 24))
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_font_size"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=3, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Entry(frame, textvariable=self.ui_font_size_var, width=12).grid(row=3, column=1, sticky="ew", pady=3, padx=(0, 24))
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_text_speed"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=4, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Entry(frame, textvariable=self.ui_text_speed_var, width=12).grid(row=4, column=1, sticky="ew", pady=3, padx=(0, 24))
+        tk.Frame(frame, bg=APP_BUTTON_BORDER, height=2).grid(row=5, column=0, columnspan=4, sticky="ew", pady=(12, 12))
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_generate_images"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=6, column=0, sticky="w", padx=(0, 8), pady=3)
+        self._settings_checkbutton(frame, self.ui_generate_images_var).grid(row=6, column=1, sticky="w", pady=3)
+        self._settings_action_row(frame, 21, self._apply_ui_setting)
+
+    def _build_settings_debug_category(self) -> None:
+        frame = self._settings_category_frame("debug")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(4, weight=1)
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_debug_title"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(4)).grid(row=0, column=0, sticky="ew", pady=(0, 8))
+
+        self.device_info_text = tk.Text(
+            frame,
+            wrap="word",
+            height=6,
+            bg=APP_PANEL_BG,
+            fg="#f2f2f2",
+            insertbackground="#f2f2f2",
+            relief="solid",
+            bd=0,
+            highlightbackground=APP_BUTTON_BORDER,
+            highlightcolor=APP_BUTTON_BORDER,
+            highlightthickness=2,
+            padx=14,
+            pady=10,
+            font=self.ui_fonts.normal(-2),
+        )
+        self.device_info_text.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        self.device_info_text.configure(state="disabled")
+
+        actions = tk.Frame(frame, bg=APP_PANEL_BG)
+        actions.grid(row=2, column=0, sticky="ew", pady=(0, 0))
+        actions.columnconfigure(1, weight=1)
+        self._grid_settings_button(actions, _ui_text(self.config_data, "settings_check_generation_logs"), self._open_generation_logs_screen, row=0, column=0, sticky="w", ipadx=52, ipady=8)
+
+        self._settings_action_row(frame, 21, self._refresh_debug_settings)
+        self._replace_text(self.device_info_text, _debug_device_summary(self.device_info, self.config_data.language))
+
+    def _open_text_model_folder(self) -> None:
+        MODEL_TEXT_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            os.startfile(MODEL_TEXT_DIR)
+        except OSError as exc:
+            self._show_error(exc)
+
+    def _open_graphic_model_folder(self) -> None:
+        MODEL_GRAPHIC_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            os.startfile(MODEL_GRAPHIC_DIR)
+        except OSError as exc:
+            self._show_error(exc)
 
     def _build_generation_log_screen(self) -> None:
         screen = self._create_screen("generation_logs")
-        screen.rowconfigure(1, weight=1)
+        screen.columnconfigure(0, weight=1)
+        screen.rowconfigure(0, weight=1)
 
-        header = self._screen_topbar(screen, _ui_text(self.config_data, "generation_logs_title"))
-        self._screen_button(header, _ui_text(self.config_data, "common_game"), lambda: self._show_screen("game"), 0, column=1, sticky="e")
-        self._screen_button(header, _ui_text(self.config_data, "common_settings"), self._open_settings_screen, 0, column=2, sticky="e")
-        self._screen_button(header, _ui_text(self.config_data, "common_back"), self._back_from_generation_logs_screen, 0, column=3, sticky="e")
+        panel = tk.Frame(screen, bg=APP_PANEL_BG, padx=14, pady=14, highlightbackground=APP_BUTTON_BORDER, highlightthickness=2)
+        panel.grid(row=0, column=0, sticky="nsew", padx=14, pady=14)
+        panel.columnconfigure(0, weight=1, minsize=300)
+        panel.columnconfigure(1, weight=2)
+        panel.rowconfigure(2, weight=1)
 
-        panel = tk.Frame(screen, bg="#0d1017", padx=14, pady=14)
-        panel.grid(row=1, column=0, sticky="nsew")
-        panel.columnconfigure(0, weight=2)
-        panel.columnconfigure(1, weight=5)
-        panel.rowconfigure(1, weight=1)
+        tk.Label(panel, text=_ui_text(self.config_data, "generation_logs_title"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(4)).grid(row=0, column=0, sticky="w", pady=(0, 8))
+        self._grid_settings_button(panel, _ui_text(self.config_data, "common_back"), self._back_from_generation_logs_screen, row=0, column=1, sticky="e", ipadx=18, ipady=8)
 
-        tk.Label(panel, text=_ui_text(self.config_data, "generation_logs_entries"), bg="#0d1017", fg="#f4d27a", font=self.ui_fonts.bold(-3)).grid(row=0, column=0, sticky="w")
-        tk.Label(panel, text=_ui_text(self.config_data, "generation_logs_detail"), bg="#0d1017", fg="#f4d27a", font=self.ui_fonts.bold(-3)).grid(row=0, column=1, sticky="w", padx=(12, 0))
+        tk.Label(panel, text=_ui_text(self.config_data, "generation_logs_entries"), bg=APP_PANEL_BG, fg="#f2f2f2", font=self.ui_fonts.bold(-2)).grid(row=1, column=0, sticky="w", pady=(0, 4))
+        tk.Label(panel, text=_ui_text(self.config_data, "generation_logs_detail"), bg=APP_PANEL_BG, fg="#f2f2f2", font=self.ui_fonts.bold(-2)).grid(row=1, column=1, sticky="w", padx=(12, 0), pady=(0, 4))
 
         self.generation_log_listbox = tk.Listbox(
             panel,
-            bg="#111722",
-            fg="#e6edf7",
-            selectbackground="#2d3850",
+            bg=APP_PANEL_BG,
+            fg="#f2f2f2",
+            selectbackground=APP_PANEL_ACTIVE_BG,
+            selectforeground="#ffffff",
             relief="flat",
+            bd=0,
             exportselection=False,
+            highlightbackground=APP_BUTTON_BORDER,
+            highlightcolor=APP_BUTTON_BORDER,
+            highlightthickness=2,
+            font=self.ui_fonts.normal(-3),
         )
-        self.generation_log_listbox.grid(row=1, column=0, sticky="nsew", pady=(6, 10), padx=(0, 6))
+        self.generation_log_listbox.grid(row=2, column=0, sticky="nsew", padx=(0, 6))
         self.generation_log_listbox.bind("<<ListboxSelect>>", lambda _event: self._show_selected_generation_log())
 
         self.generation_log_text = tk.Text(
             panel,
-            wrap="none",
-            bg="#111722",
-            fg="#e6edf7",
-            insertbackground="#e6edf7",
+            wrap="word",
+            bg=APP_PANEL_BG,
+            fg="#f2f2f2",
+            insertbackground="#f2f2f2",
             relief="flat",
+            bd=0,
             padx=10,
             pady=8,
-            font=self.ui_fonts.normal(-5),
+            highlightbackground=APP_BUTTON_BORDER,
+            highlightcolor=APP_BUTTON_BORDER,
+            highlightthickness=2,
+            font=self.ui_fonts.normal(-4),
         )
-        self.generation_log_text.grid(row=1, column=1, sticky="nsew", pady=(6, 10), padx=(6, 0))
+        self.generation_log_text.grid(row=2, column=1, sticky="nsew", padx=(6, 0))
         self.generation_log_text.configure(state="disabled")
-
-        actions = tk.Frame(panel, bg="#0d1017")
-        actions.grid(row=2, column=0, columnspan=2, sticky="ew")
-        actions.columnconfigure(5, weight=1)
-        self._screen_button(actions, _ui_text(self.config_data, "common_refresh"), self._refresh_generation_log_screen, 0, column=0, sticky="w")
-        self._screen_button(actions, _ui_text(self.config_data, "generation_logs_clear_selection"), self._clear_generation_log_selection, 0, column=1, sticky="w")
 
     def _build_game_screen(self) -> None:
         screen = self._create_screen("game")
@@ -754,18 +1275,17 @@ class FantasiaApp(tk.Tk):
         tools.columnconfigure(0, weight=1)
         tools.columnconfigure(1, weight=1)
         tk.Label(tools, text="Tools", bg="#111722", fg="#f4d27a", anchor="w", font=self.ui_fonts.bold(-4)).grid(row=0, column=0, columnspan=2, sticky="ew")
-        self.image_btn = ttk.Button(tools, text="Scene", command=self._generate_image)
+        self.image_btn = self._instant_button(tools, "Scene", self._generate_image)
         self.image_btn.grid(row=1, column=0, sticky="ew", pady=(6, 4), padx=(0, 4))
-        self.character_image_btn = ttk.Button(tools, text="Character", command=self._generate_character_image)
+        self.character_image_btn = self._instant_button(tools, "Character", self._generate_character_image)
         self.character_image_btn.grid(row=1, column=1, sticky="ew", pady=(6, 4), padx=(4, 0))
-        self.monster_image_btn = ttk.Button(tools, text="Monster", command=self._generate_monster_image)
+        self.monster_image_btn = self._instant_button(tools, "Monster", self._generate_monster_image)
         self.monster_image_btn.grid(row=2, column=0, sticky="ew", padx=(0, 4))
-        self.save_btn = ttk.Button(tools, text="Save", command=self._save_game)
+        self.save_btn = self._instant_button(tools, "Save", self._save_game)
         self.save_btn.grid(row=2, column=1, sticky="ew", padx=(4, 0))
-        self.logs_btn = ttk.Button(tools, text="Logs", command=lambda: self._show_screen("generation_logs"))
-        self.logs_btn.grid(row=3, column=0, sticky="ew", pady=(4, 0), padx=(0, 4))
-        self.cancel_task_btn = ttk.Button(tools, text="Cancel", command=self._cancel_current_task, state="disabled")
-        self.cancel_task_btn.grid(row=3, column=1, sticky="ew", pady=(4, 0), padx=(4, 0))
+        self.cancel_task_btn = self._instant_button(tools, "Cancel", self._cancel_current_task)
+        self.cancel_task_btn.configure(state="disabled")
+        self.cancel_task_btn.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(4, 0))
         self.task_status_label = tk.Label(
             tools,
             textvariable=self.task_status_var,
@@ -806,7 +1326,7 @@ class FantasiaApp(tk.Tk):
         self.action_entry.grid(row=0, column=1, sticky="ew", padx=(0, 8))
         self.action_entry.bind("<Return>", lambda _event: self._send_action())
 
-        self.action_btn = ttk.Button(action_bar, text="Send", command=self._send_action)
+        self.action_btn = self._instant_button(action_bar, "Send", self._send_action)
         self.action_btn.grid(row=0, column=2)
         self.task_buttons.append(self.action_btn)
         self._refresh_choices()
@@ -815,40 +1335,58 @@ class FantasiaApp(tk.Tk):
 
     def _build_character_setup_screen_v2(self) -> None:
         screen = self._create_screen("character_setup")
-        screen.configure(bg="#000000")
+        screen.configure(bg=APP_GRADIENT_BOTTOM)
         screen.columnconfigure(0, weight=3)
         screen.columnconfigure(1, weight=4)
         screen.columnconfigure(2, weight=3)
-        screen.rowconfigure(1, weight=1)
+        screen.rowconfigure(0, weight=1)
 
-        tk.Label(
-            screen,
-            text=_ui_text(self.config_data, "character_setup_title"),
-            bg="#000000",
-            fg="#f2f2f2",
-            anchor="w",
-            font=self.ui_fonts.bold(8),
-        ).grid(row=0, column=0, sticky="ew", padx=(64, 18), pady=(34, 18))
-
-        left = tk.Frame(screen, bg="#000000")
-        left.grid(row=1, column=0, sticky="nsew", padx=(64, 28), pady=(0, 28))
+        left = tk.Frame(screen, bg=APP_DEEP_BG)
+        left.grid(row=0, column=0, sticky="nsew", padx=(18, 16), pady=(18, 28))
         left.columnconfigure(0, weight=1)
-        left.rowconfigure(2, weight=1)
-        left.rowconfigure(4, weight=1)
+        left.rowconfigure(0, weight=1)
 
-        name_row = tk.Frame(left, bg="#000000")
-        name_row.grid(row=0, column=0, sticky="ew", pady=(0, 20))
+        self.character_preview_canvas = tk.Canvas(
+            left,
+            bg=APP_PANEL_BG,
+            highlightbackground="#d8d4cf",
+            highlightcolor="#d8d4cf",
+            highlightthickness=1,
+            relief="flat",
+        )
+        self.character_preview_canvas.grid(row=0, column=0, sticky="nsew")
+        self.character_preview_canvas.bind("<Configure>", lambda _event: self._render_character_preview())
+        self.character_preview_generate_btn = self._instant_button(left, _ui_text(self.config_data, "character_preview_generate"), self._generate_character_preview_image)
+        self.character_preview_generate_btn.grid(row=1, column=0, sticky="ew", pady=(10, 0), ipady=9)
+        tk.Label(
+            left,
+            textvariable=self.task_status_var,
+            bg=APP_DEEP_BG,
+            fg="#d8d4cf",
+            anchor="w",
+            font=self.ui_fonts.normal(-4),
+        ).grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        self.task_buttons.append(self.character_preview_generate_btn)
+
+        center = tk.Frame(screen, bg=APP_DEEP_BG)
+        center.grid(row=0, column=1, sticky="nsew", padx=(16, 16), pady=(18, 28))
+        center.columnconfigure(0, weight=1)
+        center.rowconfigure(1, weight=1)
+        center.rowconfigure(2, weight=1)
+
+        name_row = tk.Frame(center, bg=APP_DEEP_BG)
+        name_row.grid(row=0, column=0, sticky="ew", pady=(0, 14))
         name_row.columnconfigure(0, weight=1)
         self.character_name_entry = tk.Entry(
             name_row,
             textvariable=self.player_var,
-            bg="#070707",
+            bg=APP_PANEL_BG,
             fg="#f2f2f2",
             insertbackground="#f2f2f2",
             relief="solid",
             bd=1,
-            highlightthickness=1,
             highlightbackground="#d8d4cf",
+            highlightthickness=1,
             font=self.ui_fonts.normal(0),
         )
         self.character_name_entry.grid(row=0, column=0, sticky="ew", ipady=8)
@@ -858,57 +1396,35 @@ class FantasiaApp(tk.Tk):
             self.character_gender_label_var.get(),
             self._cycle_character_gender,
         )
-        self.character_gender_btn.grid(row=0, column=1, sticky="ew", padx=(18, 0), ipady=7)
-        self._instant_button(name_row, "◇", self._reset_character_preset).grid(row=0, column=2, sticky="ew", padx=(12, 0), ipady=7)
+        self.character_gender_btn.grid(row=0, column=1, sticky="ew", padx=(14, 0), ipady=7)
 
-        self.character_backstory_text = self._instant_labeled_text(left, _ui_text(self.config_data, "character_backstory"), 1, height=8)
-        self.character_look_text = self._instant_labeled_text(left, _ui_text(self.config_data, "character_appearance"), 3, height=7)
+        self.character_backstory_text = self._instant_labeled_text(center, _ui_text(self.config_data, "character_backstory"), 1, height=9)
+        self.character_look_text = self._instant_labeled_text(center, _ui_text(self.config_data, "character_appearance"), 2, height=9)
 
-        age_panel = self._instant_panel(left, 5, 0, sticky="ew", pady=(10, 18))
+        age_panel = self._instant_panel(center, 3, 0, sticky="ew", pady=(0, 0))
         age_panel.columnconfigure(1, weight=1)
-        tk.Label(age_panel, text=_ui_text(self.config_data, "character_age"), bg="#050505", fg="#f2f2f2", font=self.ui_fonts.bold(-2)).grid(row=0, column=0, padx=48, pady=22)
-        tk.Label(age_panel, textvariable=self.character_age_var, bg="#050505", fg="#f2f2f2", font=self.ui_fonts.bold(-2)).grid(row=0, column=1)
-        self._instant_button(age_panel, "-", lambda: self._adjust_character_number(self.character_age_var, -1, 1, 120)).grid(row=0, column=2, padx=(8, 4), pady=9, ipadx=13, ipady=9)
-        self._instant_button(age_panel, "+", lambda: self._adjust_character_number(self.character_age_var, 1, 1, 120)).grid(row=0, column=3, padx=(4, 18), pady=9, ipadx=13, ipady=9)
+        tk.Label(age_panel, text=_ui_text(self.config_data, "character_age"), bg=APP_PANEL_BG, fg="#f2f2f2", font=self.ui_fonts.bold(-2)).grid(row=0, column=0, padx=(20, 8), pady=12)
+        tk.Label(age_panel, textvariable=self.character_age_var, bg=APP_PANEL_BG, fg="#f2f2f2", font=self.ui_fonts.bold(-2)).grid(row=0, column=1, sticky="w")
+        self._instant_button(age_panel, "-", lambda: self._adjust_character_number(self.character_age_var, -1, 1, 120)).grid(row=0, column=2, padx=(8, 4), pady=8, ipadx=10, ipady=6)
+        self._instant_button(age_panel, "+", lambda: self._adjust_character_number(self.character_age_var, 1, 1, 120)).grid(row=0, column=3, padx=(4, 20), pady=8, ipadx=10, ipady=6)
 
-        bottom_left = tk.Frame(left, bg="#000000")
-        bottom_left.grid(row=6, column=0, sticky="ew")
-        bottom_left.columnconfigure(0, weight=1)
-        bottom_left.columnconfigure(1, weight=1)
-        self._instant_button(bottom_left, _ui_text(self.config_data, "common_back"), self._back_from_character_setup).grid(row=0, column=0, sticky="ew", padx=(0, 10), ipady=12)
-        self._instant_button(bottom_left, _ui_text(self.config_data, "character_preset"), self._reset_character_preset).grid(row=0, column=1, sticky="ew", padx=(10, 0), ipady=12)
-
-        center = tk.Frame(screen, bg="#000000")
-        center.grid(row=0, column=1, rowspan=2, sticky="nsew", padx=(28, 28), pady=(60, 28))
-        center.columnconfigure(0, weight=1)
-        center.rowconfigure(0, weight=1)
-        self.character_preview_canvas = tk.Canvas(
-            center,
-            bg="#050505",
-            highlightbackground="#d8d4cf",
-            highlightcolor="#d8d4cf",
-            highlightthickness=1,
-            relief="flat",
-        )
-        self.character_preview_canvas.grid(row=0, column=0, sticky="nsew")
-        self.character_preview_canvas.bind("<Configure>", lambda _event: self._render_character_preview())
-        preview_actions = tk.Frame(center, bg="#000000")
-        preview_actions.grid(row=1, column=0, sticky="ew", pady=(12, 0))
-        preview_actions.columnconfigure(0, weight=1)
-        preview_actions.columnconfigure(1, weight=1)
-        self.character_preview_generate_btn = self._instant_button(preview_actions, _ui_text(self.config_data, "character_preview_generate"), self._generate_character_preview_image)
-        self.character_preview_generate_btn.grid(row=0, column=0, sticky="ew", padx=(0, 8), ipady=10)
-        self.character_preview_refresh_btn = self._instant_button(preview_actions, _ui_text(self.config_data, "character_preview_refresh"), self._render_character_preview)
-        self.character_preview_refresh_btn.grid(row=0, column=1, sticky="ew", padx=(8, 0), ipady=10)
-        self.task_buttons.append(self.character_preview_generate_btn)
-
-        right = tk.Frame(screen, bg="#000000")
-        right.grid(row=0, column=2, rowspan=2, sticky="nsew", padx=(28, 64), pady=(60, 28))
+        right = tk.Frame(screen, bg=APP_DEEP_BG)
+        right.grid(row=0, column=2, sticky="nsew", padx=(16, 18), pady=(12, 28))
         right.columnconfigure(0, weight=1)
         right.rowconfigure(1, weight=1)
         right.rowconfigure(2, weight=1)
+        right.rowconfigure(3, weight=1)
 
-        stats_panel = self._instant_panel(right, 0, 0, sticky="ew", pady=(0, 20))
+        ability_panel = self._instant_panel(right, 0, 0, sticky="ew", pady=(0, 12))
+        tk.Label(
+            ability_panel,
+            textvariable=self.character_ability_points_var,
+            bg=APP_PANEL_BG,
+            fg="#f2f2f2",
+            font=self.ui_fonts.bold(-1),
+        ).grid(row=0, column=0, sticky="ew", pady=15)
+
+        stats_panel = self._instant_panel(right, 1, 0, sticky="nsew", pady=(0, 12))
         stats_panel.columnconfigure(1, weight=1)
         stat_rows = (
             (_ui_text(self.config_data, "character_strength"), self.character_str_var, 0),
@@ -917,52 +1433,35 @@ class FantasiaApp(tk.Tk):
             (_ui_text(self.config_data, "character_intelligence"), self.character_int_var, 3),
             (_ui_text(self.config_data, "character_wisdom"), self.character_wis_var, 4),
             (_ui_text(self.config_data, "character_charisma"), self.character_cha_var, 5),
-            (_ui_text(self.config_data, "character_gold"), self.character_gold_var, 6),
         )
         for label, variable, row in stat_rows:
             self._character_stat_row(stats_panel, label, variable, row)
 
-        skills_panel = self._instant_panel(right, 1, 0, sticky="nsew", pady=(0, 20))
+        skills_panel = self._instant_panel(right, 2, 0, sticky="nsew", pady=(0, 12))
         skills_panel.columnconfigure(0, weight=1)
         skills_panel.rowconfigure(1, weight=1)
-        tk.Label(skills_panel, text=_ui_text(self.config_data, "character_skills"), bg="#050505", fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=0, sticky="ew", pady=(10, 6))
-        self.character_skills_text = self._instant_text(skills_panel, 1, 0, height=4, padx=48, pady=(0, 8))
-        skills_actions = tk.Frame(skills_panel, bg="#050505")
-        skills_actions.grid(row=2, column=0, sticky="ew", padx=48, pady=(0, 12))
-        skills_actions.columnconfigure(0, weight=1)
-        skills_actions.columnconfigure(1, weight=1)
-        self._instant_button(skills_actions, _ui_text(self.config_data, "character_edit"), lambda: self._open_character_list_editor("skills")).grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        self._instant_button(skills_actions, _ui_text(self.config_data, "common_generate"), lambda: self._generate_character_setup_entries("skills")).grid(row=0, column=1, sticky="ew", padx=(6, 0))
+        tk.Label(skills_panel, text=_ui_text(self.config_data, "character_skills"), bg=APP_PANEL_BG, fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=0, sticky="ew", pady=(10, 6))
+        self.character_skills_frame = tk.Frame(skills_panel, bg=APP_PANEL_BG)
+        self.character_skills_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 12))
+        self.character_skills_frame.columnconfigure(0, weight=1)
 
-        traits_panel = self._instant_panel(right, 2, 0, sticky="nsew", pady=(0, 20))
+        traits_panel = self._instant_panel(right, 3, 0, sticky="nsew", pady=(0, 12))
         traits_panel.columnconfigure(0, weight=1)
         traits_panel.rowconfigure(1, weight=1)
-        tk.Label(traits_panel, text=_ui_text(self.config_data, "character_traits"), bg="#050505", fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=0, sticky="ew", pady=(10, 6))
-        self.character_traits_text = self._instant_text(traits_panel, 1, 0, height=3, padx=48, pady=(0, 8))
-        traits_actions = tk.Frame(traits_panel, bg="#050505")
-        traits_actions.grid(row=2, column=0, sticky="ew", padx=48, pady=(0, 14))
-        traits_actions.columnconfigure(0, weight=1)
-        traits_actions.columnconfigure(1, weight=1)
-        self._instant_button(traits_actions, _ui_text(self.config_data, "character_edit"), lambda: self._open_character_list_editor("traits")).grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        self._instant_button(traits_actions, _ui_text(self.config_data, "common_generate"), lambda: self._generate_character_setup_entries("traits")).grid(row=0, column=1, sticky="ew", padx=(6, 0))
-
-        ability_panel = self._instant_panel(right, 3, 0, sticky="ew", pady=(0, 20))
-        tk.Label(
-            ability_panel,
-            textvariable=self.character_ability_points_var,
-            bg="#050505",
-            fg="#f2f2f2",
-            font=self.ui_fonts.bold(-2),
-        ).grid(row=0, column=0, sticky="ew", pady=15)
+        tk.Label(traits_panel, text=_ui_text(self.config_data, "character_traits"), bg=APP_PANEL_BG, fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=0, sticky="ew", pady=(10, 6))
+        self.character_traits_frame = tk.Frame(traits_panel, bg=APP_PANEL_BG)
+        self.character_traits_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 14))
+        self.character_traits_frame.columnconfigure(0, weight=1)
 
         start_panel = self._instant_panel(right, 4, 0, sticky="ew")
+        start_panel.columnconfigure(0, weight=1)
         self.start_game_btn = self._instant_button(start_panel, _ui_text(self.config_data, "character_start_game"), self._start_game_with_character, fg="#f2f2f2")
-        self.start_game_btn.grid(row=0, column=0, sticky="ew", padx=14, pady=14, ipady=20)
+        self.start_game_btn.grid(row=0, column=0, sticky="ew", padx=8, pady=(6, 8), ipady=4)
         self.task_buttons.append(self.start_game_btn)
 
         self.character_backstory_text.insert("1.0", "辺境の村で育った駆け出しの冒険者。")
         self.character_look_text.insert("1.0", "short hair, clear eyes, leather armor, practical travel cloak")
-        self.character_personality_text = tk.Text(left, height=1)
+        self.character_personality_text = tk.Text(screen, height=1)
         self.character_personality_text.insert("1.0", "慎重だが、困っている人を見捨てられない。")
         self._set_character_entries(
             "skills",
@@ -978,10 +1477,7 @@ class FantasiaApp(tk.Tk):
                 "旅慣れ | 野外行動に慣れている | 1"
             ),
         )
-        self._bind_character_entry_tooltip(self.character_skills_text, "skills")
-        self._bind_character_entry_tooltip(self.character_traits_text, "traits")
-
-        self.character_world_summary_text = tk.Text(center, height=1)
+        self.character_world_summary_text = tk.Text(screen, height=1)
         self.character_world_summary_text.configure(state="disabled")
         for variable in (
             self.character_str_var,
@@ -990,7 +1486,6 @@ class FantasiaApp(tk.Tk):
             self.character_int_var,
             self.character_wis_var,
             self.character_cha_var,
-            self.character_gold_var,
             self.character_age_var,
             self.player_var,
             self.character_gender_var,
@@ -1001,93 +1496,70 @@ class FantasiaApp(tk.Tk):
 
     def _build_game_screen_v2(self) -> None:
         screen = self._create_screen("game")
-        screen.configure(bg="#000000")
-        screen.columnconfigure(0, weight=2)
-        screen.columnconfigure(1, weight=5)
-        screen.columnconfigure(2, weight=2)
-        screen.rowconfigure(0, weight=1)
-        screen.rowconfigure(1, weight=0, minsize=GAME_BOTTOM_ROW_HEIGHT)
+        screen.configure(bg=APP_GRADIENT_BOTTOM)
+        screen.columnconfigure(0, weight=5, uniform="game_main")
+        screen.columnconfigure(1, weight=3, uniform="game_main")
+        screen.columnconfigure(2, weight=3, uniform="game_main")
+        screen.rowconfigure(0, weight=5)
+        screen.rowconfigure(1, weight=4)
+        screen.rowconfigure(2, weight=0, minsize=76)
 
-        left_choices = tk.Frame(screen, bg="#000000")
-        left_choices.grid(row=0, column=0, sticky="nsew", padx=(38, 28), pady=(84, 22))
-        left_choices.columnconfigure(0, weight=1)
-        left_choices.rowconfigure(0, weight=1)
-        self.choice_frame = tk.Frame(left_choices, bg="#000000")
-        self.choice_frame.grid(row=0, column=0, sticky="nsew")
-        self.choice_frame.columnconfigure(0, weight=1)
-
-        stage_frame = tk.Frame(screen, bg="#000000", highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=1)
-        stage_frame.grid(row=0, column=1, sticky="nsew", padx=(28, 28), pady=(64, 22))
+        stage_frame = tk.Frame(screen, bg=APP_PANEL_BG, highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=2)
+        stage_frame.grid(row=0, column=0, sticky="nsew", padx=(14, 6), pady=(10, 6))
         stage_frame.rowconfigure(0, weight=1)
         stage_frame.columnconfigure(0, weight=1)
-        self.stage_canvas = tk.Canvas(stage_frame, bg="#000000", highlightthickness=0)
+        self.stage_canvas = tk.Canvas(stage_frame, bg=APP_PANEL_BG, highlightthickness=0)
         self.stage_canvas.grid(row=0, column=0, sticky="nsew")
         self.stage_canvas.bind("<Configure>", lambda _event: self._render_stage())
 
-        right_roster = tk.Frame(screen, bg="#000000")
-        right_roster.grid(row=0, column=2, rowspan=2, sticky="nsew", padx=(28, 38), pady=(64, 28))
+        choice_area = tk.Frame(screen, bg=APP_DEEP_BG)
+        choice_area.grid(row=0, column=1, sticky="nsew", padx=(6, 14), pady=(16, 10))
+        choice_area.columnconfigure(0, weight=1)
+        choice_area.rowconfigure(0, weight=1)
+        self.choice_frame = tk.Frame(choice_area, bg=APP_DEEP_BG)
+        self.choice_frame.grid(row=0, column=0, sticky="new")
+        self.choice_frame.columnconfigure(0, weight=1)
+
+        right_roster = tk.Frame(screen, bg=APP_DEEP_BG)
+        right_roster.grid(row=0, column=2, rowspan=3, sticky="nsew", padx=(14, 14), pady=(14, 14))
         right_roster.columnconfigure(0, weight=1)
-        right_roster.rowconfigure(0, weight=2)
-        right_roster.rowconfigure(1, weight=1)
-        self.npc_roster_canvas = tk.Canvas(right_roster, bg="#000000", highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=1)
-        self.npc_roster_canvas.grid(row=0, column=0, sticky="nsew", pady=(0, 10))
+        right_roster.rowconfigure(0, weight=1)
+        right_roster.rowconfigure(1, weight=0, minsize=GAME_STATUS_PANEL_HEIGHT)
+        right_roster.rowconfigure(2, weight=0, minsize=GAME_STATUS_PANEL_HEIGHT)
+        self.npc_roster_canvas = tk.Canvas(right_roster, bg=APP_PANEL_BG, highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=2)
+        self.npc_roster_canvas.grid(row=0, column=0, sticky="nsew", pady=(0, 14))
         self.npc_roster_canvas.bind("<Configure>", lambda _event: self._render_actor_rosters())
         self.npc_roster_canvas.bind("<Button-1>", self._on_roster_click)
-        self.player_roster_canvas = tk.Canvas(right_roster, bg="#000000", highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=1)
-        self.player_roster_canvas.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        self.player_roster_canvas = tk.Canvas(right_roster, bg=APP_PANEL_BG, highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=2)
+        self.player_roster_canvas.grid(row=1, column=0, sticky="nsew", pady=(14, 8))
         self.player_roster_canvas.bind("<Configure>", lambda _event: self._render_actor_rosters())
         self.player_roster_canvas.bind("<Button-1>", self._on_roster_click)
+        self.info_canvas = tk.Canvas(right_roster, bg=APP_PANEL_BG, highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=2)
+        self.info_canvas.grid(row=2, column=0, sticky="nsew", pady=(8, 0))
+        self.info_canvas.bind("<Configure>", lambda _event: self._render_player_info_panel())
+        self.player_roster_canvases = [self.player_roster_canvas]
 
-        player_panel = self._instant_panel(screen, 1, 0, sticky="nsew", padx=(38, 28), pady=(22, 28))
-        player_panel.columnconfigure(0, weight=1)
-        player_panel.rowconfigure(0, weight=0, minsize=GAME_STATUS_PANEL_HEIGHT)
-        self.player_status_text = self._instant_text(
-            player_panel,
-            0,
-            0,
-            height=8,
-            padx=10,
-            pady=(10, 4),
-            fixed_height=GAME_STATUS_PANEL_HEIGHT,
-        )
-        tool_row = tk.Frame(player_panel, bg="#050505")
-        tool_row.grid(row=1, column=0, sticky="ew", padx=8, pady=(12, 8))
-        for column in range(7):
-            tool_row.columnconfigure(column, weight=1)
-        self.inventory_btn = self._instant_button(tool_row, _ui_text(self.config_data, "game_inventory"), self._open_player_inventory)
-        self.loot_btn = self._instant_button(tool_row, _ui_text(self.config_data, "game_loot"), self._open_loot_inventory)
-        self.trade_btn = self._instant_button(tool_row, _ui_text(self.config_data, "game_trade"), self._open_trade_inventory)
-        self.craft_btn = self._instant_button(tool_row, _ui_text(self.config_data, "game_craft"), self._open_craft_window)
-        self.save_btn = self._instant_button(tool_row, _ui_text(self.config_data, "game_save"), self._save_game)
-        self.logs_btn = self._instant_button(tool_row, _ui_text(self.config_data, "game_logs"), self._open_generation_logs_screen)
-        self.cancel_task_btn = self._instant_button(tool_row, _ui_text(self.config_data, "game_cancel"), self._cancel_current_task)
-        for column, button in enumerate((self.inventory_btn, self.loot_btn, self.trade_btn, self.craft_btn, self.save_btn, self.logs_btn, self.cancel_task_btn)):
-            button.grid(row=0, column=column, sticky="ew", padx=3, pady=3)
-        self.cancel_task_btn.configure(state="disabled")
-        self.task_buttons.extend([self.inventory_btn, self.loot_btn, self.trade_btn, self.craft_btn, self.save_btn])
-
-        center_bottom = tk.Frame(screen, bg="#000000")
-        center_bottom.grid(row=1, column=1, sticky="nsew", padx=(28, 28), pady=(22, 28))
-        center_bottom.columnconfigure(0, weight=1)
-        center_bottom.rowconfigure(0, weight=0, minsize=GAME_LOG_PANEL_HEIGHT)
+        log_panel = tk.Frame(screen, bg=APP_PANEL_BG, highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=2)
+        log_panel.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=(14, 14), pady=(6, 6))
+        log_panel.columnconfigure(0, weight=1)
+        log_panel.rowconfigure(0, weight=1)
         self.log_text = self._instant_text(
-            center_bottom,
+            log_panel,
             0,
             0,
             height=8,
             padx=12,
-            pady=(0, 8),
-            fixed_height=GAME_LOG_PANEL_HEIGHT,
+            pady=(12, 4),
         )
         self._replace_text(self.log_text, _ui_text(self.config_data, "game_initial_log"))
 
-        action_bar = tk.Frame(center_bottom, bg="#000000")
+        action_bar = tk.Frame(log_panel, bg=APP_PANEL_BG)
         action_bar.grid(row=1, column=0, sticky="ew")
         action_bar.columnconfigure(0, weight=1)
         self.action_entry = tk.Entry(
             action_bar,
             textvariable=self.action_var,
-            bg="#050505",
+            bg=APP_PANEL_BG,
             fg="#f2f2f2",
             insertbackground="#f2f2f2",
             relief="solid",
@@ -1096,19 +1568,39 @@ class FantasiaApp(tk.Tk):
             highlightbackground="#d8d4cf",
             font=self.ui_fonts.normal(-1),
         )
-        self.action_entry.grid(row=0, column=0, sticky="ew", ipady=12, padx=(0, 10))
+        self.action_entry.grid(row=0, column=0, sticky="ew", ipady=10, padx=(10, 8), pady=(4, 10))
         self.action_entry.bind("<Return>", lambda _event: self._send_action())
-        self.action_btn = self._instant_button(action_bar, _ui_text(self.config_data, "game_send"), self._send_action)
-        self.action_btn.grid(row=0, column=1, sticky="ns", ipadx=18)
+        send_border = tk.Frame(action_bar, bg=APP_BUTTON_BORDER)
+        send_border.grid(row=0, column=1, sticky="ns", padx=(0, 10), pady=(4, 10))
+        send_border.columnconfigure(0, weight=1)
+        send_border.rowconfigure(0, weight=1)
+        self.action_btn = self._instant_button(send_border, _ui_text(self.config_data, "game_send"), self._send_action)
+        self.action_btn.configure(relief="flat", bd=0)
+        self.action_btn.grid(row=0, column=0, sticky="nsew", ipadx=18, padx=2, pady=2)
         self.task_buttons.append(self.action_btn)
 
-        task_row = tk.Frame(center_bottom, bg="#000000")
-        task_row.grid(row=2, column=0, sticky="ew", pady=(6, 0))
-        task_row.columnconfigure(0, weight=1)
-        self.task_status_label = tk.Label(task_row, textvariable=self.task_status_var, bg="#000000", fg="#d8d4cf", anchor="w", font=self.ui_fonts.normal(-5))
-        self.task_status_label.grid(row=0, column=0, sticky="ew")
-        self.task_progress = ttk.Progressbar(task_row, mode="indeterminate")
-        self.task_progress.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        tool_bar = tk.Frame(screen, bg=APP_DEEP_BG)
+        tool_bar.grid(row=2, column=0, columnspan=2, sticky="ew", padx=(14, 14), pady=(4, 10))
+        tool_bar.columnconfigure(0, weight=0)
+        tool_bar.columnconfigure(1, weight=1)
+        tool_bar.columnconfigure(2, weight=0)
+
+        left_tools = tk.Frame(tool_bar, bg=APP_DEEP_BG)
+        left_tools.grid(row=0, column=0, sticky="w")
+        right_tools = tk.Frame(tool_bar, bg=APP_DEEP_BG)
+        right_tools.grid(row=0, column=2, sticky="e")
+
+        self.inventory_btn = self._tool_icon_button(left_tools, "inv", _ui_text(self.config_data, "game_inventory"), self._open_player_inventory)
+        self.craft_btn = self._tool_icon_button(left_tools, "craft", _ui_text(self.config_data, "game_craft"), self._open_craft_window)
+        self.loot_btn = self._tool_icon_button(left_tools, "loot", _ui_text(self.config_data, "game_loot"), self._open_loot_inventory)
+        for column, button in enumerate((self.inventory_btn, self.craft_btn, self.loot_btn)):
+            button.grid(row=0, column=column, padx=(0, 10), pady=0)
+
+        self.save_btn = self._tool_icon_button(right_tools, "save", _ui_text(self.config_data, "game_save"), self._save_game)
+        self.setting_btn = self._tool_icon_button(right_tools, "setting", _ui_text(self.config_data, "game_setting"), self._open_game_submenu)
+        for column, button in enumerate((self.save_btn, self.setting_btn)):
+            button.grid(row=0, column=column, padx=(10, 0), pady=0)
+        self.task_buttons.extend([self.inventory_btn, self.craft_btn, self.loot_btn, self.save_btn, self.setting_btn])
 
         self._refresh_choices()
         self._refresh_status_panel()
@@ -1125,7 +1617,7 @@ class FantasiaApp(tk.Tk):
         padx=0,
         pady=0,
     ) -> tk.Frame:
-        panel = tk.Frame(parent, bg="#050505", highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=1)
+        panel = tk.Frame(parent, bg=APP_PANEL_BG, highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=1)
         panel.grid(row=row, column=column, rowspan=rowspan, columnspan=columnspan, sticky=sticky, padx=padx, pady=pady)
         return panel
 
@@ -1134,18 +1626,88 @@ class FantasiaApp(tk.Tk):
             parent,
             text=text,
             command=command,
-            bg="#050505",
+            bg=APP_PANEL_BG,
             fg=fg,
-            activebackground="#181818",
+            activebackground=APP_PANEL_ACTIVE_BG,
             activeforeground="#ffffff",
             relief="solid",
-            bd=1,
-            highlightthickness=1,
-            highlightbackground="#d8d4cf",
+            bd=0,
+            highlightthickness=2,
+            highlightbackground=APP_BUTTON_BORDER,
+            highlightcolor=APP_BUTTON_BORDER,
             font=self.ui_fonts.bold(-3),
             padx=8,
             pady=4,
         )
+
+    def _create_modal_dialog(self, title: str, width: int, height: int) -> ModalDialog:
+        return ModalDialog(self, title=title, width=width, height=height)
+
+    def _tool_icon_button(self, parent: tk.Widget, icon_name: str, label: str, command) -> tk.Button:
+        photo = self._load_tool_icon(icon_name)
+        button = tk.Button(
+            parent,
+            command=command,
+            bg=APP_PANEL_BG,
+            activebackground=APP_PANEL_ACTIVE_BG,
+            relief="solid",
+            bd=0,
+            highlightthickness=2,
+            highlightbackground=APP_BUTTON_BORDER,
+            highlightcolor=APP_BUTTON_BORDER,
+            width=UI_TOOL_BUTTON_SIZE,
+            height=UI_TOOL_BUTTON_SIZE,
+            padx=0,
+            pady=0,
+            takefocus=True,
+        )
+        if photo is None:
+            button.configure(text=label, fg="#f2f2f2", activeforeground="#ffffff", font=self.ui_fonts.bold(-5))
+        else:
+            button.configure(image=photo)
+            button.image = photo
+        return button
+
+    def _load_tool_icon(self, icon_name: str) -> ImageTk.PhotoImage | None:
+        key = f"{icon_name}:{UI_TOOL_ICON_DISPLAY_SIZE}"
+        cached = self.tool_icon_images.get(key)
+        if cached is not None:
+            return cached
+        path = UI_BUTTON_ICON_DIR / f"{icon_name}.png"
+        try:
+            image = Image.open(path).convert("RGBA")
+        except OSError:
+            return None
+        display = image.resize((UI_TOOL_ICON_DISPLAY_SIZE, UI_TOOL_ICON_DISPLAY_SIZE), Image.Resampling.LANCZOS)
+        photo = ImageTk.PhotoImage(display)
+        self.tool_icon_images[key] = photo
+        return photo
+
+    def _open_game_submenu(self) -> None:
+        dialog = self._create_modal_dialog(_ui_text(self.config_data, "game_setting"), 320, 230)
+        dialog.title(_ui_text(self.config_data, "game_setting"))
+        dialog.configure(bg=APP_DEEP_BG)
+        dialog.transient(self)
+        dialog.resizable(False, False)
+        dialog.columnconfigure(0, weight=1)
+
+        actions = [
+            (_ui_text(self.config_data, "game_submenu_continue"), dialog.destroy),
+            (_ui_text(self.config_data, "game_submenu_exit"), lambda: self._exit_current_game(dialog)),
+            (_ui_text(self.config_data, "game_submenu_settings"), lambda: self._open_settings_from_game_submenu(dialog)),
+        ]
+        for row, (text, command) in enumerate(actions):
+            button = self._instant_button(dialog, text, command)
+            button.grid(row=row, column=0, sticky="ew", padx=18, pady=(18 if row == 0 else 8, 18 if row == len(actions) - 1 else 0), ipadx=36, ipady=8)
+        dialog.update_idletasks()
+
+    def _exit_current_game(self, dialog: tk.Toplevel) -> None:
+        dialog.destroy()
+        self._show_screen("title")
+
+    def _open_settings_from_game_submenu(self, dialog: tk.Toplevel) -> None:
+        dialog.destroy()
+        self._open_settings_screen()
 
     def _instant_text(
         self,
@@ -1158,7 +1720,7 @@ class FantasiaApp(tk.Tk):
         fixed_height: int | None = None,
     ) -> tk.Text:
         if fixed_height is not None:
-            holder_bg = "#000000"
+            holder_bg = APP_DEEP_BG
             try:
                 holder_bg = str(parent.cget("bg"))
             except tk.TclError:
@@ -1177,7 +1739,7 @@ class FantasiaApp(tk.Tk):
             parent,
             height=height,
             wrap="word",
-            bg="#050505",
+            bg=APP_PANEL_BG,
             fg="#f2f2f2",
             insertbackground="#f2f2f2",
             relief="solid",
@@ -1195,12 +1757,12 @@ class FantasiaApp(tk.Tk):
         frame = self._instant_panel(parent, row, 0, sticky="nsew", pady=(0, 20))
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(1, weight=1)
-        tk.Label(frame, text=label, bg="#050505", fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 0))
+        tk.Label(frame, text=label, bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 0))
         return self._instant_text(frame, 1, 0, height=height, padx=8, pady=(4, 8))
 
     def _character_stat_row(self, parent: tk.Widget, label: str, variable: tk.StringVar, row: int) -> None:
-        tk.Label(parent, text=label, bg="#050505", fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=row, column=0, sticky="ew", padx=(72, 8), pady=(8 if row == 0 else 2, 2))
-        tk.Label(parent, textvariable=variable, bg="#050505", fg="#f2f2f2", anchor="center", width=4, font=self.ui_fonts.bold(-2)).grid(row=row, column=1, sticky="ew")
+        tk.Label(parent, text=label, bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=row, column=0, sticky="ew", padx=(72, 8), pady=(8 if row == 0 else 2, 2))
+        tk.Label(parent, textvariable=variable, bg=APP_PANEL_BG, fg="#f2f2f2", anchor="center", width=4, font=self.ui_fonts.bold(-2)).grid(row=row, column=1, sticky="ew")
         minimum = CHARACTER_STAT_BASE if self._is_character_stat_var(variable) else 0
         maximum = CHARACTER_STAT_MAX if self._is_character_stat_var(variable) else 999999
         self._instant_button(parent, "-", lambda var=variable, min_value=minimum, max_value=maximum: self._adjust_character_number(var, -1, min_value, max_value)).grid(row=row, column=2, padx=4, pady=2, ipadx=8)
@@ -1269,14 +1831,14 @@ class FantasiaApp(tk.Tk):
         self.character_category_var.set("young woman")
         for variable in self._character_stat_variables():
             variable.set(str(CHARACTER_STAT_BASE))
-        self.character_gold_var.set("0")
+        self.character_gold_var.set("100")
         if hasattr(self, "character_backstory_text"):
             self.character_backstory_text.delete("1.0", "end")
             self.character_backstory_text.insert("1.0", "辺境の村で育った駆け出しの冒険者。")
         if hasattr(self, "character_look_text"):
             self.character_look_text.delete("1.0", "end")
             self.character_look_text.insert("1.0", "short hair, clear eyes, leather armor, practical travel cloak")
-        if hasattr(self, "character_skills_text"):
+        if hasattr(self, "character_skills_frame") or hasattr(self, "character_skills_text"):
             self._set_character_entries(
                 "skills",
                 _parse_character_skills(
@@ -1284,7 +1846,7 @@ class FantasiaApp(tk.Tk):
                     "応急手当 | support | 簡単な治療で体勢を立て直す | 3 | 1"
                 ),
             )
-        if hasattr(self, "character_traits_text"):
+        if hasattr(self, "character_traits_frame") or hasattr(self, "character_traits_text"):
             self._set_character_entries(
                 "traits",
                 _parse_character_traits(
@@ -1301,7 +1863,7 @@ class FantasiaApp(tk.Tk):
         canvas.delete("all")
         width = max(canvas.winfo_width(), 1)
         height = max(canvas.winfo_height(), 1)
-        canvas.create_rectangle(0, 0, width, height, fill="#050505", outline="")
+        canvas.create_rectangle(0, 0, width, height, fill=APP_PANEL_BG, outline="")
         image = self._character_setup_preview_image()
         if image is not None:
             display = _fit_image(image, max(1, width - 32), max(1, height - 32))
@@ -1337,6 +1899,8 @@ class FantasiaApp(tk.Tk):
         return None
 
     def _generate_character_preview_image(self) -> None:
+        if not self._image_generation_enabled(show_status=True):
+            return
         if self.engine.state.world_data.world_name == "unknown":
             self._show_error(ValueError(_ui_text(self.config_data, "character_need_world_image")))
             return
@@ -1358,16 +1922,16 @@ class FantasiaApp(tk.Tk):
         self._run_task(_ui_text(self.config_data, "character_generating_preview"), task, done)
 
     def _open_character_list_editor(self, kind: str) -> None:
-        source = self.character_skills_text if kind == "skills" else self.character_traits_text
+        source = getattr(self, "character_skills_text", None) if kind == "skills" else getattr(self, "character_traits_text", None)
         title = _ui_text(self.config_data, "character_skill_settings" if kind == "skills" else "character_trait_settings")
         hint = (
             _ui_text(self.config_data, "character_skill_hint")
             if kind == "skills"
             else _ui_text(self.config_data, "character_trait_hint")
         )
-        dialog = tk.Toplevel(self)
+        dialog = self._create_modal_dialog(title, 720, 520)
         dialog.title(title)
-        dialog.configure(bg="#000000")
+        dialog.configure(bg=APP_DEEP_BG)
         dialog.geometry("720x520")
         dialog.transient(self)
         dialog.columnconfigure(0, weight=1)
@@ -1376,7 +1940,7 @@ class FantasiaApp(tk.Tk):
         tk.Label(
             dialog,
             text=hint,
-            bg="#000000",
+            bg=APP_DEEP_BG,
             fg="#d8d4cf",
             anchor="w",
             font=self.ui_fonts.bold(-2),
@@ -1384,7 +1948,7 @@ class FantasiaApp(tk.Tk):
         editor = tk.Text(
             dialog,
             wrap="word",
-            bg="#050505",
+            bg=APP_PANEL_BG,
             fg="#f2f2f2",
             insertbackground="#f2f2f2",
             relief="solid",
@@ -1399,10 +1963,10 @@ class FantasiaApp(tk.Tk):
         entries = self.character_skill_entries if kind == "skills" else self.character_trait_entries
         if entries:
             editor.insert("1.0", _format_character_skills(entries) if kind == "skills" else _format_character_traits(entries))
-        else:
+        elif isinstance(source, tk.Text):
             editor.insert("1.0", source.get("1.0", "end-1c"))
 
-        actions = tk.Frame(dialog, bg="#000000")
+        actions = tk.Frame(dialog, bg=APP_DEEP_BG)
         actions.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 14))
         actions.columnconfigure(0, weight=1)
         self._instant_button(actions, _ui_text(self.config_data, "common_generate"), lambda: self._generate_character_setup_entries(kind, editor)).grid(row=0, column=0, sticky="w", padx=(0, 8))
@@ -1413,6 +1977,165 @@ class FantasiaApp(tk.Tk):
         self._set_character_list_text(kind, editor.get("1.0", "end").strip())
         dialog.destroy()
         self._render_character_preview()
+
+    def _open_character_entry_generator(self, kind: str, entry_index: int | None = None) -> None:
+        is_skill = kind == "skills"
+        entries = self.character_skill_entries if is_skill else self.character_trait_entries
+        current_entry = dict(entries[entry_index]) if entry_index is not None and 0 <= entry_index < len(entries) else {}
+        title = _ui_text(self.config_data, "character_skill_settings" if is_skill else "character_trait_settings")
+        dialog = self._create_modal_dialog(title, 560, 540)
+        dialog.title(title)
+        dialog.configure(bg=APP_DEEP_BG)
+        dialog.geometry("560x540")
+        dialog.transient(self)
+        dialog.columnconfigure(0, weight=1)
+        dialog.columnconfigure(1, weight=0)
+        dialog.rowconfigure(1, weight=1)
+
+        top = tk.Frame(dialog, bg=APP_DEEP_BG)
+        top.grid(row=0, column=0, columnspan=2, sticky="ew", padx=12, pady=(12, 8))
+        top.columnconfigure(1, weight=1)
+        tk.Label(
+            top,
+            text=_ui_text(self.config_data, "character_entry_name_skill" if is_skill else "character_entry_name_trait"),
+            bg=APP_DEEP_BG,
+            fg="#d8d4cf",
+            anchor="w",
+            font=self.ui_fonts.bold(-3),
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        name_var = tk.StringVar(value=str(current_entry.get("name") or current_entry.get("skill") or current_entry.get("trait") or ""))
+        name_entry = tk.Entry(
+            top,
+            textvariable=name_var,
+            bg=APP_PANEL_BG,
+            fg="#f2f2f2",
+            insertbackground="#f2f2f2",
+            relief="solid",
+            bd=1,
+            highlightbackground="#d8d4cf",
+            highlightthickness=1,
+            font=self.ui_fonts.normal(-2),
+        )
+        name_entry.grid(row=0, column=1, sticky="ew", ipady=8)
+
+        element_var = tk.StringVar()
+        if is_skill:
+            language = getattr(self.config_data, "language", "ja")
+            element_labels = [tr_enum("element", element_id, language, fallback=element_id) for element_id in ELEMENT_IDS]
+            current_element = _normalise_element_id(current_entry.get("element") or current_entry.get("category") or current_entry.get("skill_type"), fallback="fire")
+            element_var.set(tr_enum("element", current_element, language, fallback=current_element))
+            tk.Label(
+                top,
+                text=_ui_text(self.config_data, "character_entry_element"),
+                bg=APP_DEEP_BG,
+                fg="#d8d4cf",
+                font=self.ui_fonts.bold(-3),
+            ).grid(row=0, column=2, sticky="e", padx=(12, 6))
+            element_combo = ttk.Combobox(top, textvariable=element_var, values=element_labels, state="readonly", width=8)
+            element_combo.grid(row=0, column=3, sticky="e", ipady=5)
+
+        description_frame = self._instant_panel(dialog, 1, 0, columnspan=2, sticky="nsew", padx=12, pady=(0, 12))
+        description_frame.columnconfigure(0, weight=1)
+        description_frame.rowconfigure(1, weight=1)
+        tk.Label(
+            description_frame,
+            text=_ui_text(self.config_data, "character_entry_description"),
+            bg=APP_PANEL_BG,
+            fg="#f2f2f2",
+            anchor="w",
+            font=self.ui_fonts.bold(-2),
+        ).grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 0))
+        description_text = self._instant_text(description_frame, 1, 0, height=10, padx=8, pady=(4, 8))
+        current_description = str(current_entry.get("description") or current_entry.get("effect") or current_entry.get("usefulness") or "").strip()
+        if current_description:
+            description_text.insert("1.0", current_description)
+
+        result_frame = self._instant_panel(dialog, 2, 0, sticky="nsew", padx=(12, 8), pady=(0, 12))
+        result_frame.columnconfigure(0, weight=1)
+        result_frame.rowconfigure(1, weight=1)
+        tk.Label(
+            result_frame,
+            text=_ui_text(self.config_data, "character_entry_result"),
+            bg=APP_PANEL_BG,
+            fg="#f2f2f2",
+            anchor="w",
+            font=self.ui_fonts.bold(-3),
+        ).grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 0))
+        result_text = self._instant_text(result_frame, 1, 0, height=4, padx=8, pady=(2, 8))
+        if current_entry:
+            result_text.insert("1.0", _character_entry_generated_summary(current_entry, kind, self.config_data))
+        result_text.configure(state="disabled")
+
+        action_frame = self._instant_panel(dialog, 2, 1, sticky="nsew", padx=(8, 12), pady=(0, 12))
+        action_frame.columnconfigure(0, weight=1)
+        action_frame.rowconfigure(0, weight=1)
+
+        def selected_element_id() -> str:
+            if not is_skill:
+                return ""
+            label = element_var.get()
+            language = getattr(self.config_data, "language", "ja")
+            for element_id in ELEMENT_IDS:
+                if label == tr_enum("element", element_id, language, fallback=element_id):
+                    return element_id
+            return "fire"
+
+        def generate() -> None:
+            if self.engine.state.world_data.world_name == "unknown":
+                self._show_error(ValueError(_ui_text(self.config_data, "character_need_world_details")))
+                return
+            character = self._character_from_setup()
+            seed_name = name_var.get().strip()
+            seed_description = description_text.get("1.0", "end").strip()
+            element_id = selected_element_id()
+
+            def task():
+                if is_skill:
+                    return self.engine.generate_character_setup_skills(
+                        character,
+                        desired_element=element_id,
+                        seed_name=seed_name,
+                        seed_description=seed_description,
+                    )
+                return self.engine.generate_character_setup_traits(
+                    character,
+                    seed_name=seed_name,
+                    seed_description=seed_description,
+                )
+
+            def done(entries) -> None:
+                normalized = _normalise_character_skills(entries) if is_skill else _normalise_character_traits(entries)
+                if not normalized:
+                    raise ValueError(_ui_text(self.config_data, "character_entry_empty_result"))
+                entry = dict(normalized[0])
+                if seed_name:
+                    entry["name"] = seed_name
+                if seed_description:
+                    entry["description"] = seed_description
+                if is_skill:
+                    entry["element"] = element_id
+                    entry.setdefault("category", element_id)
+                    entry = _normalise_character_skills([entry])[0]
+                else:
+                    entry = _normalise_character_traits([entry])[0]
+                self._replace_character_entry_at(kind, entry_index, entry)
+                if result_text.winfo_exists():
+                    result_text.configure(state="normal")
+                    result_text.delete("1.0", "end")
+                    result_text.insert("1.0", _character_entry_generated_summary(entry, kind, self.config_data))
+                    result_text.configure(state="disabled")
+                if generate_btn.winfo_exists():
+                    generate_btn.configure(text=_ui_text(self.config_data, "character_close"), command=dialog.destroy)
+                self._render_character_preview()
+                kind_label = _ui_text(self.config_data, "character_skills" if is_skill else "character_traits").rstrip(":：")
+                self._append_log("\n" + _ui_text(self.config_data, "log_character_generated").format(kind=kind_label) + "\n")
+
+            kind_label = _ui_text(self.config_data, "character_skills" if is_skill else "character_traits").rstrip(":：")
+            self._run_task(_ui_text(self.config_data, "character_generating_entries").format(kind=kind_label), task, done)
+
+        generate_btn = self._instant_button(action_frame, _ui_text(self.config_data, "common_generate"), generate)
+        generate_btn.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        name_entry.focus_set()
 
     def _generate_character_setup_entries(self, kind: str, target_text: tk.Text | None = None) -> None:
         if self.engine.state.world_data.world_name == "unknown":
@@ -1448,11 +2171,73 @@ class FantasiaApp(tk.Tk):
             self.character_skill_entries = entries
         else:
             self.character_trait_entries = entries
-        widget = self.character_skills_text if kind == "skills" else self.character_traits_text
+        frame_name = "character_skills_frame" if kind == "skills" else "character_traits_frame"
+        if hasattr(self, frame_name):
+            self._render_character_entry_buttons(kind)
+            return
+        text_name = "character_skills_text" if kind == "skills" else "character_traits_text"
+        if not hasattr(self, text_name):
+            return
+        widget = getattr(self, text_name)
+        if not widget.winfo_exists():
+            return
         widget.configure(state="normal")
         widget.delete("1.0", "end")
         widget.insert("1.0", _format_character_entry_names(entries))
         widget.configure(state="disabled")
+
+    def _render_character_entry_buttons(self, kind: str) -> None:
+        frame_name = "character_skills_frame" if kind == "skills" else "character_traits_frame"
+        if not hasattr(self, frame_name):
+            return
+        frame = getattr(self, frame_name)
+        if not frame.winfo_exists():
+            return
+        for child in frame.winfo_children():
+            child.destroy()
+        entries = self.character_skill_entries if kind == "skills" else self.character_trait_entries
+        for index, entry in enumerate(entries):
+            name = str(entry.get("name") or entry.get("skill") or entry.get("trait") or "").strip()
+            if not name:
+                name = _ui_text(self.config_data, "character_entry_name_skill" if kind == "skills" else "character_entry_name_trait")
+            button = self._instant_button(frame, name, lambda item_index=index, item_kind=kind: self._open_character_entry_from_button(item_kind, item_index))
+            button.grid(row=index, column=0, sticky="ew", pady=(0 if index == 0 else 10, 0), ipady=8)
+            self._bind_character_entry_button_tooltip(button, kind, index)
+
+    def _open_character_entry_from_button(self, kind: str, index: int) -> None:
+        self._hide_character_entry_tooltip()
+        self._open_character_entry_generator(kind, index)
+
+    def _upsert_character_entry(self, kind: str, entry: dict[str, object]) -> None:
+        entries = list(self.character_skill_entries if kind == "skills" else self.character_trait_entries)
+        name = str(entry.get("name") or entry.get("skill") or entry.get("trait") or "").strip()
+        key = name.casefold()
+        replaced = False
+        for index, existing in enumerate(entries):
+            existing_name = str(existing.get("name") or existing.get("skill") or existing.get("trait") or "").strip()
+            if existing_name.casefold() == key:
+                entries[index] = entry
+                replaced = True
+                break
+        if not replaced:
+            entries.append(entry)
+        self._set_character_entries(kind, entries)
+
+    def _replace_character_entry_at(self, kind: str, index: int | None, entry: dict[str, object]) -> None:
+        if index is None:
+            self._upsert_character_entry(kind, entry)
+            return
+        entries = list(self.character_skill_entries if kind == "skills" else self.character_trait_entries)
+        if index < 0 or index >= len(entries):
+            self._upsert_character_entry(kind, entry)
+            return
+        entries[index] = entry
+        self._set_character_entries(kind, entries)
+
+    def _bind_character_entry_button_tooltip(self, button: tk.Button, kind: str, index: int) -> None:
+        button.bind("<Enter>", lambda event, item_kind=kind, item_index=index: self._show_character_entry_button_tooltip(item_kind, item_index, event))
+        button.bind("<Motion>", lambda event, item_kind=kind, item_index=index: self._show_character_entry_button_tooltip(item_kind, item_index, event))
+        button.bind("<Leave>", self._hide_character_entry_tooltip)
 
     def _bind_character_entry_tooltip(self, widget: tk.Text, kind: str) -> None:
         widget.bind("<Motion>", lambda event, item_kind=kind, target=widget: self._show_character_entry_tooltip(item_kind, target, event))
@@ -1466,7 +2251,7 @@ class FantasiaApp(tk.Tk):
             tooltip.configure(bg="#d8d4cf")
             label = tk.Label(
                 tooltip,
-                bg="#050505",
+                bg=APP_PANEL_BG,
                 fg="#f2f2f2",
                 justify="left",
                 anchor="w",
@@ -1495,7 +2280,17 @@ class FantasiaApp(tk.Tk):
             self._hide_character_entry_tooltip()
             return
         tooltip, label = self._ensure_character_entry_tooltip()
-        label.configure(text=_character_entry_tooltip_text(entries[line], kind))
+        label.configure(text=_character_entry_tooltip_text(entries[line], kind, self.config_data))
+        tooltip.geometry(f"+{event.x_root + 18}+{event.y_root + 14}")
+        tooltip.deiconify()
+
+    def _show_character_entry_button_tooltip(self, kind: str, index: int, event) -> None:
+        entries = self.character_skill_entries if kind == "skills" else self.character_trait_entries
+        if index < 0 or index >= len(entries):
+            self._hide_character_entry_tooltip()
+            return
+        tooltip, label = self._ensure_character_entry_tooltip()
+        label.configure(text=_character_entry_tooltip_text(entries[index], kind, self.config_data))
         tooltip.geometry(f"+{event.x_root + 18}+{event.y_root + 14}")
         tooltip.deiconify()
 
@@ -1506,42 +2301,75 @@ class FantasiaApp(tk.Tk):
     def _player_status_text(self) -> str:
         state = self.engine.state
         player = self._player_character_dict()
-        attrs = _character_attributes(player)
         gold = int(player.get("gold") or state.gold or 0)
-        progress = self.engine.player_progress()
         time_label = self.engine.current_time_label()
         combat_stats = self.engine.player_combat_stats()
         atk = int(combat_stats.get("attack") or 0)
         atk_bonus = int(combat_stats.get("attack_bonus") or 0)
         defense = int(combat_stats.get("defense") or 0)
         defense_bonus = int(combat_stats.get("defense_bonus") or 0)
-        stamina = attrs.get("sta", attrs.get("stamina", 10))
-        player_extra = player.get("extra") if isinstance(player.get("extra"), dict) else {}
-        max_sp_value = self.engine.state.extra.get("max_sp")
-        if max_sp_value is None:
-            max_sp_value = player.get("max_sp") or player_extra.get("max_sp")
-        current_sp_value = self.engine.state.extra.get("current_sp")
-        if current_sp_value is None:
-            current_sp_value = player_extra.get("current_sp")
-        max_sp = _safe_int(max_sp_value, 0)
-        current_sp = _safe_int(current_sp_value, max_sp)
         location = state.current_location or state.world_data.starting_location or "unknown"
+        quest = state.active_quest or "-"
         language = self.config_data.language
-        label = lambda key: tr_enum("status_field", key, language)
-        lines = [
-            f"{label('attack')}:{atk}({atk_bonus:+d})",
-            f"{label('defense')}:{defense}({defense_bonus:+d})",
-            f"{label('level')}:{progress.get('level', 1)}",
-            f"{label('exp')}:{progress.get('exp', 0)}/{progress.get('next_exp', 5)}",
-            f"{label('gold')}:{gold}",
-            f"{label('time')}:{time_label}",
-            f"{label('stamina')}:{stamina}/10",
-            f"{label('sp')}:{current_sp}/{max_sp or '?'}",
-            f"{label('location')}:{location}",
-        ]
-        if state.active_quest:
-            lines.append(f"{label('quest')}:{state.active_quest}")
-        return "\n".join(lines)
+        info_labels = (
+            {
+                "attack": "攻撃力",
+                "defense": "防御力",
+                "gold": "所持金",
+                "time": "日時",
+                "location": "現在地",
+                "quest": "クエスト",
+            }
+            if language == "ja"
+            else {
+                "attack": "Attack",
+                "defense": "Defense",
+                "gold": "Gold",
+                "time": "Time",
+                "location": "Location",
+                "quest": "Quest",
+            }
+        )
+        label = lambda key: info_labels.get(key, tr_enum("status_field", key, language))
+        return "\n".join(
+            [
+                f"{label('attack')}: {atk}({atk_bonus:+d})",
+                f"{label('defense')}: {defense}({defense_bonus:+d})",
+                f"{label('gold')}: {gold}",
+                f"{label('time')}: {time_label}",
+                f"{label('location')}: {location}",
+                f"{label('quest')}: {quest}",
+            ]
+        )
+
+    def _render_player_info_panel(self) -> None:
+        if not hasattr(self, "info_canvas"):
+            return
+        canvas = self.info_canvas
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 1)
+        height = max(canvas.winfo_height(), 1)
+        canvas.create_rectangle(0, 0, width, height, fill=APP_PANEL_BG, outline="")
+        lines = self._player_status_text().splitlines()
+        x = 14
+        y = 14
+        line_height = max(26, self.ui_fonts.size + 8)
+        font = self.ui_fonts.bold(4 if height >= 220 else 0)
+        for line in lines:
+            item_id = canvas.create_text(
+                x,
+                y,
+                text=line,
+                fill="#f2f2f2",
+                anchor="nw",
+                font=font,
+                width=max(120, width - x * 2),
+            )
+            bbox = canvas.bbox(item_id)
+            if bbox:
+                y = max(y + line_height, bbox[3] + 4)
+            else:
+                y += line_height
 
     def _player_character_dict(self) -> dict[str, object]:
         if self.engine.state.party and isinstance(self.engine.state.party[0], dict):
@@ -1554,14 +2382,17 @@ class FantasiaApp(tk.Tk):
             return
         self.roster_image_refs = []
         self._draw_roster_canvas(self.npc_roster_canvas, self._npc_roster_items(), "NPC / ENEMY")
-        self._draw_roster_canvas(self.player_roster_canvas, self._player_roster_items(), "PLAYER")
+        player_items = self._player_roster_items()
+        player_canvases = getattr(self, "player_roster_canvases", [self.player_roster_canvas])
+        for index, canvas in enumerate(player_canvases):
+            self._draw_roster_canvas(canvas, player_items[index:index + 1], "PLAYER")
 
     def _draw_roster_canvas(self, canvas: tk.Canvas, items: list[dict[str, object]], title: str) -> None:
         canvas.delete("all")
         self.roster_hitboxes[id(canvas)] = []
         width = max(canvas.winfo_width(), 1)
         height = max(canvas.winfo_height(), 1)
-        canvas.create_rectangle(0, 0, width, height, fill="#050505", outline="")
+        canvas.create_rectangle(0, 0, width, height, fill=APP_PANEL_BG, outline="")
         language = self.config_data.language
         is_player_panel = title == "PLAYER"
         if not items:
@@ -1573,13 +2404,13 @@ class FantasiaApp(tk.Tk):
                 font=self.ui_fonts.bold(-2),
             )
             return
-        visible_items = items[:1] if is_player_panel else items[:4]
-        row_height = height if is_player_panel else max(76, min(116, height // max(1, min(len(items), 4))))
+        visible_items = items[:1] if is_player_panel else items[:3]
+        row_height = height if is_player_panel else max(76, min(128, height // max(1, min(len(items), 3))))
         for index, item in enumerate(visible_items):
             top = index * row_height
             bottom = min(height, top + row_height)
             self.roster_hitboxes[id(canvas)].append((0, top, width, bottom, item))
-            canvas.create_rectangle(0, top, width, bottom, fill="#050505", outline="#d8d4cf")
+            canvas.create_rectangle(0, top, width, bottom, fill=APP_PANEL_BG, outline="#d8d4cf")
             image = item.get("image")
             image_box = min(
                 max(56, int(width * (0.42 if is_player_panel else 0.28))),
@@ -1620,9 +2451,10 @@ class FantasiaApp(tk.Tk):
     def _open_actor_status_window(self, item: dict[str, object]) -> None:
         language = self.config_data.language
         name = str(item.get("name") or tr_enum("roster", "unknown", language))
-        dialog = tk.Toplevel(self)
-        dialog.title(tr_enum_format("roster", "status_title", language, name=name))
-        dialog.configure(bg="#000000")
+        dialog_title = tr_enum_format("roster", "status_title", language, name=name)
+        dialog = self._create_modal_dialog(dialog_title, 680, 620)
+        dialog.title(dialog_title)
+        dialog.configure(bg=APP_DEEP_BG)
         dialog.geometry("680x620")
         dialog.transient(self)
         dialog.columnconfigure(0, weight=1)
@@ -1631,7 +2463,7 @@ class FantasiaApp(tk.Tk):
         tk.Label(
             dialog,
             text=name,
-            bg="#000000",
+            bg=APP_DEEP_BG,
             fg="#f2f2f2",
             anchor="w",
             font=self.ui_fonts.bold(1),
@@ -1640,7 +2472,7 @@ class FantasiaApp(tk.Tk):
         detail = tk.Text(
             dialog,
             wrap="word",
-            bg="#050505",
+            bg=APP_PANEL_BG,
             fg="#f2f2f2",
             insertbackground="#f2f2f2",
             relief="solid",
@@ -1655,7 +2487,7 @@ class FantasiaApp(tk.Tk):
         detail.insert("1.0", self._actor_status_detail_text(item))
         detail.configure(state="disabled")
 
-        actions = tk.Frame(dialog, bg="#000000")
+        actions = tk.Frame(dialog, bg=APP_DEEP_BG)
         actions.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 14))
         actions.columnconfigure(0, weight=1)
         self._instant_button(actions, "閉じる", dialog.destroy).grid(row=0, column=1, sticky="e")
@@ -1800,9 +2632,13 @@ class FantasiaApp(tk.Tk):
         return _actor_state_is_present(monster.state or str(monster.flags.get("state") or "present"))
 
     def _maybe_open_map_or_board_for_action(self, action: str) -> bool:
-        text = str(action or "").strip().lower()
+        normalized = str(action or "").strip()
+        text = normalized.lower()
         if not text:
             return False
+        if normalized == _ui_text(self.config_data, "game_trade") or text == "trade":
+            self._open_trade_inventory()
+            return True
         if any(word in text for word in ("依頼掲示板", "掲示板", "quest board", "request board")):
             self._open_quest_board_window()
             return True
@@ -1816,19 +2652,19 @@ class FantasiaApp(tk.Tk):
         if not facilities:
             self._show_error(ValueError(_ui_text(self.config_data, "map_no_facilities")))
             return
-        dialog = tk.Toplevel(self)
+        dialog = self._create_modal_dialog(_ui_text(self.config_data, "map_title"), 760, 520)
         dialog.title(_ui_text(self.config_data, "map_title"))
-        dialog.configure(bg="#000000")
+        dialog.configure(bg=APP_DEEP_BG)
         dialog.geometry("760x520")
         dialog.transient(self)
         dialog.columnconfigure(0, weight=1)
         dialog.columnconfigure(1, weight=2)
         dialog.rowconfigure(1, weight=1)
 
-        tk.Label(dialog, text=_ui_text(self.config_data, "map_title"), bg="#000000", fg="#f2f2f2", font=self.ui_fonts.bold(0)).grid(row=0, column=0, columnspan=2, sticky="ew", padx=16, pady=(14, 8))
-        listbox = tk.Listbox(dialog, bg="#050505", fg="#f2f2f2", selectbackground="#2d2d2d", relief="solid", bd=1, font=self.ui_fonts.normal(-2))
+        tk.Label(dialog, text=_ui_text(self.config_data, "map_title"), bg=APP_DEEP_BG, fg="#f2f2f2", font=self.ui_fonts.bold(0)).grid(row=0, column=0, columnspan=2, sticky="ew", padx=16, pady=(14, 8))
+        listbox = tk.Listbox(dialog, bg=APP_PANEL_BG, fg="#f2f2f2", selectbackground="#263654", relief="solid", bd=1, font=self.ui_fonts.normal(-2))
         listbox.grid(row=1, column=0, sticky="nsew", padx=(16, 8), pady=(0, 10))
-        detail = tk.Text(dialog, bg="#050505", fg="#f2f2f2", relief="solid", bd=1, wrap="word", height=12, font=self.ui_fonts.normal(-2))
+        detail = tk.Text(dialog, bg=APP_PANEL_BG, fg="#f2f2f2", relief="solid", bd=1, wrap="word", height=12, font=self.ui_fonts.normal(-2))
         detail.grid(row=1, column=1, sticky="nsew", padx=(8, 16), pady=(0, 10))
 
         for facility in facilities:
@@ -1870,13 +2706,11 @@ class FantasiaApp(tk.Tk):
             )
 
         listbox.bind("<<ListboxSelect>>", update_detail)
-        listbox.bind("<ButtonRelease-1>", lambda _event: travel())
-        listbox.bind("<Double-Button-1>", lambda _event: travel())
         if facilities:
             listbox.selection_set(0)
             update_detail()
 
-        actions = tk.Frame(dialog, bg="#000000")
+        actions = tk.Frame(dialog, bg=APP_DEEP_BG)
         actions.grid(row=2, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 14))
         actions.columnconfigure(0, weight=1)
         self._instant_button(actions, _ui_text(self.config_data, "map_move"), travel).grid(row=0, column=1, sticky="e", padx=(0, 8))
@@ -1890,19 +2724,19 @@ class FantasiaApp(tk.Tk):
                 self._show_error(ValueError(_ui_text(self.config_data, "quest_board_not_guild")))
                 return
         quests = self.engine.available_quest_board_quests()
-        dialog = tk.Toplevel(self)
+        dialog = self._create_modal_dialog(_ui_text(self.config_data, "quest_board_title"), 820, 560)
         dialog.title(_ui_text(self.config_data, "quest_board_title"))
-        dialog.configure(bg="#000000")
+        dialog.configure(bg=APP_DEEP_BG)
         dialog.geometry("820x560")
         dialog.transient(self)
         dialog.columnconfigure(0, weight=1)
         dialog.columnconfigure(1, weight=2)
         dialog.rowconfigure(1, weight=1)
 
-        tk.Label(dialog, text=_ui_text(self.config_data, "quest_board_title"), bg="#000000", fg="#f2f2f2", font=self.ui_fonts.bold(0)).grid(row=0, column=0, columnspan=2, sticky="ew", padx=16, pady=(14, 8))
-        listbox = tk.Listbox(dialog, bg="#050505", fg="#f2f2f2", selectbackground="#2d2d2d", relief="solid", bd=1, font=self.ui_fonts.normal(-2))
+        tk.Label(dialog, text=_ui_text(self.config_data, "quest_board_title"), bg=APP_DEEP_BG, fg="#f2f2f2", font=self.ui_fonts.bold(0)).grid(row=0, column=0, columnspan=2, sticky="ew", padx=16, pady=(14, 8))
+        listbox = tk.Listbox(dialog, bg=APP_PANEL_BG, fg="#f2f2f2", selectbackground="#263654", relief="solid", bd=1, font=self.ui_fonts.normal(-2))
         listbox.grid(row=1, column=0, sticky="nsew", padx=(16, 8), pady=(0, 10))
-        detail = tk.Text(dialog, bg="#050505", fg="#f2f2f2", relief="solid", bd=1, wrap="word", height=12, font=self.ui_fonts.normal(-2))
+        detail = tk.Text(dialog, bg=APP_PANEL_BG, fg="#f2f2f2", relief="solid", bd=1, wrap="word", height=12, font=self.ui_fonts.normal(-2))
         detail.grid(row=1, column=1, sticky="nsew", padx=(8, 16), pady=(0, 10))
 
         for quest in quests:
@@ -1914,7 +2748,7 @@ class FantasiaApp(tk.Tk):
         tooltip.withdraw()
         tooltip.overrideredirect(True)
         tooltip.configure(bg="#d8d4cf")
-        tooltip_label = tk.Label(tooltip, bg="#050505", fg="#f2f2f2", justify="left", anchor="w", bd=1, relief="solid", padx=8, pady=6, font=self.ui_fonts.normal(-3))
+        tooltip_label = tk.Label(tooltip, bg=APP_PANEL_BG, fg="#f2f2f2", justify="left", anchor="w", bd=1, relief="solid", padx=8, pady=6, font=self.ui_fonts.normal(-3))
         tooltip_label.pack()
 
         def selected_quest():
@@ -1976,14 +2810,12 @@ class FantasiaApp(tk.Tk):
         listbox.bind("<<ListboxSelect>>", update_detail)
         listbox.bind("<Motion>", show_tooltip)
         listbox.bind("<Leave>", lambda _event: tooltip.withdraw())
-        listbox.bind("<ButtonRelease-1>", lambda _event: accept())
-        listbox.bind("<Double-Button-1>", lambda _event: accept())
         dialog.bind("<Destroy>", lambda _event: tooltip.destroy() if tooltip.winfo_exists() else None, add="+")
         if quests:
             listbox.selection_set(0)
         update_detail()
 
-        actions = tk.Frame(dialog, bg="#000000")
+        actions = tk.Frame(dialog, bg=APP_DEEP_BG)
         actions.grid(row=2, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 14))
         actions.columnconfigure(0, weight=1)
         self._instant_button(actions, _ui_text(self.config_data, "quest_board_accept"), accept).grid(row=0, column=1, sticky="e", padx=(0, 8))
@@ -2009,14 +2841,10 @@ class FantasiaApp(tk.Tk):
         if character is None:
             self._show_error(ValueError(_ui_text(self.config_data, "trade_no_target")))
             return
-        if not character.inventory:
-            context = " ".join(
-                part
-                for part in (character.role, character.category, character.personality, character.backstory)
-                if part
-            )
-            character.inventory.extend(generate_vendor_items(character.name, context))
-            character.gold = character.gold or 120
+        vendor_event = self.engine.prepare_vendor_inventory(character)
+        if vendor_event.get("changed"):
+            self._append_inventory_event(_ui_text(self.config_data, "trade_stock_changed").format(name=character.name))
+            self.engine.save_game()
         self._open_inventory_window(_ui_text(self.config_data, "trade_title"), character.name, character.inventory, mode="shop", target_character=character)
 
     def _trade_target_character(self) -> CharacterData | None:
@@ -2038,9 +2866,9 @@ class FantasiaApp(tk.Tk):
         player_inventory = self._player_inventory()
         language = self.config_data.language
         craft_inventory: list[dict[str, object]] = []
-        dialog = tk.Toplevel(self)
+        dialog = self._create_modal_dialog(_ui_text(self.config_data, "craft_title"), 900, 620)
         dialog.title(_ui_text(self.config_data, "craft_title"))
-        dialog.configure(bg="#000000")
+        dialog.configure(bg=APP_DEEP_BG)
         dialog.geometry("900x620")
         dialog.transient(self)
         dialog.columnconfigure(0, weight=1)
@@ -2049,14 +2877,14 @@ class FantasiaApp(tk.Tk):
         dialog.rowconfigure(1, weight=1)
 
         detail_var = tk.StringVar(value="")
-        tk.Label(dialog, text=_ui_text(self.config_data, "game_inventory"), bg="#000000", fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 6))
-        tk.Label(dialog, text=_ui_text(self.config_data, "craft_materials"), bg="#000000", fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=2, sticky="ew", padx=16, pady=(14, 6))
-        player_list = tk.Listbox(dialog, bg="#050505", fg="#f2f2f2", selectbackground="#2d2d2d", relief="solid", bd=1, font=self.ui_fonts.normal(-2))
-        craft_list = tk.Listbox(dialog, bg="#050505", fg="#f2f2f2", selectbackground="#2d2d2d", relief="solid", bd=1, font=self.ui_fonts.normal(-2))
+        tk.Label(dialog, text=_ui_text(self.config_data, "game_inventory"), bg=APP_DEEP_BG, fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 6))
+        tk.Label(dialog, text=_ui_text(self.config_data, "craft_materials"), bg=APP_DEEP_BG, fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=2, sticky="ew", padx=16, pady=(14, 6))
+        player_list = tk.Listbox(dialog, bg=APP_PANEL_BG, fg="#f2f2f2", selectbackground="#263654", relief="solid", bd=1, font=self.ui_fonts.normal(-2))
+        craft_list = tk.Listbox(dialog, bg=APP_PANEL_BG, fg="#f2f2f2", selectbackground="#263654", relief="solid", bd=1, font=self.ui_fonts.normal(-2))
         player_list.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 8))
         craft_list.grid(row=1, column=2, sticky="nsew", padx=16, pady=(0, 8))
 
-        controls = tk.Frame(dialog, bg="#000000")
+        controls = tk.Frame(dialog, bg=APP_DEEP_BG)
         controls.grid(row=1, column=1, sticky="ns", pady=(70, 8))
         add_btn = self._instant_button(controls, ">>", lambda: add_material())
         remove_btn = self._instant_button(controls, "<<", lambda: remove_material())
@@ -2066,7 +2894,7 @@ class FantasiaApp(tk.Tk):
         tk.Label(
             dialog,
             textvariable=detail_var,
-            bg="#000000",
+            bg=APP_DEEP_BG,
             fg="#d8d4cf",
             anchor="w",
             justify="left",
@@ -2074,7 +2902,7 @@ class FantasiaApp(tk.Tk):
             font=self.ui_fonts.normal(-3),
         ).grid(row=2, column=0, columnspan=3, sticky="ew", padx=16, pady=(6, 0))
 
-        actions = tk.Frame(dialog, bg="#000000")
+        actions = tk.Frame(dialog, bg=APP_DEEP_BG)
         actions.grid(row=3, column=0, columnspan=3, sticky="ew", padx=16, pady=(10, 14))
         actions.columnconfigure(0, weight=1)
         self._instant_button(actions, _ui_text(self.config_data, "craft_create"), lambda: craft_selected()).grid(row=0, column=1, sticky="e", padx=(0, 8))
@@ -2108,7 +2936,7 @@ class FantasiaApp(tk.Tk):
                 return
             item = normalise_item(player_inventory[index])
             if item.get("equipped"):
-                self.engine._unequip_player_slot(str(item.get("equipment_slot") or ""), source="craft")
+                self.engine._unequip_player_slot(self.engine._equipment_slot_for_item(item), source="craft")
             moved = transfer_item_stack(player_inventory, craft_inventory, index, 1, source="craft")
             if moved:
                 self._save_inventory_change()
@@ -2182,10 +3010,11 @@ class FantasiaApp(tk.Tk):
     ) -> None:
         player_inventory = self._player_inventory()
         language = self.config_data.language
-        dialog = tk.Toplevel(self)
+        dialog_height = 650 if mode == "shop" else 600
+        dialog = self._create_modal_dialog(title, 900, dialog_height)
         dialog.title(title)
-        dialog.configure(bg="#000000")
-        dialog.geometry("900x600")
+        dialog.configure(bg=APP_DEEP_BG)
+        dialog.geometry(f"900x{dialog_height}")
         dialog.transient(self)
         dialog.columnconfigure(0, weight=1)
         dialog.columnconfigure(1, weight=0)
@@ -2195,16 +3024,18 @@ class FantasiaApp(tk.Tk):
         player_gold_var = tk.StringVar()
         target_gold_var = tk.StringVar()
         detail_var = tk.StringVar(value="")
+        haggle_var = tk.StringVar(value="")
+        haggle_status_var = tk.StringVar(value="")
 
-        tk.Label(dialog, text=_ui_text(self.config_data, "player_label"), bg="#000000", fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 6))
-        tk.Label(dialog, text=target_name, bg="#000000", fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=2, sticky="ew", padx=16, pady=(14, 6))
+        tk.Label(dialog, text=_ui_text(self.config_data, "player_label"), bg=APP_DEEP_BG, fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 6))
+        tk.Label(dialog, text=target_name, bg=APP_DEEP_BG, fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=2, sticky="ew", padx=16, pady=(14, 6))
 
-        player_list = tk.Listbox(dialog, bg="#050505", fg="#f2f2f2", selectbackground="#2d2d2d", relief="solid", bd=1, font=self.ui_fonts.normal(-2))
-        target_list = tk.Listbox(dialog, bg="#050505", fg="#f2f2f2", selectbackground="#2d2d2d", relief="solid", bd=1, font=self.ui_fonts.normal(-2))
+        player_list = tk.Listbox(dialog, bg=APP_PANEL_BG, fg="#f2f2f2", selectbackground="#263654", relief="solid", bd=1, font=self.ui_fonts.normal(-2))
+        target_list = tk.Listbox(dialog, bg=APP_PANEL_BG, fg="#f2f2f2", selectbackground="#263654", relief="solid", bd=1, font=self.ui_fonts.normal(-2))
         player_list.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 8))
         target_list.grid(row=1, column=2, sticky="nsew", padx=16, pady=(0, 8))
 
-        controls = tk.Frame(dialog, bg="#000000")
+        controls = tk.Frame(dialog, bg=APP_DEEP_BG)
         controls.grid(row=1, column=1, sticky="ns", pady=(36, 8))
         move_left_btn = self._instant_button(controls, "<<", lambda: move_to_player())
         move_left_all_btn = self._instant_button(controls, "all <<", lambda: move_all_to_player())
@@ -2218,13 +3049,13 @@ class FantasiaApp(tk.Tk):
             for button in (move_left_btn, move_left_all_btn, move_right_btn, move_right_all_btn):
                 button.configure(state="disabled")
 
-        tk.Label(dialog, textvariable=player_gold_var, bg="#000000", fg="#d8d4cf", anchor="w").grid(row=2, column=0, sticky="ew", padx=16)
-        tk.Label(dialog, textvariable=target_gold_var, bg="#000000", fg="#d8d4cf", anchor="w").grid(row=2, column=2, sticky="ew", padx=16)
+        tk.Label(dialog, textvariable=player_gold_var, bg=APP_DEEP_BG, fg="#d8d4cf", anchor="w").grid(row=2, column=0, sticky="ew", padx=16)
+        tk.Label(dialog, textvariable=target_gold_var, bg=APP_DEEP_BG, fg="#d8d4cf", anchor="w").grid(row=2, column=2, sticky="ew", padx=16)
 
         tk.Label(
             dialog,
             textvariable=detail_var,
-            bg="#000000",
+            bg=APP_DEEP_BG,
             fg="#d8d4cf",
             anchor="w",
             justify="left",
@@ -2232,8 +3063,38 @@ class FantasiaApp(tk.Tk):
             font=self.ui_fonts.normal(-3),
         ).grid(row=3, column=0, columnspan=3, sticky="ew", padx=16, pady=(6, 0))
 
-        actions = tk.Frame(dialog, bg="#000000")
-        actions.grid(row=4, column=0, columnspan=3, sticky="ew", padx=16, pady=(10, 14))
+        if mode == "shop":
+            haggle_frame = tk.Frame(dialog, bg=APP_DEEP_BG)
+            haggle_frame.grid(row=4, column=0, columnspan=3, sticky="ew", padx=16, pady=(8, 0))
+            haggle_frame.columnconfigure(1, weight=1)
+            tk.Label(
+                haggle_frame,
+                text=_ui_text(self.config_data, "trade_haggle_prompt"),
+                bg=APP_DEEP_BG,
+                fg="#f2f2f2",
+                font=self.ui_fonts.normal(-3),
+            ).grid(row=0, column=0, sticky="w", padx=(0, 8))
+            tk.Entry(
+                haggle_frame,
+                textvariable=haggle_var,
+                bg=APP_PANEL_BG,
+                fg="#f2f2f2",
+                insertbackground="#f2f2f2",
+                relief="solid",
+                bd=1,
+                font=self.ui_fonts.normal(-2),
+            ).grid(row=0, column=1, sticky="ew", padx=(0, 8), ipady=4)
+            self._instant_button(haggle_frame, _ui_text(self.config_data, "trade_haggle"), lambda: negotiate_price()).grid(row=0, column=2, sticky="e")
+            tk.Label(
+                haggle_frame,
+                textvariable=haggle_status_var,
+                bg=APP_DEEP_BG,
+                fg="#d8d4cf",
+                font=self.ui_fonts.normal(-3),
+            ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
+
+        actions = tk.Frame(dialog, bg=APP_DEEP_BG)
+        actions.grid(row=5 if mode == "shop" else 4, column=0, columnspan=3, sticky="ew", padx=16, pady=(10, 14))
         actions.columnconfigure(0, weight=1)
         if mode == "inventory":
             self._instant_button(actions, "装備", lambda: equip_selected_item()).grid(row=0, column=1, sticky="e", padx=(0, 8))
@@ -2246,7 +3107,7 @@ class FantasiaApp(tk.Tk):
         tooltip.configure(bg="#d8d4cf")
         tooltip_label = tk.Label(
             tooltip,
-            bg="#050505",
+            bg=APP_PANEL_BG,
             fg="#f2f2f2",
             justify="left",
             anchor="w",
@@ -2276,6 +3137,18 @@ class FantasiaApp(tk.Tk):
 
         dialog.bind("<Destroy>", lambda _event: tooltip.destroy() if tooltip.winfo_exists() else None, add="+")
 
+        def current_buy_multiplier() -> float:
+            return self.engine.vendor_price_multiplier(target_character) if mode == "shop" else 1.0
+
+        def buy_value(item: dict[str, object]) -> int:
+            return max(1, int(round(_item_value(item) * current_buy_multiplier())))
+
+        def shop_price_status() -> str:
+            if mode != "shop":
+                return ""
+            percent = int(round(current_buy_multiplier() * 100))
+            return _ui_text(self.config_data, "trade_price_rate").format(rate=percent)
+
         def refresh() -> None:
             player_list.delete(0, "end")
             target_list.delete(0, "end")
@@ -2286,6 +3159,7 @@ class FantasiaApp(tk.Tk):
             player_gold_var.set(f"Gold: {self._player_gold()}")
             target_gold = target_character.gold if target_character else 0
             target_gold_var.set(f"Gold: {target_gold}" if mode == "shop" else "")
+            haggle_status_var.set(shop_price_status())
             update_detail()
 
         def selected_index(listbox: tk.Listbox) -> int | None:
@@ -2296,25 +3170,35 @@ class FantasiaApp(tk.Tk):
 
         def update_detail(_event=None) -> None:
             item = None
+            source_side = ""
             index = selected_index(player_list)
             if index is not None and index < len(player_inventory):
                 item = normalise_item(player_inventory[index])
+                source_side = "player"
             else:
                 index = selected_index(target_list)
                 if index is not None and index < len(target_inventory):
                     item = normalise_item(target_inventory[index])
+                    source_side = "target"
             if not item:
                 detail_var.set("")
                 return
             source = str(item.get("source") or "")
-            detail_var.set(f"{_item_label(item, language=language)} / source:{source}".strip())
+            if mode == "shop" and index is not None:
+                if source_side == "target":
+                    price_text = _ui_text(self.config_data, "trade_buy_price").format(price=buy_value(item))
+                else:
+                    price_text = _ui_text(self.config_data, "trade_sell_price").format(price=get_sell_value(item))
+                detail_var.set(f"{_item_label(item, language=language)} / {price_text} / source:{source}".strip())
+            else:
+                detail_var.set(f"{_item_label(item, language=language)} / source:{source}".strip())
 
         def transfer_to_player(index: int, quantity: int = 1) -> bool:
             if index < 0 or index >= len(target_inventory):
                 return False
             item = normalise_item(target_inventory[index])
             amount = min(max(1, quantity), _safe_int(item.get("quantity", 1), 1))
-            price = _item_value(item) * amount
+            price = buy_value(item) * amount
             if mode == "shop":
                 if self._player_gold() < price:
                     messagebox.showwarning(_ui_text(self.config_data, "trade_title"), _ui_text(self.config_data, "trade_not_enough_gold"))
@@ -2339,7 +3223,7 @@ class FantasiaApp(tk.Tk):
             amount = min(max(1, quantity), _safe_int(item.get("quantity", 1), 1))
             price = get_sell_value(item) * amount
             if item.get("equipped"):
-                self.engine._unequip_player_slot(str(item.get("equipment_slot") or ""), source="inventory_transfer")
+                self.engine._unequip_player_slot(self.engine._equipment_slot_for_item(item), source="inventory_transfer")
             if mode == "shop":
                 if target_character and target_character.gold < price:
                     messagebox.showwarning(
@@ -2359,6 +3243,21 @@ class FantasiaApp(tk.Tk):
             else:
                 self._append_inventory_event(f"> [移動] {label}")
             return True
+
+        def negotiate_price() -> None:
+            if mode != "shop" or target_character is None:
+                return
+            event = self.engine.roll_trade_negotiation(target_character, haggle_var.get())
+            roll = event.get("roll") if isinstance(event, dict) else None
+            if isinstance(roll, dict) and roll.get("line"):
+                self._append_inventory_event(str(roll["line"]))
+            line = str(event.get("line") or "")
+            if line:
+                self._append_inventory_event(line)
+            for relation_line in event.get("relationship_lines", []) if isinstance(event, dict) else []:
+                self._append_inventory_event(str(relation_line))
+            self.engine.save_game()
+            refresh()
 
         def move_to_player() -> None:
             selection = target_list.curselection()
@@ -2385,7 +3284,7 @@ class FantasiaApp(tk.Tk):
                 item = normalise_item(target_inventory[index])
                 amount = _safe_int(item.get("quantity", 1), 1)
                 if mode == "shop":
-                    unit_price = max(1, _item_value(item))
+                    unit_price = max(1, buy_value(item))
                     amount = min(amount, self._player_gold() // unit_price)
                     if amount <= 0:
                         index += 1
@@ -2549,7 +3448,7 @@ class FantasiaApp(tk.Tk):
         column: int = 0,
         sticky: str = "ew",
     ) -> tk.Widget:
-        button = ttk.Button(parent, text=text, command=command)
+        button = self._instant_button(parent, text, command)
         button.grid(row=row, column=column, sticky=sticky, padx=4, pady=5)
         return button
 
@@ -2641,23 +3540,36 @@ class FantasiaApp(tk.Tk):
         self._new_world()
 
     def _refresh_world_select_screen(self) -> None:
-        if not hasattr(self, "save_listbox"):
+        if not hasattr(self, "world_listbox"):
             return
-        self.save_slots = self.save_store.list_saves()
         self.world_slots = self.save_store.list_worlds()
-        self.save_listbox.delete(0, "end")
         self.world_listbox.delete(0, "end")
-        for slot in self.save_slots:
-            self.save_listbox.insert("end", slot.label)
-        if not self.save_slots:
-            self.save_listbox.insert("end", _ui_text(self.config_data, "empty_no_saved_games"))
         for slot in self.world_slots:
             self.world_listbox.insert("end", slot.label)
         if not self.world_slots:
             self.world_listbox.insert("end", _ui_text(self.config_data, "empty_no_worlds"))
+            return
+        self.world_listbox.selection_set(0)
+
+    def _refresh_continue_select_screen(self) -> None:
+        if not hasattr(self, "continue_save_listbox"):
+            return
+        self.save_slots = self.save_store.list_saves()
+        self.continue_save_listbox.delete(0, "end")
+        for slot in self.save_slots:
+            self.continue_save_listbox.insert("end", slot.label)
+        if not self.save_slots:
+            self.continue_save_listbox.insert("end", _ui_text(self.config_data, "empty_no_saved_games"))
+            return
+        self.continue_save_listbox.selection_set(0)
 
     def _load_selected_save(self) -> None:
-        selection = self.save_listbox.curselection()
+        self._load_selected_continue_save()
+
+    def _load_selected_continue_save(self) -> None:
+        if not hasattr(self, "continue_save_listbox"):
+            return
+        selection = self.continue_save_listbox.curselection()
         if not selection or not self.save_slots:
             self._show_error(ValueError(_ui_text(self.config_data, "error_no_save_selected")))
             return
@@ -2685,10 +3597,37 @@ class FantasiaApp(tk.Tk):
         opening = world.overview or world.structure_description or f"{world.world_name} begins."
         choices = _initial_world_choices(world, self.config_data.language)
         self.engine.state = GameStateData.new_game("Player", world, opening, choices)
+        self.engine._set_world_time_total_hours(INITIAL_WORLD_TIME_HOURS)
         self.engine.state.flags["screen_mode"] = "exploration"
         self.character_setup_back_screen = "world_select"
         self._show_screen("character_setup")
         self._append_log("\n" + _ui_text(self.config_data, "log_prepared_world").format(world=world.world_name) + "\n")
+
+    def _export_selected_world_dialog(self) -> None:
+        if not hasattr(self, "world_listbox"):
+            return
+        selection = self.world_listbox.curselection()
+        if not selection or not self.world_slots:
+            self._show_error(ValueError(_ui_text(self.config_data, "error_no_world_selected")))
+            return
+        slot = self.world_slots[int(selection[0])]
+        filename = filedialog.asksaveasfilename(
+            title=_ui_text(self.config_data, "dialog_export_world"),
+            defaultextension=".zip",
+            initialfile=f"{_safe_filename(slot.world_name)}.fantasia-world.zip",
+            filetypes=[
+                (_ui_text(self.config_data, "dialog_file_world_package"), "*.zip"),
+                (_ui_text(self.config_data, "dialog_file_world_json"), "*.json"),
+                (_ui_text(self.config_data, "dialog_file_all"), "*.*"),
+            ],
+        )
+        if not filename:
+            return
+        self._run_task(
+            _ui_text(self.config_data, "task_exporting_world"),
+            lambda: self.save_store.export_world(slot.world_name, Path(filename)),
+            lambda path: self._append_log("\n" + _ui_text(self.config_data, "log_exported_world").format(path=path) + "\n"),
+        )
 
     def _enter_loaded_game(self, text: str) -> None:
         self.player_var.set(self.engine.state.player_name)
@@ -2708,20 +3647,31 @@ class FantasiaApp(tk.Tk):
                 self._set_image(path)
                 return
 
+    def _image_generation_enabled(self, *, show_status: bool = False) -> bool:
+        enabled = _image_generation_enabled_config(self.config_data)
+        if not enabled and show_status:
+            self._set_task_status(_ui_text(self.config_data, "task_image_generation_disabled"))
+        return enabled
+
     def _refresh_settings_screen(self) -> None:
-        if not hasattr(self, "settings_text"):
-            return
         self.llm_backend_var.set(self.config_data.llm_backend)
         self.llm_context_size_var.set(str(self.config_data.llm_context_size))
         self._load_llm_settings_vars()
         self._load_image_settings_vars()
         self._load_ui_settings_vars()
-        self._replace_text(self.settings_text, self._settings_text())
+        if hasattr(self, "settings_text"):
+            self._replace_text(self.settings_text, self._settings_text())
         if hasattr(self, "device_info_text"):
-            self._replace_text(self.device_info_text, device_report(self.device_info, self.config_data.language))
+            self._replace_text(self.device_info_text, _debug_device_summary(self.device_info, self.config_data.language))
+
+    def _refresh_debug_settings(self) -> None:
+        self.device_info = detect_device()
+        if hasattr(self, "device_info_text"):
+            self._replace_text(self.device_info_text, _debug_device_summary(self.device_info, self.config_data.language))
 
     def _apply_llm_backend_setting(self) -> None:
-        backend = self.llm_backend_var.get().strip()
+        backend = _llm_backend_from_label(self.llm_backend_label_var.get(), self.config_data.language)
+        self.llm_backend_var.set(backend)
         if backend not in _llm_backend_options():
             self._show_error(ValueError(_ui_text(self.config_data, "error_unknown_llm_backend").format(backend=backend)))
             return
@@ -2729,6 +3679,9 @@ class FantasiaApp(tk.Tk):
             context_size = int(self.llm_context_size_var.get().strip())
             if context_size < 1024:
                 raise ValueError(_ui_text(self.config_data, "error_llm_context_min"))
+            temperature = float(self.llm_temperature_var.get().strip())
+            if temperature < 0:
+                raise ValueError(_ui_text(self.config_data, "error_llm_temperature_min"))
         except ValueError as exc:
             self._show_error(exc)
             return
@@ -2749,7 +3702,10 @@ class FantasiaApp(tk.Tk):
 
     def _load_llm_settings_vars(self) -> None:
         self.llm_backend_var.set(self.config_data.llm_backend)
+        self.llm_backend_label_var.set(_llm_backend_label(self.config_data.llm_backend, self.config_data.language))
         self.llm_context_size_var.set(str(self.config_data.llm_context_size))
+        self.llm_temperature_var.set(_llm_temperature_text(self.config_data))
+        self.llm_repeat_suppression_var.set(_llm_repeat_suppression_enabled(self.config_data))
         self.local_model_var.set(_selected_model_label(self.config_data))
         self.cloud_openai_model_var.set(_cloud_model_text(self.config_data.cloud_llm, "openai"))
         self.cloud_xai_model_var.set(_cloud_model_text(self.config_data.cloud_llm, "xai"))
@@ -2759,9 +3715,12 @@ class FantasiaApp(tk.Tk):
         self.cloud_gemini_key_var.set(_cloud_key_value(self.config_data, "gemini"))
         if hasattr(self, "local_model_combo"):
             self.local_model_combo.configure(values=_local_model_labels(self.config_data, self.config_data.language))
+        if hasattr(self, "llm_backend_combo"):
+            self.llm_backend_combo.configure(values=_llm_backend_label_options(self.config_data.language))
         if hasattr(self, "cloud_model_combos"):
             for provider, combo in self.cloud_model_combos.items():
                 combo.configure(values=_cloud_model_options(provider, self.config_data))
+        self._refresh_llm_backend_fields()
 
     def _save_llm_settings(self, backend: str, context_size: int, *, complete_setup: bool = False, lock_backend: bool = True) -> None:
         raw = json.loads(json.dumps(self.config_data.raw, ensure_ascii=False))
@@ -2771,10 +3730,22 @@ class FantasiaApp(tk.Tk):
         selected_model = option_from_label(self.config_data, self.local_model_var.get())
         if selected_model is not None:
             local_llm = option_to_local_llm(selected_model, local_llm)
-            context_size = int(local_llm.get("context_size") or context_size)
         local_model_setting["llm_backend"] = backend
         local_llm["context_size"] = context_size
         local_model_setting["local_llm"] = local_llm
+        completion_parameters = ai_setting.setdefault("completion_parameters", {})
+        if not isinstance(completion_parameters, dict):
+            completion_parameters = {}
+            ai_setting["completion_parameters"] = completion_parameters
+        default_completion = completion_parameters.setdefault("default", {})
+        if not isinstance(default_completion, dict):
+            default_completion = {}
+            completion_parameters["default"] = default_completion
+        default_completion["temperature"] = float(self.llm_temperature_var.get().strip())
+        if self.llm_repeat_suppression_var.get():
+            default_completion["repeat_penalty"] = 1.15
+        else:
+            default_completion["repeat_penalty"] = 1.0
         cloud_llm = dict(local_model_setting.get("cloud_llm", {}))
         self._apply_cloud_provider_vars(cloud_llm, ai_setting, "openai", self.cloud_openai_model_var, self.cloud_openai_key_var)
         self._apply_cloud_provider_vars(cloud_llm, ai_setting, "xai", self.cloud_xai_model_var, self.cloud_xai_key_var)
@@ -2913,6 +3884,9 @@ class FantasiaApp(tk.Tk):
             _ui_text(self.config_data, "task_downloading_model").format(name=option.display_name),
             work,
             done,
+            initial_status=_ui_text(self.config_data, "task_downloading_model_progress").format(name=option.display_name, percent=0),
+            auto_status=False,
+            log_animation=False,
         )
 
     def _download_selected_sdxl_model(self) -> None:
@@ -2946,91 +3920,45 @@ class FantasiaApp(tk.Tk):
             _ui_text(self.config_data, "task_downloading_model").format(name=option.display_name),
             work,
             done,
+            initial_status=_ui_text(self.config_data, "task_downloading_model_progress").format(name=option.display_name, percent=0),
+            auto_status=False,
+            log_animation=False,
         )
 
-    def _open_first_run_wizard(self) -> None:
-        dialog = tk.Toplevel(self)
-        dialog.title(_ui_text(self.config_data, "wizard_title"))
-        dialog.configure(bg="#0d1017")
-        dialog.geometry("880x700")
-        dialog.transient(self)
+    def _open_first_run_notice(self) -> None:
+        dialog = self._create_modal_dialog(_ui_text(self.config_data, "wizard_title"), 560, 220)
         dialog.columnconfigure(0, weight=1)
-        dialog.rowconfigure(2, weight=1)
-
+        dialog.rowconfigure(1, weight=1)
         tk.Label(
             dialog,
             text=_ui_text(self.config_data, "wizard_title"),
-            bg="#0d1017",
+            bg=APP_DEEP_BG,
             fg="#f4d27a",
-            font=self.ui_fonts.bold(2),
+            font=self.ui_fonts.bold(4),
             anchor="w",
-        ).grid(row=0, column=0, sticky="ew", padx=18, pady=(16, 8))
+        ).grid(row=0, column=0, sticky="ew", padx=24, pady=(22, 10))
         tk.Label(
             dialog,
             text=_ui_text(self.config_data, "wizard_body"),
-            bg="#0d1017",
-            fg="#d8d4cf",
-            anchor="w",
-            justify="left",
-            wraplength=700,
-        ).grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 12))
-
-        body = tk.Frame(dialog, bg="#111722", padx=12, pady=12)
-        body.grid(row=2, column=0, sticky="nsew", padx=18, pady=(0, 12))
-        body.columnconfigure(1, weight=1)
-        body.rowconfigure(5, weight=1)
-
-        tk.Label(body, text=_ui_text(self.config_data, "settings_llm_backend"), bg="#111722", fg="#b8c0d5").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=4)
-        ttk.Combobox(body, textvariable=self.llm_backend_var, values=_llm_backend_options(), state="readonly").grid(row=0, column=1, sticky="ew", pady=4)
-        tk.Label(body, text=_ui_text(self.config_data, "settings_local_model"), bg="#111722", fg="#b8c0d5").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=4)
-        ttk.Combobox(body, textvariable=self.local_model_var, values=_local_model_labels(self.config_data, self.config_data.language), state="readonly").grid(row=1, column=1, sticky="ew", pady=4)
-        tk.Label(body, text=_ui_text(self.config_data, "settings_sdxl_model"), bg="#111722", fg="#b8c0d5").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=4)
-        ttk.Combobox(body, textvariable=self.sdxl_model_var, values=_sdxl_model_labels(self.config_data, self.config_data.language), state="readonly").grid(row=2, column=1, sticky="ew", pady=4)
-        tk.Label(body, text=_ui_text(self.config_data, "settings_context_tokens"), bg="#111722", fg="#b8c0d5").grid(row=3, column=0, sticky="w", padx=(0, 8), pady=4)
-        ttk.Entry(body, textvariable=self.llm_context_size_var, width=12).grid(row=3, column=1, sticky="w", pady=4)
-
-        if not hasattr(self, "cloud_model_combos"):
-            self.cloud_model_combos = {}
-        cloud_controls = tk.LabelFrame(body, text=_ui_text(self.config_data, "settings_cloud_llm"), bg="#111722", fg="#f4d27a", padx=10, pady=8)
-        cloud_controls.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(10, 0))
-        cloud_controls.columnconfigure(1, weight=1)
-        cloud_controls.columnconfigure(3, weight=1)
-        self._cloud_setting_row(cloud_controls, 0, "openai", "OpenAI", self.cloud_openai_model_var, self.cloud_openai_key_var, _cloud_model_options("openai", self.config_data))
-        self._cloud_setting_row(cloud_controls, 1, "xai", "xAI", self.cloud_xai_model_var, self.cloud_xai_key_var, _cloud_model_options("xai", self.config_data))
-        self._cloud_setting_row(cloud_controls, 2, "gemini", "Gemini", self.cloud_gemini_model_var, self.cloud_gemini_key_var, _cloud_model_options("gemini", self.config_data))
-        self._screen_button(cloud_controls, _ui_text(self.config_data, "settings_fetch_cloud_models"), lambda: self._fetch_cloud_models("openai"), 3, column=0, sticky="ew")
-        self._screen_button(cloud_controls, _ui_text(self.config_data, "settings_fetch_cloud_models"), lambda: self._fetch_cloud_models("xai"), 3, column=1, sticky="ew")
-        self._screen_button(cloud_controls, _ui_text(self.config_data, "settings_fetch_cloud_models"), lambda: self._fetch_cloud_models("gemini"), 3, column=2, sticky="ew")
-
-        report = tk.Text(body, wrap="word", height=8, bg="#0d1017", fg="#e6edf7", insertbackground="#e6edf7", relief="flat", padx=10, pady=8, font=self.ui_fonts.normal(-4))
-        report.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(10, 0))
-        report.insert("1.0", device_report(self.device_info, self.config_data.language))
-        report.configure(state="disabled")
-
-        actions = tk.Frame(dialog, bg="#0d1017")
-        actions.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 16))
+            bg=APP_DEEP_BG,
+            fg="#f2f2f2",
+            anchor="center",
+            justify="center",
+            wraplength=480,
+            font=self.ui_fonts.normal(0),
+        ).grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 14))
+        actions = tk.Frame(dialog, bg=APP_DEEP_BG)
+        actions.grid(row=2, column=0, sticky="ew", padx=24, pady=(0, 20))
         actions.columnconfigure(0, weight=1)
-        self._screen_button(actions, _ui_text(self.config_data, "settings_download_model"), self._download_selected_local_model, 0, column=1, sticky="e")
-        self._screen_button(actions, _ui_text(self.config_data, "settings_download_sdxl_model"), self._download_selected_sdxl_model, 0, column=2, sticky="e")
-        self._screen_button(actions, _ui_text(self.config_data, "wizard_apply"), lambda: self._complete_first_run_wizard(dialog), 0, column=3, sticky="e")
-        self._screen_button(actions, _ui_text(self.config_data, "wizard_skip"), lambda: self._skip_first_run_wizard(dialog), 0, column=4, sticky="e")
+        self._instant_button(actions, _ui_text(self.config_data, "settings_close"), lambda: self._close_first_run_notice(dialog)).grid(row=0, column=1, sticky="e", ipadx=22, ipady=7)
+        dialog.protocol("WM_DELETE_WINDOW", lambda: self._close_first_run_notice(dialog))
 
-    def _complete_first_run_wizard(self, dialog: tk.Toplevel) -> None:
-        try:
-            context_size = int(self.llm_context_size_var.get().strip())
-            self._save_llm_settings(self.llm_backend_var.get().strip(), context_size, complete_setup=True, lock_backend=True)
-            self._apply_image_generation_setting()
-        except Exception as exc:
-            self._show_error(exc)
-            return
-        self._refresh_settings_screen()
-        dialog.destroy()
-
-    def _skip_first_run_wizard(self, dialog: tk.Toplevel) -> None:
+    def _close_first_run_notice(self, dialog: ModalDialog) -> None:
         raw = json.loads(json.dumps(self.config_data.raw, ensure_ascii=False))
         setup = raw.setdefault("setup", {})
         setup["completed"] = True
         setup["backend_locked"] = True
+        setup.setdefault("auto_select_backend", True)
         CONFIG_PATH.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         self.config_data = load_config()
         dialog.destroy()
@@ -3050,16 +3978,21 @@ class FantasiaApp(tk.Tk):
         self.image_negative_background_var.set(str(negative_prompts.get("background", "")))
         self.image_negative_character_var.set(str(negative_prompts.get("character", "")))
         self.image_negative_monster_var.set(str(negative_prompts.get("monster", "")))
+        self.image_negative_cg_var.set(str(negative_prompts.get("cg", "")))
         if hasattr(self, "image_quality_combo"):
             self.image_quality_combo.configure(values=_quality_preset_options(image_config))
         if hasattr(self, "sdxl_model_combo"):
             self.sdxl_model_combo.configure(values=_sdxl_model_labels(self.config_data, self.config_data.language))
 
     def _load_ui_settings_vars(self) -> None:
+        self.ui_font_var.set(_font_label_from_config(self.config_data, self))
         self.ui_font_path_var.set(str(self.config_data.font_path))
         self.ui_font_size_var.set(str(self.config_data.font_size))
         self.ui_text_speed_var.set(str(self.config_data.ui_setting.get("text_speed", 0.02)))
         self.ui_language_var.set(_language_label(self.config_data.language))
+        self.ui_generate_images_var.set(_image_generation_enabled_config(self.config_data))
+        if hasattr(self, "ui_font_combo"):
+            self.ui_font_combo.configure(values=_font_options(self, self.config_data.language))
 
     def _apply_image_generation_setting(self) -> None:
         raw = json.loads(json.dumps(self.config_data.raw, ensure_ascii=False))
@@ -3070,7 +4003,7 @@ class FantasiaApp(tk.Tk):
         image_config["quality_preset"] = self.image_quality_var.get().strip() or "balanced"
         image_config["sampling_method"] = self.image_sampler_var.get().strip()
         image_config["scheduler"] = self.image_scheduler_var.get().strip()
-        image_config["lora_prompt"] = self.image_lora_prompt_var.get().strip()
+        image_config.pop("lora_prompt", None)
         selected_sdxl = option_from_label(self.config_data, self.sdxl_model_var.get())
         if selected_sdxl is not None:
             sdxl_config["model_name"] = selected_sdxl.display_name
@@ -3081,10 +4014,11 @@ class FantasiaApp(tk.Tk):
         negative_prompts["background"] = self.image_negative_background_var.get().strip()
         negative_prompts["character"] = self.image_negative_character_var.get().strip()
         negative_prompts["monster"] = self.image_negative_monster_var.get().strip()
+        negative_prompts["cg"] = self.image_negative_cg_var.get().strip()
         image_config["negative_prompts"] = negative_prompts
-        sdxl_config["vae_path"] = self.image_vae_path_var.get().strip()
-        sdxl_config["taesd_path"] = self.image_taesd_path_var.get().strip()
-        sdxl_config["lora_model_dir"] = self.image_lora_dir_var.get().strip()
+        sdxl_config.pop("vae_path", None)
+        sdxl_config.pop("taesd_path", None)
+        sdxl_config.pop("lora_model_dir", None)
         try:
             CONFIG_PATH.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             self.config_data = load_config()
@@ -3112,14 +4046,26 @@ class FantasiaApp(tk.Tk):
 
         raw = json.loads(json.dumps(self.config_data.raw, ensure_ascii=False))
         ui_setting = raw.setdefault("ui_setting", {})
-        ui_setting["font_path"] = self.ui_font_path_var.get().strip() or "assets/fonts/JF-Dot-MPlus10.ttf"
+        selected_font_family = _font_family_from_label(self.ui_font_var.get(), self.config_data.language)
+        ui_setting["font_path"] = BUILTIN_FONT_PATH
+        if selected_font_family:
+            ui_setting["font_family"] = selected_font_family
+        else:
+            ui_setting.pop("font_family", None)
         ui_setting["font_size"] = font_size
         ui_setting["text_speed"] = text_speed
         ui_setting["language"] = _language_code(self.ui_language_var.get())
+        ui_setting["generate_images"] = bool(self.ui_generate_images_var.get())
         try:
             CONFIG_PATH.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             self.config_data = load_config()
             self.ui_fonts = configure_ui_fonts(self, self.config_data)
+            if not _image_generation_enabled_config(self.config_data) and self.visual_task_after_id:
+                try:
+                    self.after_cancel(self.visual_task_after_id)
+                except tk.TclError:
+                    pass
+                self.visual_task_after_id = None
             self._build_menu()
             self._rebuild_settings_screen()
         except Exception as exc:
@@ -3188,6 +4134,7 @@ class FantasiaApp(tk.Tk):
             f"{label('settings_label_font_file')}: {self.ui_fonts.path}",
             f"{label('settings_label_font_loaded')}: {loaded_text}",
             f"{label('settings_label_language')}: {_language_label(self.config_data.language)}",
+            f"{label('settings_generate_images')}: {label('settings_yes') if _image_generation_enabled_config(self.config_data) else label('settings_no')}",
             "",
             f"{label('settings_label_device')}:",
             device_report(self.device_info, self.config_data.language),
@@ -3217,13 +4164,10 @@ class FantasiaApp(tk.Tk):
             f"{label('settings_label_image_scheduler')}: {image_config.get('scheduler', '')}",
             f"{label('settings_label_image_server')}: {sdxl.get('sd_server_path', '')}",
             f"{label('settings_label_sdxl_checkpoint')}: {sdxl.get('checkpoint_path', '')}",
-            f"{label('settings_vae')}: {sdxl.get('vae_path', '')}",
-            f"{label('settings_taesd')}: {sdxl.get('taesd_path', '')}",
-            f"{label('settings_lora_dir')}: {sdxl.get('lora_model_dir', '')}",
-            f"{label('settings_lora_prompt')}: {image_config.get('lora_prompt', '')}",
             f"{label('settings_negative_background')}: {negative_prompts.get('background', '')}",
             f"{label('settings_negative_character')}: {negative_prompts.get('character', '')}",
             f"{label('settings_negative_monster')}: {negative_prompts.get('monster', '')}",
+            f"{label('settings_negative_cg')}: {negative_prompts.get('cg', '')}",
             f"{label('settings_label_sd_server_log_dir')}: {LOG_DIR / 'sd-server'}",
             "",
             f"{label('settings_label_known_worlds')}: {len(self.save_store.list_worlds())}",
@@ -3313,8 +4257,14 @@ class FantasiaApp(tk.Tk):
             "wis": _clamp_int(self.character_wis_var.get(), CHARACTER_STAT_BASE, CHARACTER_STAT_BASE, CHARACTER_STAT_MAX),
             "cha": _clamp_int(self.character_cha_var.get(), CHARACTER_STAT_BASE, CHARACTER_STAT_BASE, CHARACTER_STAT_MAX),
         }
-        character.traits = _normalise_character_traits(self.character_trait_entries or _parse_character_traits(self.character_traits_text.get("1.0", "end")))
-        character.skills = _normalise_character_skills(self.character_skill_entries or _parse_character_skills(self.character_skills_text.get("1.0", "end")))
+        fallback_traits = []
+        fallback_skills = []
+        if hasattr(self, "character_traits_text") and self.character_traits_text.winfo_exists():
+            fallback_traits = _parse_character_traits(self.character_traits_text.get("1.0", "end"))
+        if hasattr(self, "character_skills_text") and self.character_skills_text.winfo_exists():
+            fallback_skills = _parse_character_skills(self.character_skills_text.get("1.0", "end"))
+        character.traits = _normalise_character_traits(self.character_trait_entries or fallback_traits)
+        character.skills = _normalise_character_skills(self.character_skill_entries or fallback_skills)
         character.extra["ability"] = {"attributes": attributes}
         character.extra["attributes"] = attributes
         character.image_generation_prompt = _prompt_parts_from_look(character.look)
@@ -3330,6 +4280,8 @@ class FantasiaApp(tk.Tk):
         return character
 
     def _generate_image(self) -> None:
+        if not self._image_generation_enabled(show_status=True):
+            return
         self._run_task(
             _ui_text(self.config_data, "task_generating_scene_image"),
             self.engine.generate_scene_image,
@@ -3337,6 +4289,8 @@ class FantasiaApp(tk.Tk):
         )
 
     def _generate_character_image(self) -> None:
+        if not self._image_generation_enabled(show_status=True):
+            return
         self._run_task(
             _ui_text(self.config_data, "task_generating_character_image"),
             self.engine.generate_character_image,
@@ -3344,6 +4298,8 @@ class FantasiaApp(tk.Tk):
         )
 
     def _generate_monster_image(self) -> None:
+        if not self._image_generation_enabled(show_status=True):
+            return
         self._run_task(
             _ui_text(self.config_data, "task_generating_monster_image"),
             self.engine.generate_monster_image,
@@ -3569,6 +4525,8 @@ class FantasiaApp(tk.Tk):
             self._replace_text(self.quest_text, self._quest_info_text())
         if hasattr(self, "player_status_text"):
             self._replace_text(self.player_status_text, self._player_status_text())
+        if hasattr(self, "info_canvas"):
+            self._render_player_info_panel()
         if hasattr(self, "npc_roster_canvas"):
             self._render_actor_rosters()
 
@@ -3896,7 +4854,16 @@ class FantasiaApp(tk.Tk):
             font=self.ui_fonts.normal(-5),
         )
 
-    def _run_task(self, status: str, work, done) -> None:
+    def _run_task(
+        self,
+        status: str,
+        work,
+        done,
+        *,
+        initial_status: str | None = None,
+        auto_status: bool = True,
+        log_animation: bool = True,
+    ) -> None:
         if self.current_task_id:
             return
         self.task_sequence_id += 1
@@ -3905,12 +4872,19 @@ class FantasiaApp(tk.Tk):
         self.current_task_name = status
         self.current_task_started_at = time.time()
         self.current_task_cancel_requested = False
+        self.current_task_auto_status = auto_status
+        self.current_task_log_animation_enabled = log_animation
         self._set_buttons(False)
         if hasattr(self, "cancel_task_btn"):
             self.cancel_task_btn.configure(state="normal")
-        if hasattr(self, "task_progress"):
+        if hasattr(self, "task_progress") and self.current_screen_name != "game":
             self.task_progress.start(14)
-        self._set_task_status(_ui_text(self.config_data, "task_generating_status").format(name=status, elapsed=0))
+        if auto_status:
+            self._set_task_status(_ui_text(self.config_data, "task_generating_status").format(name=status, elapsed=0))
+        else:
+            self._set_task_status(initial_status or status)
+        if log_animation:
+            self._start_task_log_animation(status)
         self._record_task_event("started", status, message=_ui_text(self.config_data, "task_started"))
         self._schedule_task_tick()
 
@@ -3967,6 +4941,8 @@ class FantasiaApp(tk.Tk):
         )
         self._end_task(clear_status=False)
         self._set_task_status(_ui_text(self.config_data, "task_failed_status"))
+        if hasattr(self, "log_text") and self.current_screen_name == "game":
+            self._append_log("\n" + _ui_text(self.config_data, "task_generation_failed_log") + "\n")
         messagebox.showerror(_ui_text(self.config_data, "dialog_error_title"), _ui_text(self.config_data, "dialog_generation_failed"))
 
     def _cancel_current_task(self) -> None:
@@ -4002,7 +4978,10 @@ class FantasiaApp(tk.Tk):
         if not self.current_task_id or self.current_task_cancel_requested:
             return
         elapsed = max(0, int(time.time() - self.current_task_started_at))
-        self._set_task_status(_ui_text(self.config_data, "task_generating_status").format(name=self.current_task_name, elapsed=elapsed))
+        if self.current_task_auto_status:
+            self._set_task_status(_ui_text(self.config_data, "task_generating_status").format(name=self.current_task_name, elapsed=elapsed))
+        if self.current_task_log_animation_enabled:
+            self._render_task_log_animation()
         self._schedule_task_tick()
 
     def _end_task(self, clear_status: bool) -> None:
@@ -4016,16 +4995,57 @@ class FantasiaApp(tk.Tk):
             self.task_progress.stop()
         if hasattr(self, "cancel_task_btn"):
             self.cancel_task_btn.configure(state="disabled")
+        self._clear_task_log_animation()
         self.current_task_id = 0
         self.current_task_name = ""
         self.current_task_started_at = 0.0
         self.current_task_cancel_requested = False
+        self.current_task_auto_status = True
+        self.current_task_log_animation_enabled = True
         self._set_buttons(True)
         if clear_status:
             self._set_task_status("")
 
     def _set_task_status(self, text: str) -> None:
         self.task_status_var.set(text)
+
+    def _start_task_log_animation(self, status: str) -> None:
+        if self.current_screen_name != "game" or not hasattr(self, "log_text"):
+            return
+        self._cancel_typewriter()
+        self.task_log_animation_base_text = self.log_text.get("1.0", "end-1c")
+        self.task_log_animation_last_text = ""
+        self.task_log_animation_frame = 0
+        self._render_task_log_animation()
+
+    def _render_task_log_animation(self) -> None:
+        if self.current_screen_name != "game" or not hasattr(self, "log_text"):
+            return
+        if not self.current_task_id:
+            return
+        dots = "・" * (self.task_log_animation_frame % 3 + 1)
+        self.task_log_animation_frame += 1
+        base = self.task_log_animation_base_text.rstrip()
+        line = f"{_ui_text(self.config_data, 'game_generating')}{dots}"
+        text = f"{base}\n{line}" if base else line
+        self.task_log_animation_last_text = text
+        self._replace_text(self.log_text, text, scroll_to_end=True)
+
+    def _clear_task_log_animation(self) -> None:
+        if not hasattr(self, "log_text") or not self.task_log_animation_last_text:
+            self.task_log_animation_base_text = ""
+            self.task_log_animation_last_text = ""
+            self.task_log_animation_frame = 0
+            return
+        try:
+            current = self.log_text.get("1.0", "end-1c")
+        except tk.TclError:
+            current = ""
+        if current == self.task_log_animation_last_text:
+            self._replace_text(self.log_text, self.task_log_animation_base_text, scroll_to_end=True)
+        self.task_log_animation_base_text = ""
+        self.task_log_animation_last_text = ""
+        self.task_log_animation_frame = 0
 
     def _record_task_event(
         self,
@@ -4156,6 +5176,8 @@ class FantasiaApp(tk.Tk):
         self._render_stage()
 
     def _schedule_visual_updates(self) -> None:
+        if not self._image_generation_enabled():
+            return
         if self.visual_task_after_id:
             try:
                 self.after_cancel(self.visual_task_after_id)
@@ -4168,6 +5190,10 @@ class FantasiaApp(tk.Tk):
         if self.current_task_id or self.current_screen_name != "game":
             return
         state = self.engine.state
+        if not self._image_generation_enabled():
+            state.flags.pop("pending_cg_request", None)
+            state.flags.pop("pending_background_location", None)
+            return
         if state.world_data.world_name == "unknown":
             return
         if isinstance(state.flags.get("pending_cg_request"), dict):
@@ -4312,13 +5338,19 @@ class FantasiaApp(tk.Tk):
                     choices.insert(0, _ui_text(self.config_data, "choice_quest_board"))
                 if self.engine.is_current_location_settlement():
                     choices.insert(0, _ui_text(self.config_data, "choice_open_map"))
+            if mode in {"exploration", "conversation"} and self._trade_target_character() is not None:
+                trade_choice = _ui_text(self.config_data, "game_trade")
+                if trade_choice not in choices:
+                    insert_at = 2 if mode == "exploration" else len(choices)
+                    choices.insert(min(insert_at, len(choices)), trade_choice)
+            if mode == "exploration":
                 choices = _limit_exploration_choices(choices)
                 self.engine.state.choices = choices
         if not choices:
             tk.Label(
                 self.choice_frame,
                 text=_empty_choices_text(mode, self.config_data.language),
-                bg="#000000",
+                bg=APP_DEEP_BG,
                 fg="#596070",
                 anchor="center",
                 font=self.ui_fonts.bold(-2),
@@ -4326,25 +5358,27 @@ class FantasiaApp(tk.Tk):
             return
 
         for index, choice in enumerate(choices):
+            border = tk.Frame(self.choice_frame, bg=APP_BUTTON_BORDER)
+            border.grid(row=index, column=0, sticky="ew", pady=(0, 16 if index < len(choices) - 1 else 0))
+            border.columnconfigure(0, weight=1)
             button = tk.Button(
-                self.choice_frame,
+                border,
                 text=choice,
                 command=lambda selected=choice: self._send_choice(selected),
-                bg="#050505",
+                bg=APP_PANEL_BG,
                 fg="#f2f5fb",
-                activebackground="#181818",
+                activebackground=APP_PANEL_ACTIVE_BG,
                 activeforeground="#ffffff",
-                relief="solid",
-                bd=1,
-                highlightthickness=1,
-                highlightbackground="#d8d4cf",
+                relief="flat",
+                bd=0,
+                highlightthickness=0,
                 padx=10,
-                pady=14,
+                pady=12,
                 anchor="center",
-                wraplength=300,
+                wraplength=260,
                 font=self.ui_fonts.bold(-2),
             )
-            button.grid(row=index, column=0, sticky="ew", pady=(0, 42 if index < len(choices) - 1 else 0))
+            button.grid(row=0, column=0, sticky="ew", padx=2, pady=2)
             self.choice_buttons.append(button)
 
     def _show_error(self, exc: Exception) -> None:
@@ -4660,7 +5694,7 @@ def _format_character_skills(skills: list[dict[str, object]]) -> str:
         name = str(skill.get("name") or skill.get("skill") or "").strip()
         if not name:
             continue
-        category = str(skill.get("category") or skill.get("element") or skill.get("skill_type") or "physical").strip()
+        category = _normalise_element_id(skill.get("element") or skill.get("category") or skill.get("skill_type"))
         description = str(skill.get("description") or skill.get("effect") or "").strip()
         cost = skill.get("sp_cost", skill.get("cost_sp", skill.get("sp", 0)))
         if not cost:
@@ -4676,6 +5710,59 @@ def _format_character_entry_names(entries: list[dict[str, object]]) -> str:
         for entry in entries
         if str(entry.get("name") or entry.get("skill") or entry.get("trait") or "").strip()
     )
+
+
+def _normalise_element_id(value: object, fallback: str = "physical") -> str:
+    text = str(value or "").strip()
+    if not text:
+        return fallback
+    key = text.casefold()
+    aliases = {
+        "physical": "physical",
+        "phys": "physical",
+        "物理": "physical",
+        "fire": "fire",
+        "flame": "fire",
+        "炎": "fire",
+        "水": "water",
+        "water": "water",
+        "ice": "ice",
+        "氷": "ice",
+        "lightning": "lightning",
+        "thunder": "lightning",
+        "雷": "lightning",
+        "earth": "earth",
+        "土": "earth",
+        "wind": "wind",
+        "風": "wind",
+        "grass": "grass",
+        "plant": "grass",
+        "草": "grass",
+        "poison": "poison",
+        "毒": "poison",
+        "mental": "mental",
+        "mind": "mental",
+        "精神": "mental",
+        "light": "light",
+        "holy": "light",
+        "光": "light",
+        "dark": "dark",
+        "darkness": "dark",
+        "闇": "dark",
+        "none": "none",
+        "neutral": "none",
+        "無": "none",
+    }
+    if key in aliases:
+        return aliases[key]
+    for element_id in ELEMENT_IDS:
+        if key == element_id.casefold():
+            return element_id
+        if key == tr_enum("element", element_id, "ja", fallback=element_id).casefold():
+            return element_id
+        if key == tr_enum("element", element_id, "en", fallback=element_id).casefold():
+            return element_id
+    return fallback
 
 
 def _normalise_character_traits(traits: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -4707,6 +5794,8 @@ def _normalise_character_skills(skills: list[dict[str, object]]) -> list[dict[st
         skill = dict(raw)
         skill["name"] = name
         skill["skill_type"] = str(skill.get("skill_type") or skill.get("type") or skill.get("category") or "physical").strip().lower() or "physical"
+        skill["element"] = _normalise_element_id(skill.get("element") or skill.get("attribute") or skill.get("element_type") or skill.get("category") or skill.get("skill_type"))
+        skill["category"] = skill["element"]
         if not skill.get("sp_cost"):
             skill["sp_cost"] = _estimate_skill_sp_cost(skill)
         power = _entry_power(skill, fallback=_skill_power_from_cost(_safe_int(str(skill.get("sp_cost", 0)), 0)))
@@ -4716,6 +5805,33 @@ def _normalise_character_skills(skills: list[dict[str, object]]) -> list[dict[st
         skill["strength_level"] = power
         result.append(skill)
     return result
+
+
+def _character_entry_generated_summary(entry: dict[str, object], kind: str, config_data) -> str:
+    power = _entry_power(entry)
+    lines: list[str] = []
+    if kind == "skills":
+        sp_cost = entry.get("sp_cost", entry.get("cost_sp", entry.get("sp", "")))
+        element_id = _normalise_element_id(entry.get("element") or entry.get("category") or entry.get("skill_type"))
+        lines.append(f"{_ui_text(config_data, 'character_entry_sp_cost')}:{sp_cost}")
+        lines.append(f"{_ui_text(config_data, 'character_entry_power')}:{power}")
+        lines.append(
+            f"{_ui_text(config_data, 'character_entry_element')}:"
+            f"{tr_enum('element', element_id, getattr(config_data, 'language', 'ja'), fallback=element_id)}"
+        )
+    else:
+        lines.append(f"{_ui_text(config_data, 'character_entry_power')}:{power}")
+    effects = entry.get("effects")
+    effect = str(
+        entry.get("effect")
+        or entry.get("usefulness")
+        or entry.get("description")
+        or (_compact_tooltip_value(effects) if effects else "")
+        or ""
+    ).strip()
+    if effect:
+        lines.append(f"{_ui_text(config_data, 'character_entry_generated_effect')}:{effect}")
+    return "\n".join(lines)
 
 
 def _entry_power(value: object, fallback: int = 1) -> int:
@@ -4773,23 +5889,26 @@ def _skill_sp_floor(power: int) -> int:
     return {1: 2, 2: 4, 3: 7, 4: 11, 5: 16}.get(max(1, min(5, power)), 2)
 
 
-def _character_entry_tooltip_text(entry: dict[str, object], kind: str) -> str:
+def _character_entry_tooltip_text(entry: dict[str, object], kind: str, config_data) -> str:
     name = str(entry.get("name") or entry.get("skill") or entry.get("trait") or "").strip()
     power = _entry_power(entry)
-    lines = [name, f"強力度: {power}/5"]
+    lines = [name, f"{_ui_text(config_data, 'character_entry_power')}: {power}/5"]
     if kind == "skills":
         sp_cost = entry.get("sp_cost", entry.get("cost_sp", entry.get("sp", "")))
-        skill_type = str(entry.get("skill_type") or entry.get("category") or entry.get("element") or "").strip()
+        element_id = _normalise_element_id(entry.get("element") or entry.get("category") or entry.get("skill_type"))
         if sp_cost not in (None, ""):
-            lines.append(f"消費SP: {sp_cost}")
-        if skill_type:
-            lines.append(f"種別: {skill_type}")
+            lines.append(f"{_ui_text(config_data, 'character_entry_sp_cost')}: {sp_cost}")
+        if element_id:
+            lines.append(
+                f"{_ui_text(config_data, 'character_entry_element')}: "
+                f"{tr_enum('element', element_id, getattr(config_data, 'language', 'ja'), fallback=element_id)}"
+            )
     description = str(entry.get("description") or entry.get("effect") or entry.get("usefulness") or "").strip()
     if description:
         lines.extend(["", description])
     effects = entry.get("effects")
     if effects:
-        lines.extend(["", "効果:", _compact_tooltip_value(effects)])
+        lines.extend(["", _ui_text(config_data, "character_entry_generated_effect"), _compact_tooltip_value(effects)])
     return "\n".join(str(line) for line in lines if str(line) != "")
 
 
@@ -4899,18 +6018,18 @@ def _format_character_status_detail(data: dict[str, object], encounter: dict[str
                 equipment_lines.append(f"{tr_enum('equipment_slot', slot, language)}: {_item_label(item, language=language)}")
     field = lambda key: tr_enum("actor_detail", key, language)
     unknown = tr_enum("roster", "unknown", language)
-    actor_type = tr_enum("actor_type", "player" if is_player else "character", language)
     state_id = str(data.get("state") or "present")
     state_label = tr_enum("actor_state", state_id, language, fallback=state_id)
+    affinity_value = _safe_int(extra.get("affinity", extra.get("trust", 0)), 0) if isinstance(extra, dict) else 0
+    affinity_state = _affinity_state_label(affinity_value, language)
     lines = [
         f"[{field('current_status')}]",
         f"{field('name')}: {data.get('name') or unknown}",
-        f"{field('type')}: {actor_type}",
-        f"{field('role')}: {_join_nonempty(data.get('role'), data.get('category')) or '-'}",
-        f"{field('gender_age')}: {_join_nonempty(data.get('gender'), data.get('age')) or '-'}",
+        f"{field('gender_age')}: {_join_nonempty(_display_gender(data.get('gender'), language), data.get('age')) or '-'}",
         f"{field('location')}: {data.get('location') or '-'}",
         f"{field('state')}: {state_label}",
         f"{field('gold')}: {data.get('gold') or 0}",
+        f"{field('affinity')}: {affinity_value} ({affinity_state})" if not is_player else "",
         f"{field('sp')}: {sp_text}" if is_player else "",
         f"{field('equipment')}: " + (" / ".join(equipment_lines) if equipment_lines else "-") if is_player else "",
         f"{field('attributes')}: "
@@ -4944,14 +6063,13 @@ def _format_character_status_detail(data: dict[str, object], encounter: dict[str
         ]
     )
     lines.extend(
-        _format_entry_section(
+        _format_status_effect_section(
             field("status_effects"),
             data.get("status_effects"),
-            ("name", "description", "effect", "category", "scope", "stage", "severity", "long_term", "permanent", "persistent", "remaining_turns", "duration", "damage_per_turn", "hp_delta_per_turn", "remove_condition"),
         )
     )
-    lines.extend(_format_entry_section(field("traits"), data.get("traits"), ("name", "description", "effect", "severity")))
-    lines.extend(_format_entry_section(field("skills"), data.get("skills"), ("name", "skill_type", "element", "description", "effect", "sp_cost")))
+    lines.extend(_format_named_description_section(field("traits"), data.get("traits")))
+    lines.extend(_format_skill_section(field("skills"), data.get("skills"), language=language))
     lines.extend(_format_inventory_section(data.get("inventory"), language=language))
     return "\n".join(line for line in lines if line is not None)
 
@@ -4964,8 +6082,6 @@ def _format_monster_status_detail(data: dict[str, object], encounter: dict[str, 
     lines = [
         f"[{field('current_status')}]",
         f"{field('name')}: {data.get('name') or unknown}",
-        f"{field('type')}: {tr_enum('actor_type', 'monster', language)}",
-        f"{field('category')}: {data.get('category') or '-'}",
         f"{field('location')}: {data.get('location') or '-'}",
         f"{field('state')}: {state_label}",
     ]
@@ -4974,15 +6090,139 @@ def _format_monster_status_detail(data: dict[str, object], encounter: dict[str, 
         lines.append(f"{field('battle_status')}: {encounter.get('opponent_status') or '-'}")
     lines.extend(["", f"[{field('description')}]", _short_display(data.get("description")) or "-"])
     lines.extend(
-        _format_entry_section(
+        _format_status_effect_section(
             field("status_effects"),
             data.get("status_effects"),
-            ("name", "description", "effect", "category", "scope", "stage", "severity", "long_term", "permanent", "persistent", "remaining_turns", "duration", "damage_per_turn", "hp_delta_per_turn", "remove_condition"),
         )
     )
-    lines.extend(_format_entry_section(field("traits"), data.get("traits"), ("name", "description", "effect", "severity")))
-    lines.extend(_format_entry_section(field("skills"), data.get("skills"), ("name", "skill_type", "element", "description", "effect", "sp_cost")))
+    lines.extend(_format_named_description_section(field("traits"), data.get("traits")))
+    lines.extend(_format_skill_section(field("skills"), data.get("skills"), language=language))
     return "\n".join(lines)
+
+
+def _display_gender(value: object, language: str = "ja") -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    key = raw.lower()
+    if raw in {"女", "女性", "♀"}:
+        key = "female"
+    elif raw in {"男", "男性", "♂"}:
+        key = "male"
+    elif raw in {"無", "無性", "無性別", "・"}:
+        key = "none"
+    return tr_enum("gender", key, language, fallback=raw)
+
+
+def _affinity_state_label(value: int, language: str = "ja") -> str:
+    if value <= -10:
+        return "Hostile" if str(language).lower().startswith("en") else "完全な敵対"
+    if value <= -5:
+        return "Distrust" if str(language).lower().startswith("en") else "不信"
+    if value >= 10:
+        return "Trusted" if str(language).lower().startswith("en") else "完全な信頼"
+    if value >= 5:
+        return "Friendly" if str(language).lower().startswith("en") else "友好的"
+    return "Neutral" if str(language).lower().startswith("en") else "中立"
+
+
+def _format_status_effect_section(title: str, value: object) -> list[str]:
+    return _format_display_entry_section(
+        title,
+        value,
+        description_keys=("description", "effect_text", "display_effect", "mechanical_effect", "effect", "summary", "text", "note", "details"),
+    )
+
+
+def _format_named_description_section(title: str, value: object) -> list[str]:
+    return _format_display_entry_section(
+        title,
+        value,
+        description_keys=("description", "effect_text", "display_effect", "effect", "summary", "usefulness", "text", "note", "details"),
+    )
+
+
+def _format_skill_section(title: str, value: object, *, language: str = "ja") -> list[str]:
+    entries = value if isinstance(value, list) else []
+    lines = ["", f"[{title}]"]
+    if not entries:
+        lines.append("-")
+        return lines
+    cost_label = "SP Cost" if str(language).lower().startswith("en") else "消費SP"
+    for entry in entries:
+        if isinstance(entry, dict):
+            name = _display_entry_name(entry)
+            description = _display_entry_description(
+                entry,
+                ("description", "effect_text", "display_effect", "effect", "summary", "usefulness", "text", "note", "details"),
+            )
+            cost = _skill_display_sp_cost(entry)
+            cost_text = f"({cost_label}:{cost})" if cost is not None else ""
+            if description:
+                lines.append(f"- {name}: {description}{cost_text}")
+            else:
+                lines.append(f"- {name}{cost_text}")
+        else:
+            lines.append(f"- {_short_display(entry)}")
+    return lines
+
+
+def _skill_display_sp_cost(entry: dict[str, object]) -> int | None:
+    for key in ("sp_cost", "cost_sp", "sp", "mp_cost"):
+        if entry.get(key) not in (None, ""):
+            return max(0, _safe_int(str(entry.get(key)), 0))
+    estimated = _estimate_skill_sp_cost(entry)
+    return estimated if estimated > 0 else None
+
+
+def _format_display_entry_section(title: str, value: object, *, description_keys: tuple[str, ...]) -> list[str]:
+    entries = value if isinstance(value, list) else []
+    lines = ["", f"[{title}]"]
+    if not entries:
+        lines.append("-")
+        return lines
+    for entry in entries:
+        if isinstance(entry, dict):
+            name = _display_entry_name(entry)
+            description = _display_entry_description(entry, description_keys)
+            lines.append(f"- {name}" + (f": {description}" if description else ""))
+        else:
+            lines.append(f"- {_short_display(entry)}")
+    return lines
+
+
+def _display_entry_name(entry: dict[str, object]) -> str:
+    for key in ("display_name", "label", "name", "title", "trait", "skill", "status", "status_name"):
+        text = _short_display(entry.get(key))
+        if text:
+            return text
+    return "?"
+
+
+def _display_entry_description(entry: dict[str, object], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = entry.get(key)
+        if isinstance(value, str):
+            text = _short_display(value)
+            if text and text != _display_entry_name(entry):
+                return text
+        if isinstance(value, dict):
+            text = _display_entry_description(value, keys)
+            if text and text != _display_entry_name(entry):
+                return text
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    text = _display_entry_description(item, keys)
+                else:
+                    text = _short_display(item)
+                if text and text != _display_entry_name(entry):
+                    return text
+    for key in keys:
+        value = entry.get(key)
+        if isinstance(value, (int, float, bool)) and value not in (None, ""):
+            return _short_display(value)
+    return ""
 
 
 def _format_entry_section(title: str, value: object, fields: tuple[str, ...]) -> list[str]:
@@ -5242,6 +6482,15 @@ UI_TEXT["en"].update(
         "character_trait_settings": "Trait Settings",
         "character_skill_hint": "name | category | description | SP cost | power 1-5",
         "character_trait_hint": "name | description | power 1-5",
+        "character_entry_name_skill": "Skill Name",
+        "character_entry_name_trait": "Trait Name",
+        "character_entry_description": "Description",
+        "character_entry_result": "Generated Result",
+        "character_entry_element": "Element",
+        "character_entry_power": "Power",
+        "character_entry_sp_cost": "SP Cost",
+        "character_entry_generated_effect": "Effect",
+        "character_entry_empty_result": "The AI did not return a usable entry.",
         "character_bp_over": "Bonus points are over the limit.",
         "character_need_world_image": "Generate or select a world before creating a character image.",
         "character_need_world_details": "Generate or select a world before generating character details.",
@@ -5250,7 +6499,7 @@ UI_TEXT["en"].update(
         "character_world_need": "Generate or select a world first.",
         "character_world_label": "World",
         "character_world_start": "Start",
-        "character_start_game": "Start Life",
+        "character_start_game": "Start Adventure",
         "settings_llm_backend": "LLM Backend",
         "settings_context_tokens": "Context Tokens",
         "settings_llm_info": "LLM backend chooses local llama.cpp CPU/Vulkan/CUDA or cloud providers. Context Tokens controls the local GGUF context size used by llama-server.",
@@ -5264,9 +6513,15 @@ UI_TEXT["en"].update(
         "settings_negative_background": "Negative Background",
         "settings_negative_character": "Negative Character",
         "settings_negative_monster": "Negative Monster",
+        "settings_negative_cg": "Negative CG",
+        "settings_negative_prompt": "Negative Prompt",
+        "settings_graphic_model_folder_hint": "If you already have a model, place it in the folder opened by the button on the right.",
+        "settings_open_graphic_model_folder": "Open Image Model Folder",
+        "settings_font": "Font",
         "settings_font_path": "Font Path",
         "settings_font_size": "Font Size",
         "settings_text_speed": "Text Speed",
+        "settings_generate_images": "Generate Images",
         "settings_storage_info": "Config: {config}\nAppData: {appdata}\nRuntime: {runtime}\nOutput: {output}\nGeneration logs are available from this tab or the game screen.",
         "generation_logs_title": "Generation Logs",
         "generation_logs_entries": "Entries",
@@ -5281,9 +6536,15 @@ UI_TEXT["en"].update(
         "game_trade": "Trade",
         "game_craft": "Craft",
         "game_save": "Save",
+        "game_setting": "Setting",
+        "game_submenu_continue": "Continue Game",
+        "game_submenu_exit": "End Game",
+        "game_submenu_settings": "Settings",
         "game_logs": "Logs",
         "game_cancel": "Cancel",
         "game_send": "send",
+        "game_generating": "Generating",
+        "task_generation_failed_log": "Generation failed.",
         "choice_open_map": "Open map",
         "choice_quest_board": "Open quest board",
         "map_title": "Town Map",
@@ -5314,6 +6575,12 @@ UI_TEXT["en"].update(
         "trade_no_target": "No nearby NPC is available for trade.",
         "trade_not_enough_gold": "Not enough gold.",
         "trade_target_not_enough_gold": "{name} does not have enough gold.",
+        "trade_stock_changed": "> [Shop] {name}'s stock changed for the day.",
+        "trade_haggle": "Negotiate",
+        "trade_haggle_prompt": "Negotiation",
+        "trade_price_rate": "Purchase price: {rate}%",
+        "trade_buy_price": "Buy: {price}G",
+        "trade_sell_price": "Sell: {price}G",
         "dialog_import_world": "Import World",
         "dialog_export_world": "Export Current World",
         "dialog_imported_world": "Imported: {name}",
@@ -5441,6 +6708,15 @@ UI_TEXT["ja"].update(
         "character_trait_settings": "特質設定",
         "character_skill_hint": "名前 | 種別 | 説明 | SP消費 | 強力度1-5",
         "character_trait_hint": "名前 | 説明 | 強力度1-5",
+        "character_entry_name_skill": "スキル名",
+        "character_entry_name_trait": "体質名",
+        "character_entry_description": "説明",
+        "character_entry_result": "生成結果",
+        "character_entry_element": "属性",
+        "character_entry_power": "強力度",
+        "character_entry_sp_cost": "消費SP",
+        "character_entry_generated_effect": "効果",
+        "character_entry_empty_result": "AIが使用可能な項目を返しませんでした。",
         "character_bp_over": "BPが上限を超えています。",
         "character_need_world_image": "キャラクター画像を作る前に、ワールドを生成または選択してください。",
         "character_need_world_details": "キャラクター詳細を生成する前に、ワールドを生成または選択してください。",
@@ -5449,7 +6725,7 @@ UI_TEXT["ja"].update(
         "character_world_need": "先にワールドを生成または選択してください。",
         "character_world_label": "世界",
         "character_world_start": "開始地点",
-        "character_start_game": "人生を始める",
+        "character_start_game": "冒険を始める",
         "settings_llm_backend": "LLMバックエンド",
         "settings_context_tokens": "コンテキストトークン",
         "settings_llm_info": "LLMバックエンドでは、ローカルの llama.cpp CPU/Vulkan/CUDA またはクラウドプロバイダを選択できます。コンテキストトークンは llama-server が使うローカルGGUFのコンテキスト長です。",
@@ -5463,9 +6739,15 @@ UI_TEXT["ja"].update(
         "settings_negative_background": "ネガティブ(背景)",
         "settings_negative_character": "ネガティブ(キャラ)",
         "settings_negative_monster": "ネガティブ(モンスター)",
+        "settings_negative_cg": "ネガティブ(CG)",
+        "settings_negative_prompt": "ネガティブプロンプト",
+        "settings_graphic_model_folder_hint": "すでにモデルを持っている場合は、右のボタンから開くフォルダにモデルを入れてください",
+        "settings_open_graphic_model_folder": "画像モデルフォルダを開く",
+        "settings_font": "フォント",
         "settings_font_path": "フォントパス",
         "settings_font_size": "フォントサイズ",
         "settings_text_speed": "テキスト速度",
+        "settings_generate_images": "画像を生成する",
         "settings_storage_info": "Config: {config}\nAppData: {appdata}\nRuntime: {runtime}\nOutput: {output}\n生成ログはこのタブまたはゲーム画面から確認できます。",
         "generation_logs_title": "生成ログ",
         "generation_logs_entries": "一覧",
@@ -5480,9 +6762,15 @@ UI_TEXT["ja"].update(
         "game_trade": "取引",
         "game_craft": "クラフト",
         "game_save": "保存",
+        "game_setting": "設定",
+        "game_submenu_continue": "ゲームを続ける",
+        "game_submenu_exit": "ゲームを終了",
+        "game_submenu_settings": "設定",
         "game_logs": "ログ",
         "game_cancel": "中止",
         "game_send": "送信",
+        "game_generating": "生成中",
+        "task_generation_failed_log": "生成に失敗した",
         "choice_open_map": "地図を見る",
         "choice_quest_board": "依頼掲示板を見る",
         "map_title": "街の地図",
@@ -5513,6 +6801,12 @@ UI_TEXT["ja"].update(
         "trade_no_target": "取引できる近くのNPCがいません。",
         "trade_not_enough_gold": "所持金が足りません。",
         "trade_target_not_enough_gold": "{name}の所持金が足りません。",
+        "trade_stock_changed": "> [店] {name}の商品が入れ替わった。",
+        "trade_haggle": "値引き交渉",
+        "trade_haggle_prompt": "交渉内容",
+        "trade_price_rate": "購入価格: {rate}%",
+        "trade_buy_price": "購入: {price}G",
+        "trade_sell_price": "売却: {price}G",
         "dialog_import_world": "ワールド読み込み",
         "dialog_export_world": "現在のワールドを書き出し",
         "dialog_imported_world": "読み込み完了: {name}",
@@ -5596,6 +6890,7 @@ UI_TEXT["en"].update(
         "task_generating_monster_image": "Generating monster image...",
         "task_generating_player_image": "Generating player image...",
         "task_generating_cg_image": "Generating CG image...",
+        "task_image_generation_disabled": "Image generation is OFF.",
         "task_resolving_free_action": "Resolving free action...",
         "task_resolving_choice": "Resolving choice...",
         "task_generating_status": "Generating: {name} ({elapsed}s)",
@@ -5644,6 +6939,7 @@ UI_TEXT["ja"].update(
         "task_generating_monster_image": "モンスター画像を生成中...",
         "task_generating_player_image": "プレイヤー画像を生成中...",
         "task_generating_cg_image": "CG画像を生成中...",
+        "task_image_generation_disabled": "画像生成はOFFです",
         "task_resolving_free_action": "自由行動を処理中...",
         "task_resolving_choice": "選択肢を処理中...",
         "task_generating_status": "生成中: {name} ({elapsed}s)",
@@ -5674,15 +6970,13 @@ UI_TEXT["en"].update(
         "settings_cloud_llm": "Cloud LLM",
         "settings_api_key": "API Key",
         "wizard_title": "Initial Setup",
-        "wizard_body": "Fantasia detected your device and prepared recommended AI settings. Choose a local model to download or configure a cloud LLM in Settings.",
-        "wizard_apply": "Apply",
-        "wizard_skip": "Skip",
+        "wizard_body": "Open Settings first and configure the models.",
         "error_no_model_selected": "No local model is selected.",
         "error_no_sdxl_model_selected": "No SDXL model is selected.",
         "dialog_model_downloaded": "Model download completed:\n{path}",
         "task_downloading_model": "Downloading {name}...",
-        "task_downloading_model_progress": "Downloading {name}: {percent}%",
-        "task_downloading_model_bytes": "Downloading {name}: {mb} MB",
+        "task_downloading_model_progress": "Downloading {name} ({percent}%)",
+        "task_downloading_model_bytes": "Downloading {name} ({mb} MB)",
         "settings_label_device": "Device",
         "settings_label_local_model": "Local model",
         "settings_label_selected_model": "Selected download model",
@@ -5700,15 +6994,13 @@ UI_TEXT["ja"].update(
         "settings_cloud_llm": "クラウドLLM",
         "settings_api_key": "APIキー",
         "wizard_title": "初回設定",
-        "wizard_body": "デバイスを検出し、推奨AI設定を準備しました。ローカルモデルをダウンロードするか、設定画面でクラウドLLMを設定してください。",
-        "wizard_apply": "適用",
-        "wizard_skip": "スキップ",
+        "wizard_body": "最初に設定を開き、モデルの設定を行ってください",
         "error_no_model_selected": "ローカルモデルが選択されていません。",
         "error_no_sdxl_model_selected": "SDXLモデルが選択されていません。",
         "dialog_model_downloaded": "モデルのダウンロードが完了しました:\n{path}",
         "task_downloading_model": "{name}をダウンロード中...",
-        "task_downloading_model_progress": "{name}をダウンロード中: {percent}%",
-        "task_downloading_model_bytes": "{name}をダウンロード中: {mb} MB",
+        "task_downloading_model_progress": "{name}をダウンロード中（{percent}%）",
+        "task_downloading_model_bytes": "{name}をダウンロード中（{mb} MB）",
         "settings_label_device": "デバイス",
         "settings_label_local_model": "ローカルモデル",
         "settings_label_selected_model": "選択中のダウンロードモデル",
@@ -5723,7 +7015,7 @@ UI_TEXT["en"].update(
         "error_no_cloud_models_fetched": "No models were returned from {provider}.",
         "dialog_cloud_models_fetched": "Fetched {count} models from {provider}.",
         "task_fetching_cloud_models": "Fetching {provider} models...",
-        "wizard_body": "Fantasia detected your device and prepared recommended AI settings. Choose local model downloads or enter cloud LLM API keys and models here.",
+        "wizard_body": "Open Settings first and configure the models.",
     }
 )
 
@@ -5735,7 +7027,7 @@ UI_TEXT["ja"].update(
         "error_no_cloud_models_fetched": "{provider} からモデル一覧を取得できませんでした。",
         "dialog_cloud_models_fetched": "{provider} から {count} 件のモデルを取得しました。",
         "task_fetching_cloud_models": "{provider} のモデル一覧を取得中...",
-        "wizard_body": "デバイスを検出し、推奨AI設定を準備しました。ローカルモデルのダウンロード、またはクラウドLLMのAPIキーとモデルをここで設定できます。",
+        "wizard_body": "最初に設定を開き、モデルの設定を行ってください",
     }
 )
 
@@ -5743,11 +7035,165 @@ UI_TEXT["ja"].update(
 UI_TEXT["en"].update({"settings_label_log_dir": "Log dir"})
 UI_TEXT["ja"].update({"settings_label_log_dir": "ログフォルダ"})
 
+UI_TEXT["en"].update(
+    {
+        "settings_category_llm": "LLM",
+        "settings_category_images": "Images",
+        "settings_category_ui": "UI / Display",
+        "settings_category_debug": "Debug",
+        "settings_llm_title": "[LLM Settings]",
+        "settings_image_title": "[Image Settings]",
+        "settings_ui_title": "[UI / Display Settings]",
+        "settings_debug_title": "[Debug]",
+        "settings_apply": "Apply",
+        "settings_close": "Close",
+        "settings_check_generation_logs": "Check Generation Logs",
+        "settings_model": "Model",
+        "settings_context_hint": "If generation fails because the context is too small, increase this value.",
+        "settings_repeat_suppression": "Repeat Suppression",
+        "settings_repeat_hint": "Local LLM only. Suppresses repeated wording.",
+        "settings_temperature": "Temperature",
+        "settings_temperature_hint": "Higher values may broaden expression, but accuracy can decrease. 0.0-0.3 is recommended.",
+        "settings_local_model_folder_hint": "If you already have a model, place it in the language model folder from the button on the right.",
+        "settings_open_text_model_folder": "Open Language Model Folder",
+        "error_llm_temperature_min": "Temperature must be 0 or greater.",
+    }
+)
+UI_TEXT["ja"].update(
+    {
+        "settings_category_llm": "LLM",
+        "settings_category_images": "画像",
+        "settings_category_ui": "UI/表示",
+        "settings_category_debug": "デバッグ",
+        "settings_llm_title": "【LLM設定】",
+        "settings_image_title": "【画像設定】",
+        "settings_ui_title": "【UI/表示設定】",
+        "settings_debug_title": "【デバッグ】",
+        "settings_apply": "適応",
+        "settings_close": "閉じる",
+        "settings_check_generation_logs": "生成ログを確認",
+        "settings_model": "モデル",
+        "settings_context_hint": "生成に失敗する場合はこの数値を増やしてください",
+        "settings_repeat_suppression": "繰り返し抑制",
+        "settings_repeat_hint": "ローカルLLM専用、繰り返しを抑制します。",
+        "settings_temperature": "温度",
+        "settings_temperature_hint": "上げると表現の幅が広がる可能性がありますが、正確性が下がる恐れがあります。0〜0.3推奨。",
+        "settings_local_model_folder_hint": "すでにモデルを持っている場合は、右のボタンから開くフォルダにモデルを入れてください",
+        "settings_open_text_model_folder": "言語モデルフォルダを開く",
+        "error_llm_temperature_min": "温度は0以上にしてください。",
+    }
+)
+
+UI_TEXT["en"].update(
+    {
+        "title_subtitle": "AI-driven RPG",
+        "title_continue_latest": "Continue",
+        "title_new_world": "Create World",
+        "title_world_select": "Start With Created World",
+        "title_settings": "Settings",
+        "title_exit": "Exit",
+        "common_back": "Back",
+        "world_select_title": "World Select",
+        "start_selected_world": "Start With Selected World",
+        "import_world": "Import World",
+        "export_selected_world": "Export Selected World",
+        "continue_select_title": "Character Select",
+        "continue_selected_character": "Resume With Selected Character",
+    }
+)
+UI_TEXT["ja"].update(
+    {
+        "title_subtitle": "AI駆動RPG",
+        "title_continue_latest": "続きから",
+        "title_new_world": "ワールド作成",
+        "title_world_select": "作成したワールドで始める",
+        "title_settings": "設定",
+        "title_exit": "終了",
+        "common_back": "戻る",
+        "world_select_title": "ワールド選択",
+        "start_selected_world": "選択したワールドで開始",
+        "import_world": "ワールドをインポート",
+        "export_selected_world": "選択したワールドをエクスポート",
+        "continue_select_title": "キャラ 選択",
+        "continue_selected_character": "選択したキャラで再開",
+    }
+)
+
 
 def _ui_text(config_data, key: str) -> str:
     language = getattr(config_data, "language", "ja")
     table = UI_TEXT.get(language, UI_TEXT["ja"])
     return table.get(key, UI_TEXT["en"].get(key, key))
+
+
+def _builtin_font_label(language: str = "ja") -> str:
+    if str(language).lower().startswith("en"):
+        return f"Built-in Font ({BUILTIN_FONT_NAME})"
+    return f"内蔵フォント ({BUILTIN_FONT_NAME})"
+
+
+def _font_options(root: tk.Misc, language: str = "ja") -> tuple[str, ...]:
+    try:
+        families = sorted({str(name).strip() for name in tkfont.families(root) if str(name).strip()}, key=str.casefold)
+    except tk.TclError:
+        families = []
+    return (_builtin_font_label(language), *families)
+
+
+def _font_label_from_config(config_data, root: tk.Misc | None = None) -> str:
+    family = str(getattr(config_data, "font_family", "") or "").strip()
+    if family:
+        return family
+    return _builtin_font_label(getattr(config_data, "language", "ja"))
+
+
+def _font_family_from_label(label: str, language: str = "ja") -> str:
+    text = str(label or "").strip()
+    builtin_labels = {
+        _builtin_font_label(language),
+        _builtin_font_label("ja"),
+        _builtin_font_label("en"),
+        BUILTIN_FONT_NAME,
+    }
+    return "" if text in builtin_labels else text
+
+
+def _image_generation_enabled_config(config_data) -> bool:
+    value = config_data.ui_setting.get("generate_images", True)
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "off", "no", "disabled"}
+    return bool(value)
+
+
+def _debug_device_summary(info, language: str = "ja") -> str:
+    vram = getattr(info, "vram_size_gb", 0) or "-"
+    ram = getattr(info, "memory_size_gb", 0) or "-"
+    cuda = bool(getattr(info, "is_torch_cuda_usable", False))
+    vulkan = bool(getattr(info, "is_vulkan_usable", False))
+    recommended = str(getattr(info, "recommended_llm_backend", "") or "llama_cpp_completion_cpu")
+    if str(language).lower().startswith("en"):
+        available = "available"
+        unavailable = "unavailable"
+        return "\n".join(
+            [
+                f"VRAM: {vram}GB",
+                f"RAM: {ram}GB",
+                f"CUDA backend: {available if cuda else unavailable}",
+                f"Vulkan backend: {available if vulkan else unavailable}",
+                f"Recommended LLM backend: {recommended}",
+            ]
+        )
+    available = "利用可能"
+    unavailable = "利用不可"
+    return "\n".join(
+        [
+            f"VRAM: {vram}GB",
+            f"RAM: {ram}GB",
+            f"CUDAバックエンド: {available if cuda else unavailable}",
+            f"Vulkanバックエンド: {available if vulkan else unavailable}",
+            f"推奨LLMバックエンド: {recommended}",
+        ]
+    )
 
 
 def _language_options() -> tuple[str, ...]:
@@ -5771,6 +7217,60 @@ def _llm_backend_options() -> tuple[str, ...]:
         "cloud_xai",
         "cloud_gemini",
     )
+
+
+def _llm_backend_label_options(language: str) -> tuple[str, ...]:
+    return tuple(_llm_backend_label(backend, language) for backend in _llm_backend_options())
+
+
+def _llm_backend_label(backend: str, language: str = "ja") -> str:
+    english = {
+        "llama_cpp_completion_cpu": "Local LLM (CPU)",
+        "llama_cpp_completion_vulkan": "Local LLM (Vulkan)",
+        "llama_cpp_completion_cuda": "Local LLM (CUDA)",
+        "cloud_openai": "Cloud (OpenAI)",
+        "cloud_xai": "Cloud (xAI)",
+        "cloud_gemini": "Cloud (Gemini)",
+    }
+    japanese = {
+        "llama_cpp_completion_cpu": "ローカルLLM (CPU)",
+        "llama_cpp_completion_vulkan": "ローカルLLM (Vulkan)",
+        "llama_cpp_completion_cuda": "ローカルLLM (CUDA)",
+        "cloud_openai": "クラウド (OpenAI)",
+        "cloud_xai": "クラウド (xAI)",
+        "cloud_gemini": "クラウド (Gemini)",
+    }
+    table = english if str(language).lower().startswith("en") else japanese
+    return table.get(backend, backend)
+
+
+def _llm_backend_from_label(label: str, language: str = "ja") -> str:
+    text = str(label or "").strip()
+    if text in _llm_backend_options():
+        return text
+    for backend in _llm_backend_options():
+        if text in {_llm_backend_label(backend, language), _llm_backend_label(backend, "en"), _llm_backend_label(backend, "ja")}:
+            return backend
+    return text
+
+
+def _llm_temperature_text(config_data) -> str:
+    default = config_data.completion_parameters.get("default") if isinstance(config_data.completion_parameters, dict) else {}
+    value = default.get("temperature", 0.9) if isinstance(default, dict) else 0.9
+    return str(value)
+
+
+def _llm_repeat_suppression_enabled(config_data) -> bool:
+    default = config_data.completion_parameters.get("default") if isinstance(config_data.completion_parameters, dict) else {}
+    if not isinstance(default, dict):
+        return True
+    value = default.get("repeat_penalty", None)
+    if value is None:
+        return True
+    try:
+        return float(value) > 1.0
+    except (TypeError, ValueError):
+        return True
 
 
 def _selected_model_label(config_data) -> str:

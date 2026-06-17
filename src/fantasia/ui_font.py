@@ -13,6 +13,11 @@ from .config import AppConfig
 from .paths import ROOT
 
 
+FONT_DELTAS = tuple(range(-20, 41))
+APP_NORMAL_FONT_PREFIX = "FantasiaUiNormal"
+APP_BOLD_FONT_PREFIX = "FantasiaUiBold"
+
+
 @dataclass(frozen=True)
 class UiFonts:
     family: str
@@ -20,10 +25,14 @@ class UiFonts:
     path: Path
     loaded: bool
 
-    def normal(self, delta: int = 0) -> tuple[str, int]:
+    def normal(self, delta: int = 0) -> str | tuple[str, int]:
+        if delta in FONT_DELTAS:
+            return _app_font_name(APP_NORMAL_FONT_PREFIX, delta)
         return (self.family, self._size(delta))
 
-    def bold(self, delta: int = 0) -> tuple[str, int, str]:
+    def bold(self, delta: int = 0) -> str | tuple[str, int, str]:
+        if delta in FONT_DELTAS:
+            return _app_font_name(APP_BOLD_FONT_PREFIX, delta)
         return (self.family, self._size(delta), "bold")
 
     def _size(self, delta: int) -> int:
@@ -34,16 +43,17 @@ def configure_ui_fonts(root: tk.Misc, config: AppConfig) -> UiFonts:
     size = max(6, config.font_size)
     path = resolve_app_path(config.font_path)
     loaded = False
-    family = "Yu Gothic UI"
+    family = config.font_family or "Yu Gothic UI"
 
-    if path.is_file():
+    if not config.font_family and path.is_file():
         loaded = _load_private_font(path)
         family = _read_ttf_family(path) or path.stem
 
     fonts = UiFonts(family=family, size=size, path=path, loaded=loaded)
     _configure_named_fonts(root, fonts)
+    _configure_app_named_fonts(root, fonts)
     _configure_ttk(root, fonts)
-    root.option_add("*Font", f"{{{fonts.family}}} {fonts.size}")
+    root.option_add("*Font", fonts.normal())
     return fonts
 
 
@@ -75,14 +85,54 @@ def _configure_named_fonts(root: tk.Misc, fonts: UiFonts) -> None:
         pass
 
 
+def _configure_app_named_fonts(root: tk.Misc, fonts: UiFonts) -> None:
+    for delta in FONT_DELTAS:
+        _configure_app_named_font(
+            root,
+            _app_font_name(APP_NORMAL_FONT_PREFIX, delta),
+            fonts.family,
+            fonts._size(delta),
+            "normal",
+        )
+        _configure_app_named_font(
+            root,
+            _app_font_name(APP_BOLD_FONT_PREFIX, delta),
+            fonts.family,
+            fonts._size(delta),
+            "bold",
+        )
+
+
+def _configure_app_named_font(root: tk.Misc, name: str, family: str, size: int, weight: str) -> None:
+    try:
+        font = tkfont.Font(root=root, name=name, exists=True)
+    except tk.TclError:
+        font = tkfont.Font(root=root, name=name, exists=False)
+        refs = getattr(root, "_fantasia_ui_font_refs", None)
+        if not isinstance(refs, dict):
+            refs = {}
+            setattr(root, "_fantasia_ui_font_refs", refs)
+        refs[name] = font
+    font.configure(family=family, size=size, weight=weight)
+
+
 def _configure_ttk(root: tk.Misc, fonts: UiFonts) -> None:
     try:
         style = ttk.Style(root)
         style.configure(".", font=fonts.normal())
         style.configure("TButton", font=fonts.normal())
         style.configure("TEntry", font=fonts.normal())
+        style.configure("TLabel", font=fonts.normal())
+        style.configure("TCombobox", font=fonts.normal())
+        style.configure("Treeview", font=fonts.normal())
+        style.configure("Treeview.Heading", font=fonts.bold())
     except tk.TclError:
         pass
+
+
+def _app_font_name(prefix: str, delta: int) -> str:
+    marker = "M" if delta < 0 else "P"
+    return f"{prefix}{marker}{abs(delta):02d}"
 
 
 def _load_private_font(path: Path) -> bool:
