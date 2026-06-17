@@ -1136,6 +1136,7 @@ def retry_prompt(manager_name: str, errors: list[str], previous_response: Any) -
     previous = json.dumps(sanitize_retry_response(previous_response), ensure_ascii=False, indent=2)
     if len(previous) > 2400:
         previous = previous[:2400] + "\n... [truncated]"
+    manager_guidance = _manager_retry_guidance(manager_name, errors, previous_response)
     return (
         "前回の応答はJSON形式または必須キー/型の検証に失敗しました。\n"
         f"manager: {manager_name}\n"
@@ -1145,8 +1146,39 @@ def retry_prompt(manager_name: str, errors: list[str], previous_response: Any) -
         "前回の応答:\n"
         f"{previous}\n\n"
         "上記を修正し、次の条件を満たすJSONオブジェクトだけを返してください。\n"
+        f"{manager_guidance}"
         f"{schema_instruction(manager_name)}"
     )
+
+
+def _manager_retry_guidance(manager_name: str, errors: list[str], previous_response: Any) -> str:
+    if manager_name != "create_world_overview":
+        return ""
+    previous = previous_response if isinstance(previous_response, dict) else {}
+    previous_keys = {str(key) for key in previous.keys()} if isinstance(previous, dict) else set()
+    structure_like_keys = {"map_rule", "danger_rule", "themes", "regions", "settlements", "breeding_mechanics", "combat_priority"}
+    missing_outer_keys = any(str(error).startswith("missing required key:") for error in errors)
+    if not missing_outer_keys:
+        return ""
+    note = (
+        "create_world_overviewの修正注意:\n"
+        "- 前回の応答が map_rule/danger_rule/themes 等だけの場合、それらはトップレベルではなく structure の中に入れてください。\n"
+        "- トップレベルには必ず world_name, overview, structure_description, structure, locations, connections を置いてください。\n"
+        "- locations は最低2件以上、connections は最低1件以上を返してください。\n"
+        "- 次の外枠を崩さず、値だけを世界設定に合わせて埋めてください。\n"
+        "{\n"
+        '  "world_name": "世界名",\n'
+        '  "overview": "世界全体の概要",\n'
+        '  "structure_description": "地理構造と移動ルールの説明",\n'
+        '  "structure": {"map_rule": "地点同士は2時間単位で接続", "danger_rule": "開始地点から遠いほど危険"},\n'
+        '  "starting_location": "初期地点名",\n'
+        '  "locations": [{"name": "初期地点名", "kind": "settlement", "danger": 0, "description": "説明"}],\n'
+        '  "connections": [{"from": "初期地点名", "to": "隣接地点名", "hours": 2}]\n'
+        "}\n"
+    )
+    if previous_keys & structure_like_keys:
+        note += "- 前回のトップレベルキー " + ", ".join(sorted(previous_keys & structure_like_keys)) + " は structure 内へ移動してください。\n"
+    return note
 
 
 def sanitize_retry_response(value: Any, string_limit: int = 1200) -> Any:

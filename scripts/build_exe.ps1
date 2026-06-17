@@ -26,7 +26,7 @@ $configPath = Join-Path $root "config.json"
 $playGuideSource = Join-Path $root "docs\PLAY_GUIDE.txt"
 $dllLicenseSource = Join-Path $root "docs\DLL_LICENSES.txt"
 $iconSource = Join-Path $root "docs\icon.png"
-$iconPath = Join-Path $buildRoot "Fantasia.ico"
+$iconPath = Join-Path (Join-Path $root "build\icon") "Fantasia.ico"
 
 . (Join-Path $PSScriptRoot "runtime_binaries.ps1")
 
@@ -79,6 +79,9 @@ function Convert-PngToIcon([string]$SourcePath, [string]$TargetPath) {
         Write-Warning "Icon source not found: $SourcePath"
         return $false
     }
+    if (Test-Path $TargetPath) {
+        Remove-Item -LiteralPath $TargetPath -Force
+    }
     $script = @'
 from pathlib import Path
 import sys
@@ -94,8 +97,28 @@ image.save(
     sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)],
 )
 '@
-    & $python -c $script $SourcePath $TargetPath
-    return (Test-Path $TargetPath)
+    $targetDir = Split-Path -Parent $TargetPath
+    New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+    $converterPath = Join-Path $targetDir "convert_icon.py"
+    [System.IO.File]::WriteAllText($converterPath, $script, $utf8NoBom)
+    try {
+        & $python $converterPath $SourcePath $TargetPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "Icon conversion failed: $SourcePath -> $TargetPath"
+        }
+    } finally {
+        if (Test-Path $converterPath) {
+            Remove-Item -LiteralPath $converterPath -Force
+        }
+    }
+    if (-not (Test-Path $TargetPath)) {
+        throw "Icon conversion did not create the target file: $TargetPath"
+    }
+    $iconItem = Get-Item -LiteralPath $TargetPath
+    if ($iconItem.Length -le 0) {
+        throw "Icon conversion created an empty file: $TargetPath"
+    }
+    return $true
 }
 
 Reset-Directory $buildRoot
@@ -119,6 +142,7 @@ try {
         "--output-dir=$buildRoot",
         "--output-filename=fantasia.exe",
         "--include-data-files=$root\config.json=config.json",
+        "--include-data-files=$root\docs\icon.png=docs/icon.png",
         "--include-data-dir=$root\assets=assets"
     )
     if ($hasIcon) {

@@ -48,7 +48,7 @@ from .model_catalog import (
     option_to_local_llm,
     sdxl_model_options,
 )
-from .paths import ASSETS_DIR, CONFIG_PATH, CRASHLOG_DIR, LOG_DIR, MODEL_GRAPHIC_DIR, MODEL_TEXT_DIR, OUTPUT_DIR, PORTABLE_ROOT, RUNTIME_DIR
+from .paths import ASSETS_DIR, CONFIG_PATH, CRASHLOG_DIR, LOG_DIR, MODEL_GRAPHIC_DIR, MODEL_TEXT_DIR, OUTPUT_DIR, PORTABLE_ROOT, ROOT, RUNTIME_DIR
 from .prompt_templates import PromptTemplateStore, resolve_prompt_template_dir
 from .save_store import SaveStore
 from .text_encoding import check_project_encoding, configure_stdio_encoding, format_encoding_report
@@ -215,6 +215,8 @@ class FantasiaApp(tk.Tk):
         self.save_store = SaveStore()
         width, height = self.config_data.window_size
         self.title("Fantasia")
+        self.window_icon_image: ImageTk.PhotoImage | None = None
+        self._apply_window_icon()
         self.geometry(f"{width}x{height}")
         self.minsize(960, 640)
 
@@ -267,6 +269,18 @@ class FantasiaApp(tk.Tk):
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(300, self._maybe_open_first_run_notice)
+
+    def _apply_window_icon(self) -> None:
+        for icon_path in (ROOT / "docs" / "icon.png", ASSETS_DIR / "icon.png"):
+            if not icon_path.exists():
+                continue
+            try:
+                image = Image.open(icon_path).convert("RGBA")
+                self.window_icon_image = ImageTk.PhotoImage(image)
+                self.iconphoto(True, self.window_icon_image)
+                return
+            except Exception:
+                self.window_icon_image = None
 
     def _build_menu(self) -> None:
         self.config(menu="")
