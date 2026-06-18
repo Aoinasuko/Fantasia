@@ -20,6 +20,9 @@ from .config import load_config
 from .crashlog import install_crash_logging, install_tk_crash_logging
 from .device import detect_device, device_report
 from .game import (
+    ACTOR_SUBNODE_ID_FLAG,
+    ACTOR_SUBNODE_LOCATION_FLAG,
+    CURRENT_SUBNODE_FLAG,
     DEFAULT_GUILD_NAME,
     DEFAULT_WORLD_CRIME_RISK,
     DEFAULT_WORLD_ENEMY_STRENGTH,
@@ -238,6 +241,7 @@ class FantasiaApp(tk.Tk):
             JsonStore(),
             self.save_store,
             PromptTemplateStore(resolve_prompt_template_dir(self.config_data.prompt_template_path)),
+            allow_any_action_concept=self.config_data.allow_any_action_concept,
         )
         self.preview_image: ImageTk.PhotoImage | None = None
         self.stage_source_image: Image.Image | None = None
@@ -344,6 +348,7 @@ class FantasiaApp(tk.Tk):
         self.ui_text_speed_var = tk.StringVar(value=str(self.config_data.ui_setting.get("text_speed", 0.02)))
         self.ui_language_var = tk.StringVar(value=_language_label(self.config_data.language))
         self.ui_generate_images_var = tk.BooleanVar(value=_image_generation_enabled_config(self.config_data))
+        self.debug_allow_any_action_var = tk.BooleanVar(value=self.config_data.allow_any_action_concept)
         self.world_name_var = tk.StringVar(value="Misty Frontier")
         self.player_var = tk.StringVar(value="Nana")
         self.character_gender_var = tk.StringVar(value="female")
@@ -1183,8 +1188,9 @@ class FantasiaApp(tk.Tk):
     def _build_settings_debug_category(self) -> None:
         frame = self._settings_category_frame("debug")
         frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(4, weight=1)
-        tk.Label(frame, text=_ui_text(self.config_data, "settings_debug_title"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(4)).grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        frame.columnconfigure(1, weight=0)
+        frame.rowconfigure(6, weight=1)
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_debug_title"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(4)).grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
         self.device_info_text = tk.Text(
             frame,
@@ -1202,15 +1208,34 @@ class FantasiaApp(tk.Tk):
             pady=10,
             font=self.ui_fonts.normal(-2),
         )
-        self.device_info_text.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        self.device_info_text.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 10))
         self.device_info_text.configure(state="disabled")
 
+        tk.Label(
+            frame,
+            text=_ui_text(self.config_data, "settings_allow_any_action_concept"),
+            bg=APP_PANEL_BG,
+            fg="#f2f2f2",
+            anchor="w",
+            font=self.ui_fonts.bold(-2),
+        ).grid(row=2, column=0, sticky="w", padx=(0, 8), pady=(2, 0))
+        self._settings_checkbutton(frame, self.debug_allow_any_action_var).grid(row=2, column=1, sticky="w", pady=(2, 0))
+        tk.Label(
+            frame,
+            text=_ui_text(self.config_data, "settings_allow_any_action_concept_hint"),
+            bg=APP_PANEL_BG,
+            fg="#b8c0d5",
+            anchor="w",
+            justify="left",
+            font=self.ui_fonts.normal(-4),
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(2, 12))
+
         actions = tk.Frame(frame, bg=APP_PANEL_BG)
-        actions.grid(row=2, column=0, sticky="ew", pady=(0, 0))
+        actions.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 0))
         actions.columnconfigure(1, weight=1)
         self._grid_settings_button(actions, _ui_text(self.config_data, "settings_check_generation_logs"), self._open_generation_logs_screen, row=0, column=0, sticky="w", ipadx=52, ipady=8)
 
-        self._settings_action_row(frame, 21, self._refresh_debug_settings)
+        self._settings_action_row(frame, 21, self._apply_debug_setting)
         self._replace_text(self.device_info_text, _debug_device_summary(self.device_info, self.config_data.language))
 
     def _open_text_model_folder(self) -> None:
@@ -2381,6 +2406,7 @@ class FantasiaApp(tk.Tk):
         defense_bonus = int(combat_stats.get("defense_bonus") or 0)
         location = self._display_location_name()
         quest = state.active_quest or "-"
+        quest_remaining = self.engine.active_quest_remaining_time_label() if state.active_quest else "-"
         language = self.config_data.language
         info_labels = (
             {
@@ -2410,6 +2436,7 @@ class FantasiaApp(tk.Tk):
                 f"{label('time')}: {time_label}",
                 f"{label('location')}: {location}",
                 f"{label('quest')}: {quest}",
+                f"{'残り時間' if language == 'ja' else 'Quest time'}: {quest_remaining}",
             ]
         )
 
@@ -2580,12 +2607,6 @@ class FantasiaApp(tk.Tk):
         kind = str(item.get("kind") or "")
         name = str(item.get("name") or "")
         encounter = item.get("encounter") if isinstance(item.get("encounter"), dict) else {}
-        if kind == "monster":
-            monster = self.engine.state.world_data.monsters.get(name)
-            if not monster:
-                return f"{name}\n\n{tr_enum('roster', 'no_monster_data', language)}"
-            return _format_monster_status_detail(monster.to_dict(), encounter, language=language)
-
         if kind in {"player", "character", "companion"}:
             character = self.engine.state.world_data.characters.get(name)
             data = character.to_dict() if character else {}
@@ -2622,21 +2643,17 @@ class FantasiaApp(tk.Tk):
             opponent_type = str(active_encounter.get("opponent_type") or "")
             hp = active_encounter.get("opponent_hp")
             image: Image.Image | None = None
-            if opponent_type == "monster":
-                monster = state.world_data.monsters.get(name)
-                if monster:
-                    image = self._actor_image_from_paths(monster.image_paths, ("face_image", "add_border_image", "no_bg_image", "base_image", "generated_image"))
-            else:
-                character = state.world_data.characters.get(name)
-                if character:
-                    image = self._actor_image_from_paths(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image"))
+            character = state.world_data.characters.get(name)
+            if character:
+                image = self._actor_image_from_paths(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image"))
+                opponent_type = self._character_roster_subtitle(character, fallback=opponent_type or "enemy")
             items.append(
                 {
                     "name": name,
                     "subtitle": opponent_type or "enemy",
                     "hp": f"HP:{hp}" if hp is not None else "",
                     "image": image,
-                    "kind": "monster" if opponent_type == "monster" else "character",
+                    "kind": "character",
                     "encounter": active_encounter,
                 }
             )
@@ -2658,7 +2675,7 @@ class FantasiaApp(tk.Tk):
             items.append(
                 {
                     "name": character.name,
-                    "subtitle": character.role or character.category or "NPC",
+                    "subtitle": self._character_roster_subtitle(character),
                     "hp": "",
                     "image": self._actor_image_from_paths(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image")),
                     "kind": "character",
@@ -2677,6 +2694,27 @@ class FantasiaApp(tk.Tk):
             if len(items) >= 3:
                 break
         return items
+
+    def _character_roster_subtitle(self, character: CharacterData, *, fallback: str = "NPC") -> str:
+        internal_labels = {
+            "rescue_target": "救出対象",
+            "blocker": "妨害者",
+            "defeat_target": "討伐対象",
+            "delivery_target": "配達先",
+            "quest_objective": "依頼関係者",
+        }
+        extra = character.extra if isinstance(character.extra, dict) else {}
+        flags = character.flags if isinstance(character.flags, dict) else {}
+        for key in ("display_alias", "role_label", "title", "epithet", "occupation"):
+            value = str(extra.get(key) or flags.get(key) or "").strip()
+            if not value:
+                continue
+            return internal_labels.get(value, value)
+        for value in (character.role, character.category, fallback):
+            text = str(value or "").strip()
+            if text:
+                return internal_labels.get(text, text)
+        return fallback
 
     def _player_roster_items(self) -> list[dict[str, object]]:
         player = self._player_character_dict()
@@ -2758,9 +2796,44 @@ class FantasiaApp(tk.Tk):
             return False
         if actor_location != location:
             return False
+        if not self._character_matches_current_subnode(character, location):
+            return False
         if not self._character_matches_current_facility(character):
             return False
         return _actor_state_is_present(character.state or str(character.flags.get("state") or "present"))
+
+    def _current_subnode_id(self, location: str) -> str:
+        location = str(location or "").strip()
+        if not location:
+            return ""
+        raw = self.engine.state.flags.get(CURRENT_SUBNODE_FLAG)
+        if isinstance(raw, dict) and str(raw.get("location") or "") == location:
+            node_id = str(raw.get("id") or "").strip()
+            if node_id:
+                return node_id
+        location_data = self.engine.state.world_data.locations.get(location)
+        graph = location_data.extra.get("subnode_graph") if location_data else None
+        if isinstance(graph, dict):
+            node_id = str(graph.get("current") or "").strip()
+            if node_id:
+                return node_id
+        return ""
+
+    def _character_matches_current_subnode(self, character: CharacterData, location: str) -> bool:
+        extra = character.extra if isinstance(character.extra, dict) else {}
+        flags = character.flags if isinstance(character.flags, dict) else {}
+        assigned_subnode = str(extra.get(ACTOR_SUBNODE_ID_FLAG) or flags.get(ACTOR_SUBNODE_ID_FLAG) or "").strip()
+        if not assigned_subnode:
+            assign = getattr(self.engine, "_ensure_character_subnode_assignment_for_location", None)
+            if callable(assign):
+                assigned_subnode = str(assign(character, location) or "").strip()
+            if not assigned_subnode:
+                return True
+        assigned_location = str(extra.get(ACTOR_SUBNODE_LOCATION_FLAG) or flags.get(ACTOR_SUBNODE_LOCATION_FLAG) or "").strip()
+        if assigned_location and location and assigned_location != location:
+            return True
+        current_subnode = self._current_subnode_id(location)
+        return not current_subnode or assigned_subnode == current_subnode
 
     def _character_matches_current_facility(self, character: CharacterData) -> bool:
         extra = character.extra if isinstance(character.extra, dict) else {}
@@ -2777,14 +2850,6 @@ class FantasiaApp(tk.Tk):
         if facility_name and active_name and _simple_name_match(facility_name, active_name):
             return True
         return bool(facility_type and active_type and facility_type == active_type and not facility_name)
-
-    def _monster_is_present_at(self, monster, location: str) -> bool:
-        actor_location = monster.location or str(monster.flags.get("current_location") or "")
-        if not actor_location:
-            return False
-        if actor_location != location:
-            return False
-        return _actor_state_is_present(monster.state or str(monster.flags.get("state") or "present"))
 
     def _maybe_open_map_or_board_for_action(self, action: str) -> bool:
         normalized = str(action or "").strip()
@@ -3266,6 +3331,8 @@ class FantasiaApp(tk.Tk):
             str(extra.get("facility_type") or flags.get("facility_type") or ""),
             str(extra.get("occupation") or ""),
             str(extra.get("archetype") or ""),
+            str(extra.get("display_alias") or flags.get("display_alias") or ""),
+            str(extra.get("role_label") or flags.get("role_label") or ""),
         ]
         aliases = extra.get("aliases")
         if isinstance(aliases, list):
@@ -3833,6 +3900,13 @@ class FantasiaApp(tk.Tk):
         if hasattr(self, "log_text"):
             self._set_log(self.engine.state.log_text(16))
 
+    def _open_home_storage_window(self) -> None:
+        if not self.engine.is_current_player_home():
+            messagebox.showinfo("家の保存箱", "現在地はプレイヤーの家ではありません。")
+            return
+        storage = self.engine.current_home_storage_inventory()
+        self._open_inventory_window("家の保存箱", "家の保存箱", storage, mode="container")
+
     def _maybe_open_inventory_for_action(self, action: str) -> bool:
         text = action.strip().lower()
         if not text:
@@ -3841,6 +3915,9 @@ class FantasiaApp(tk.Tk):
             return False
         if _is_direct_craft_action_text(action):
             return False
+        if any(keyword in text for keyword in ("保存箱", "倉庫", "storage", "stash")):
+            self._open_home_storage_window()
+            return True
         if any(keyword in text for keyword in ("inventory", "item", "所持品", "インベントリ", "持ち物")):
             self._open_player_inventory()
             return True
@@ -4086,6 +4163,7 @@ class FantasiaApp(tk.Tk):
         self._load_llm_settings_vars()
         self._load_image_settings_vars()
         self._load_ui_settings_vars()
+        self._load_debug_settings_vars()
         if hasattr(self, "settings_text"):
             self._replace_text(self.settings_text, self._settings_text())
         if hasattr(self, "device_info_text"):
@@ -4095,6 +4173,9 @@ class FantasiaApp(tk.Tk):
         self.device_info = detect_device()
         if hasattr(self, "device_info_text"):
             self._replace_text(self.device_info_text, _debug_device_summary(self.device_info, self.config_data.language))
+
+    def _load_debug_settings_vars(self) -> None:
+        self.debug_allow_any_action_var.set(self.config_data.allow_any_action_concept)
 
     def _apply_llm_backend_setting(self) -> None:
         backend = _llm_backend_from_label(self.llm_backend_label_var.get(), self.config_data.language)
@@ -4217,6 +4298,7 @@ class FantasiaApp(tk.Tk):
             JsonStore(),
             self.save_store,
             PromptTemplateStore(resolve_prompt_template_dir(self.config_data.prompt_template_path)),
+            allow_any_action_concept=self.config_data.allow_any_action_concept,
         )
         self.engine.state = old_state
 
@@ -4500,6 +4582,20 @@ class FantasiaApp(tk.Tk):
             return
         self._refresh_settings_screen()
         self._append_log("\n" + _ui_text(self.config_data, "log_settings_ui") + "\n")
+
+    def _apply_debug_setting(self) -> None:
+        raw = json.loads(json.dumps(self.config_data.raw, ensure_ascii=False))
+        ui_setting = raw.setdefault("ui_setting", {})
+        ui_setting["allow_any_action_concept"] = bool(self.debug_allow_any_action_var.get())
+        try:
+            CONFIG_PATH.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            self.config_data = load_config()
+            self.engine.allow_any_action_concept = self.config_data.allow_any_action_concept
+        except Exception as exc:
+            self._show_error(exc)
+            return
+        self._refresh_settings_screen()
+        self._append_log("\n" + _ui_text(self.config_data, "log_settings_debug") + "\n")
 
     def _refresh_generation_log_screen(self) -> None:
         if not hasattr(self, "generation_log_listbox"):
@@ -5194,7 +5290,7 @@ class FantasiaApp(tk.Tk):
             return tr_enum("mode_info", "no_cast", language)
         lines = []
         for character in characters:
-            role = character.role or character.category or "npc"
+            role = self._character_roster_subtitle(character, fallback="npc")
             lines.append(f"- {character.name} / {role}")
         return "\n".join(lines)
 
@@ -5202,7 +5298,15 @@ class FantasiaApp(tk.Tk):
         quests = self.engine.state.world_data.quests[:8]
         if not quests:
             return "No quests yet."
-        return "\n".join(f"- {quest.name} [{quest.status}]" for quest in quests)
+        lines = []
+        for quest in quests:
+            remaining = ""
+            if quest.status == "active":
+                hours = self.engine._quest_remaining_hours(quest)
+                if hours is not None:
+                    remaining = f" / {hours}h"
+            lines.append(f"- {quest.name} [{quest.status}]{remaining}")
+        return "\n".join(lines)
 
     def _latest_stage_text(self) -> str:
         lines = [line for line in self.engine.state.display_log if line.strip()]
@@ -5322,20 +5426,22 @@ class FantasiaApp(tk.Tk):
         state = self.engine.state
         names: list[str] = []
         active_encounter = state.flags.get("active_encounter")
-        if isinstance(active_encounter, dict) and active_encounter.get("opponent_type") == "monster":
+        if isinstance(active_encounter, dict):
             names.append(str(active_encounter.get("opponent_name") or ""))
         current_location = self._current_location_name()
         names.extend(
-            monster.name
-            for monster in state.world_data.monsters.values()
-            if self._monster_is_present_at(monster, current_location)
+            character.name
+            for character in state.world_data.characters.values()
+            if not character.flags.get("is_player")
+            and (character.flags.get("enemy_npc") or character.flags.get("hostile") or character.category in {"enemy_npc", "wild_encounter"})
+            and self._character_is_present_at(character, current_location)
         )
         layers: list[tuple[str, str]] = []
         seen: set[str] = set()
         for name in names:
             if not name or name in seen:
                 continue
-            monster = state.world_data.monsters.get(name)
+            monster = state.world_data.characters.get(name)
             if not monster:
                 continue
             image_path = _subject_image_path(monster.image_paths, ("no_bg_image", "add_border_image", "base_image", "generated_image", "face_image"))
@@ -5764,26 +5870,15 @@ class FantasiaApp(tk.Tk):
 
         encounter = state.flags.get("active_encounter")
         if isinstance(encounter, dict) and encounter.get("status") != "ended":
-            opponent_type = str(encounter.get("opponent_type") or "")
             opponent_name = str(encounter.get("opponent_name") or "")
-            if opponent_type == "monster":
-                monster = state.world_data.monsters.get(opponent_name)
-                if monster and not _subject_image_path(monster.image_paths, ("face_image", "add_border_image", "no_bg_image", "base_image", "generated_image")):
-                    self._run_task(
-                        _ui_text(self.config_data, "task_generating_monster_image"),
-                        lambda name=opponent_name: self.engine.generate_monster_image(name),
-                        lambda result: self._on_layer_image_generated(result.path),
-                    )
-                    return
-            elif opponent_type == "character":
-                character = state.world_data.characters.get(opponent_name)
-                if character and not _subject_image_path(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image")):
-                    self._run_task(
-                        _ui_text(self.config_data, "task_generating_character_image"),
-                        lambda name=opponent_name: self.engine.generate_character_image(name),
-                        lambda result: self._on_layer_image_generated(result.path),
-                    )
-                    return
+            character = state.world_data.characters.get(opponent_name)
+            if character and not _subject_image_path(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image")):
+                self._run_task(
+                    _ui_text(self.config_data, "task_generating_character_image"),
+                    lambda name=opponent_name: self.engine.generate_character_image(name),
+                    lambda result: self._on_layer_image_generated(result.path),
+                )
+                return
 
         active_conversation = state.flags.get("active_conversation")
         if isinstance(active_conversation, dict):
@@ -5880,7 +5975,10 @@ class FantasiaApp(tk.Tk):
             choices = self._battle_menu_choices()
         else:
             choices = [choice for choice in self.engine.state.choices if choice.strip()]
+            choices = [choice for choice in choices if not _is_invalid_runtime_control_choice_text(choice)]
             if mode == "exploration":
+                if self.engine.is_current_location_guild() and not self.engine.state.active_quest:
+                    choices = [choice for choice in choices if not _is_direct_quest_accept_choice_text(choice)]
                 if self.engine.is_current_location_guild() and not self.engine.state.active_quest:
                     choices.insert(0, _ui_text(self.config_data, "choice_quest_board"))
                 if self.engine.is_current_location_settlement():
@@ -5993,6 +6091,7 @@ def run_smoke_test() -> None:
         JsonStore(),
         SaveStore(),
         PromptTemplateStore(resolve_prompt_template_dir(config_data.prompt_template_path)),
+        allow_any_action_concept=config_data.allow_any_action_concept,
     )
     try:
         print(engine.create_world("SmokeTest", "静かな森と古い遺跡"))
@@ -6011,6 +6110,7 @@ def run_save_smoke_test() -> None:
         JsonStore(),
         SaveStore(),
         PromptTemplateStore(resolve_prompt_template_dir(config_data.prompt_template_path)),
+        allow_any_action_concept=config_data.allow_any_action_concept,
     )
     try:
         print(engine.create_world("SaveSmokeWorld", "霧深い辺境と古い魔法", save_game=False))
@@ -6630,32 +6730,6 @@ def _format_character_status_detail(data: dict[str, object], encounter: dict[str
     lines.extend(_format_skill_section(field("skills"), data.get("skills"), language=language))
     lines.extend(_format_inventory_section(data.get("inventory"), language=language))
     return "\n".join(line for line in lines if line is not None)
-
-
-def _format_monster_status_detail(data: dict[str, object], encounter: dict[str, object], language: str = "ja") -> str:
-    field = lambda key: tr_enum("actor_detail", key, language)
-    unknown = tr_enum("roster", "unknown", language)
-    state_id = str(data.get("state") or "present")
-    state_label = tr_enum("actor_state", state_id, language, fallback=state_id)
-    lines = [
-        f"[{field('current_status')}]",
-        f"{field('name')}: {data.get('name') or unknown}",
-        f"{field('location')}: {data.get('location') or '-'}",
-        f"{field('state')}: {state_label}",
-    ]
-    if encounter and encounter.get("opponent_name") == data.get("name"):
-        lines.append(f"{field('battle_hp')}: {encounter.get('opponent_hp', '-')}")
-        lines.append(f"{field('battle_status')}: {encounter.get('opponent_status') or '-'}")
-    lines.extend(["", f"[{field('description')}]", _short_display(data.get("description")) or "-"])
-    lines.extend(
-        _format_status_effect_section(
-            field("status_effects"),
-            data.get("status_effects"),
-        )
-    )
-    lines.extend(_format_named_description_section(field("traits"), data.get("traits")))
-    lines.extend(_format_skill_section(field("skills"), data.get("skills"), language=language))
-    return "\n".join(lines)
 
 
 def _display_gender(value: object, language: str = "ja") -> str:
@@ -7694,6 +7768,21 @@ UI_TEXT["ja"].update(
 
 UI_TEXT["en"].update(
     {
+        "settings_allow_any_action_concept": "Make Any Action / Concept Possible",
+        "settings_allow_any_action_concept_hint": "Debug only. Disables the world-feasibility guardrail before action resolution.",
+        "log_settings_debug": "[Settings] Debug settings updated.",
+    }
+)
+UI_TEXT["ja"].update(
+    {
+        "settings_allow_any_action_concept": "あらゆる行動・概念を実現可能にする",
+        "settings_allow_any_action_concept_hint": "デバッグ用。この設定をONにすると、世界観や状況に合わない行動を弾く事前ガードを無効化します。",
+        "log_settings_debug": "[設定] デバッグ設定を更新しました。",
+    }
+)
+
+UI_TEXT["en"].update(
+    {
         "title_subtitle": "AI-driven RPG",
         "title_continue_latest": "Continue",
         "title_new_world": "Create World",
@@ -8298,6 +8387,27 @@ def _limit_exploration_choices(choices: list[str]) -> list[str]:
         if len(result) >= MAX_EXPLORATION_CHOICES:
             break
     return result
+
+
+def _is_direct_quest_accept_choice_text(choice: object) -> bool:
+    text = str(choice or "").strip()
+    if not text:
+        return False
+    lowered = text.casefold()
+    if "掲示板" in text or "quest board" in lowered or "bulletin" in lowered:
+        return False
+    accept_words = ("受け", "受注", "引き受け", "引受", "請け")
+    quest_words = ("依頼", "クエスト", "仕事")
+    if any(word in text for word in accept_words) and any(word in text for word in quest_words):
+        return True
+    return any(word in lowered for word in ("accept", "take quest", "take the quest")) and any(
+        word in lowered for word in ("quest", "request", "job")
+    )
+
+
+def _is_invalid_runtime_control_choice_text(choice: object) -> bool:
+    lowered = str(choice or "").strip().casefold()
+    return lowered in {"restart", "re-start", "retry", "リスタート", "再スタート", "やり直す", "ゲームを再開"}
 
 
 def _is_trade_negotiation_text(value: object) -> bool:

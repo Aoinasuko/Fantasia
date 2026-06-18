@@ -77,8 +77,10 @@ def remove_background(source: Path, target: Path) -> dict[str, Any]:
     image.save(target)
     protected_restore_meta = restore_protected_foreground(source, target, protected_mask)
     repair_meta = repair_internal_alpha_holes(source, target)
+    isolation_meta = isolate_subject_foreground(target)
+    low_alpha_meta = remove_low_alpha_artifacts(target)
     return {
-        "method": "edge_connected_corner_color_protected_alpha",
+        "method": "edge_connected_corner_color_protected_alpha_subject_isolation",
         "background_color": bg,
         "foreground_protection": protection_meta,
         "removed_pixels": removed,
@@ -86,6 +88,8 @@ def remove_background(source: Path, target: Path) -> dict[str, Any]:
         "edge_connected_pixels": int(sum(background_mask)),
         "protected_restore": protected_restore_meta,
         "hole_repair": repair_meta,
+        "subject_isolation": isolation_meta,
+        "low_alpha_cleanup": low_alpha_meta,
         "image_size": list(image.size),
     }
 
@@ -141,6 +145,181 @@ def repair_internal_alpha_holes(source: Path, target: Path, alpha_threshold: int
         "restored_pixels": restored,
         "alpha_threshold": alpha_threshold,
     }
+
+
+def isolate_subject_foreground(target: Path, alpha_threshold: int = 16) -> dict[str, Any]:
+    image = Image.open(target).convert("RGBA")
+    width, height = image.size
+    alpha_values = list(image.getchannel("A").getdata())
+    components = _alpha_components(alpha_values, width, height, alpha_threshold)
+    if len(components) <= 1:
+        return {
+            "method": "dominant_center_component",
+            "components": len(components),
+            "removed_components": 0,
+            "removed_pixels": 0,
+            "kept_components": len(components),
+        }
+
+    primary = _select_subject_component(components, width, height)
+    keep_components = [
+        component
+        for component in components
+        if component is primary or _is_related_subject_component(component, primary, width, height)
+    ]
+    keep_indices = bytearray(width * height)
+    for component in keep_components:
+        for index in component["indices"]:
+            keep_indices[index] = 1
+
+    pixels = list(image.getdata())
+    removed_pixels = 0
+    removed_components = 0
+    kept_ids = {id(component) for component in keep_components}
+    for component in components:
+        if id(component) in kept_ids:
+            continue
+        removed_components += 1
+        removed_pixels += int(component["area"])
+        for index in component["indices"]:
+            red, green, blue, _alpha = pixels[index]
+            pixels[index] = (red, green, blue, 0)
+
+    if removed_pixels:
+        image.putdata(pixels)
+        image.save(target)
+
+    return {
+        "method": "dominant_center_component",
+        "components": len(components),
+        "kept_components": len(keep_components),
+        "removed_components": removed_components,
+        "removed_pixels": removed_pixels,
+        "primary_bbox": list(primary["bbox"]),
+        "primary_area": int(primary["area"]),
+        "alpha_threshold": alpha_threshold,
+    }
+
+
+def remove_low_alpha_artifacts(target: Path, alpha_threshold: int = 48) -> dict[str, Any]:
+    image = Image.open(target).convert("RGBA")
+    pixels = list(image.getdata())
+    removed = 0
+    cleaned: list[tuple[int, int, int, int]] = []
+    for red, green, blue, alpha in pixels:
+        if 0 < alpha <= alpha_threshold:
+            cleaned.append((red, green, blue, 0))
+            removed += 1
+        else:
+            cleaned.append((red, green, blue, alpha))
+    if removed:
+        image.putdata(cleaned)
+        image.save(target)
+    return {
+        "method": "drop_low_alpha_artifacts",
+        "removed_pixels": removed,
+        "alpha_threshold": alpha_threshold,
+    }
+
+
+def _alpha_components(alpha_values: list[int], width: int, height: int, threshold: int) -> list[dict[str, Any]]:
+    visited = bytearray(width * height)
+    components: list[dict[str, Any]] = []
+    for start, alpha in enumerate(alpha_values):
+        if alpha <= threshold or visited[start]:
+            continue
+        queue: deque[int] = deque([start])
+        visited[start] = 1
+        indices: list[int] = []
+        left = width
+        top = height
+        right = 0
+        bottom = 0
+        alpha_sum = 0
+        while queue:
+            index = queue.popleft()
+            indices.append(index)
+            alpha_sum += alpha_values[index]
+            x = index % width
+            y = index // width
+            left = min(left, x)
+            right = max(right, x)
+            top = min(top, y)
+            bottom = max(bottom, y)
+            for next_index in (index - 1, index + 1, index - width, index + width):
+                if next_index < 0 or next_index >= width * height:
+                    continue
+                if visited[next_index] or alpha_values[next_index] <= threshold:
+                    continue
+                next_x = next_index % width
+                if abs(next_x - x) > 1:
+                    continue
+                visited[next_index] = 1
+                queue.append(next_index)
+
+        area = len(indices)
+        bbox = (left, top, right + 1, bottom + 1)
+        components.append(
+            {
+                "indices": indices,
+                "area": area,
+                "bbox": bbox,
+                "avg_alpha": alpha_sum / max(1, area),
+                "touches_left": left <= 1,
+                "touches_top": top <= 1,
+                "touches_right": right >= width - 2,
+                "touches_bottom": bottom >= height - 2,
+            }
+        )
+    return components
+
+
+def _select_subject_component(components: list[dict[str, Any]], width: int, height: int) -> dict[str, Any]:
+    center_x = width / 2
+    center_y = height * 0.56
+
+    def score(component: dict[str, Any]) -> float:
+        left, top, right, bottom = component["bbox"]
+        comp_center_x = (left + right) / 2
+        comp_center_y = (top + bottom) / 2
+        distance = abs(comp_center_x - center_x) / max(1, width) + abs(comp_center_y - center_y) / max(1, height)
+        value = float(component["area"]) * max(0.32, 1.0 - distance * 0.9)
+        if component["touches_left"] or component["touches_right"]:
+            value *= 0.38
+        if component["touches_top"]:
+            value *= 0.48
+        return value
+
+    return max(components, key=score)
+
+
+def _is_related_subject_component(
+    component: dict[str, Any],
+    primary: dict[str, Any],
+    width: int,
+    height: int,
+) -> bool:
+    if component["touches_left"] or component["touches_right"] or component["touches_top"]:
+        return False
+    primary_area = max(1, int(primary["area"]))
+    area = int(component["area"])
+    if area < max(8, int(primary_area * 0.001)):
+        return False
+    if area > primary_area * 0.25:
+        return False
+
+    left, top, right, bottom = component["bbox"]
+    p_left, p_top, p_right, p_bottom = primary["bbox"]
+    margin = max(24, min(width, height) // 10)
+    expanded = (
+        max(0, p_left - margin),
+        max(0, p_top - margin),
+        min(width, p_right + margin),
+        min(height, p_bottom + margin),
+    )
+    center_x = (left + right) / 2
+    center_y = (top + bottom) / 2
+    return expanded[0] <= center_x <= expanded[2] and expanded[1] <= center_y <= expanded[3]
 
 
 def crop_face(source: Path, target: Path) -> dict[str, Any]:

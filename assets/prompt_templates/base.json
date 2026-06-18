@@ -10,6 +10,9 @@
     },
     "check_illegal_content": {
       "system_suffix": "安全判定はLLM側だけで行います。ゲーム側の禁止語リストを前提にせず、プレイヤー入力を進行managerへ渡せるかをJSONで返してください。"
+    },
+    "check_action_feasibility": {
+      "system_suffix": "安全判定ではなく、世界観・現在地・周囲の状況・所持品・NPC状態から、プレイヤー入力が世界内で試みられるかだけを判定してください。成否は後続managerに任せてください。"
     }
   }
 }

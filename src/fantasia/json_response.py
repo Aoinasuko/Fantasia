@@ -117,7 +117,7 @@ class ManagerSchema:
             lines.append(
                 "- Item loss: when the player gives, loses, spends, is robbed of, or has items confiscated, return lost_items/stolen_items/given_items/remove_items as item references. Use item_uuid or item_uuids when available so the same item can be recovered later."
             )
-        if any(field.name in {"monsters", "npcs", "new_npc_requests"} for field in self.fields):
+        if any(field.name in {"enemies", "opponents", "npcs", "new_npc_requests"} for field in self.fields):
             lines.append(
                 "- NPC名や敵名は固有名詞だけにしてください。name に (討伐時入手)、(出現時)、報酬、ドロップ、説明文を混ぜないでください。"
                 "説明や出現条件は description/reason/location に分けてください。"
@@ -145,6 +145,25 @@ class ManagerSchema:
                 "- Party movement must also be explicit: use state='party' or join_party=true when an NPC joins, "
                 "leave_party=true when an NPC leaves, wait=true or state='waiting' when an NPC waits on the current map, "
                 "and state='dead' when an NPC dies."
+            )
+        if any(field.name in {"map_reveal", "map_reveals", "world_map_reveal", "world_map_reveals", "unlock_world_map_route"} for field in self.fields):
+            lines.append(
+                "- ワールドマップの経路を開放する場合は map_reveal を返してください。"
+                "例: {target_location: \"目的地名\", reason: \"目的地への地図を受け取った\"}。"
+                "現在受注中のクエスト目的地なら {target: \"quest_destination\"} でも構いません。"
+                "既知の経路を指定する場合は route/path にロケーション名配列を入れてください。"
+            )
+        if any(field.name in {"time_passed_hours", "advance_time_hours", "long_time_passage_hours", "time_skip_hours", "spend_time_hours", "long_time_passage"} for field in self.fields):
+            lines.append(
+                "- 休憩、睡眠、待機、数日間の滞在などで長い時間が経つ場合は、"
+                "long_time_passage_hours/time_skip_hours/spend_time_hours などに1時間単位の経過時間を返してください。"
+                "数日間なら days ではなく hours に換算しても構いません。単純な短い移動では返さないでください。"
+            )
+        if any(field.name in {"game_over", "force_game_over", "fatal_outcome", "bad_end"} for field in self.fields):
+            lines.append(
+                "- プレイヤーの行動結果が確実に冒険終了・死亡・脱出不能・破滅などのゲームオーバーだと判断できる場合だけ "
+                "game_over=true と game_over_reason/game_over_narration を返してください。"
+                "ゲームオーバー時に「リスタート」「再開」など存在しない選択肢を作らないでください。"
             )
         lines.append(json.dumps(self.example, ensure_ascii=False, indent=2))
         return "\n".join(lines)
@@ -219,6 +238,21 @@ STATUS_EFFECT_FIELDS = (
     FieldRule("moved_npcs", (dict, list, str), required=False, non_empty=False, string_items=False),
     FieldRule("followers", (dict, list, str), required=False, non_empty=False, string_items=False),
     FieldRule("escorted_npcs", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("map_reveal", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("map_reveals", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("reveal_map", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("reveal_maps", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("world_map_reveal", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("world_map_reveals", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("reveal_world_map", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("unlock_world_map_route", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("unlock_world_map_routes", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("map_route_reveal", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("map_route_reveals", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("home_construction", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("player_home_construction", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("home_building", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("player_home_building", (dict, list, str), required=False, non_empty=False, string_items=False),
     FieldRule("player_hp_delta", (int, str), required=False, non_empty=False),
     FieldRule("hp_delta", (int, str), required=False, non_empty=False),
     FieldRule("heal_hp", (int, str), required=False, non_empty=False),
@@ -251,9 +285,26 @@ STATUS_EFFECT_FIELDS = (
     FieldRule("time_passed_hours", (int, str), required=False, non_empty=False),
     FieldRule("time_passed_days", (int, str), required=False, non_empty=False),
     FieldRule("advance_time_hours", (int, str), required=False, non_empty=False),
+    FieldRule("long_time_passage_hours", (int, str), required=False, non_empty=False),
+    FieldRule("time_skip_hours", (int, str), required=False, non_empty=False),
+    FieldRule("spend_time_hours", (int, str), required=False, non_empty=False),
+    FieldRule("wait_hours", (int, str), required=False, non_empty=False),
+    FieldRule("rest_hours", (int, str), required=False, non_empty=False),
+    FieldRule("sleep_hours", (int, str), required=False, non_empty=False),
+    FieldRule("long_time_passage_days", (int, str), required=False, non_empty=False),
+    FieldRule("time_skip_days", (int, str), required=False, non_empty=False),
+    FieldRule("spend_time_days", (int, str), required=False, non_empty=False),
     FieldRule("time_effect", (dict, list), required=False, non_empty=False, string_items=False),
     FieldRule("time_effects", (dict, list), required=False, non_empty=False, string_items=False),
+    FieldRule("long_time_passage", (dict, list), required=False, non_empty=False, string_items=False),
+    FieldRule("time_skip", (dict, list), required=False, non_empty=False, string_items=False),
     FieldRule("time_reason", (str,), required=False, non_empty=False),
+    FieldRule("game_over", (bool, dict, str), required=False, non_empty=False, string_items=False),
+    FieldRule("force_game_over", (bool, dict, str), required=False, non_empty=False, string_items=False),
+    FieldRule("fatal_outcome", (bool, dict, str), required=False, non_empty=False, string_items=False),
+    FieldRule("bad_end", (bool, dict, str), required=False, non_empty=False, string_items=False),
+    FieldRule("game_over_reason", (str,), required=False, non_empty=False),
+    FieldRule("game_over_narration", (str,), required=False, non_empty=False),
     FieldRule("player_exp_delta", (int, str), required=False, non_empty=False),
     FieldRule("exp", (int, str), required=False, non_empty=False),
     FieldRule("experience", (int, str), required=False, non_empty=False),
@@ -321,6 +372,31 @@ SCHEMAS: dict[str, ManagerSchema] = {
             ],
         },
     ),
+    "dungeon_subnode_generator": ManagerSchema(
+        manager_name="dungeon_subnode_generator",
+        fields=(
+            FieldRule("nodes", (list, dict), aliases=("subnodes", "rooms"), string_items=False),
+            FieldRule("edges", (list, dict), aliases=("connections", "paths"), non_empty=False, string_items=False),
+            FieldRule("summary", (str,), required=False, non_empty=False),
+        ),
+        example={
+            "summary": "入口から複数の枝道が伸び、鉱脈、薬草群生地、宝箱の間を経て最奥部へ至る。",
+            "nodes": [
+                {"id": "entrance", "name": "入口", "kind": "entrance", "description": "外と内部をつなぐ出入口。"},
+                {"id": "ore_vein", "name": "青鉄鉱の広間", "kind": "ore_vein", "description": "壁に青い鉱石が走る採掘跡。"},
+                {"id": "herb_grove", "name": "光苔の薬草群生地", "kind": "herb_grove", "description": "湿った床に薬草と光苔が広がる。"},
+                {"id": "treasure_room", "name": "古い宝箱の間", "kind": "treasure_room", "description": "罠の気配がある宝箱の部屋。"},
+                {"id": "deepest", "name": "最奥部", "kind": "deepest", "description": "ダンジョンの中核に近い場所。"},
+            ],
+            "edges": [
+                {"from": "entrance", "to": "ore_vein"},
+                {"from": "ore_vein", "to": "herb_grove"},
+                {"from": "herb_grove", "to": "deepest"},
+                {"from": "ore_vein", "to": "treasure_room"},
+                {"from": "treasure_room", "to": "deepest"},
+            ],
+        },
+    ),
     "craft_item_generator": ManagerSchema(
         manager_name="craft_item_generator",
         fields=(
@@ -367,6 +443,21 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "reason": "プレイヤー入力として処理可能です。",
             "message": "この行動を通常のナレーションへ渡せます。",
             "suggested_action": "",
+        },
+    ),
+    "check_action_feasibility": ManagerSchema(
+        manager_name="check_action_feasibility",
+        fields=(
+            FieldRule("action_possible", (bool,), aliases=("possible", "allowed", "feasible")),
+            FieldRule("reason", (str,)),
+            FieldRule("message", (str,)),
+            FieldRule("suggested_action", (str,), required=False, non_empty=False),
+        ),
+        example={
+            "action_possible": False,
+            "reason": "所持品や周囲の状況に存在しない大量のGoldを突然得る行動で、世界内の因果がない。",
+            "message": "そのようなことはできない。金貨を得るには、探索、取引、報酬などの手段が必要だ。",
+            "suggested_action": "周囲を探して価値のあるものがないか調べる",
         },
     ),
     "create_story": ManagerSchema(
@@ -444,8 +535,15 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "quests": [
                 {
                     "name": "消えた隊商",
+                    "quest_type": "investigate",
                     "overview": "最後に灯守りの宿を出た隊商の足取りを追う。",
                     "neighboring_settlement": "灯守りの宿",
+                    "destination_hint": {
+                        "location_kind": "wilderness",
+                        "anchor_kind": "road",
+                        "objective_subnode_name": "隊商の痕跡",
+                        "objective_description": "街道近くの森に残された車輪跡と破れた荷布。",
+                    },
                     "choices": ["掲示板を確認する", "馬丁に話を聞く"],
                 }
             ]
@@ -476,6 +574,23 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "choices": ["炉番のレナに話しかける", "品物を見る"],
         },
     ),
+    "home_construction_evaluator": ManagerSchema(
+        manager_name="home_construction_evaluator",
+        fields=(
+            FieldRule("usable", (bool,)),
+            FieldRule("reason", (str,), required=False, non_empty=False),
+            FieldRule("narration", (str,), required=False, non_empty=False, aliases=("text", "message")),
+            FieldRule("furniture_level_gain", (int, str), required=False, non_empty=False),
+            FieldRule("consume_item", (bool,), required=False, non_empty=False),
+        ),
+        example={
+            "usable": True,
+            "reason": "乾いた木材は壁材や棚に使える。",
+            "narration": "あなたは木材を切りそろえ、家の骨組みと作業棚を少しずつ組み上げた。",
+            "furniture_level_gain": 2,
+            "consume_item": True,
+        },
+    ),
     "quest_starter": ManagerSchema(
         manager_name="quest_starter",
         fields=(
@@ -484,6 +599,8 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("quest_name", (str,), required=False),
             FieldRule("objective", (str,), required=False),
             FieldRule("location", (str,), required=False),
+            FieldRule("destination_location", (str,), required=False),
+            FieldRule("objective_subnode_name", (str,), required=False),
             *STATUS_EFFECT_FIELDS,
             *REWARD_FIELDS,
             *VISUAL_FIELDS,
@@ -494,6 +611,35 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "location": "灯守りの宿",
             "narration": "掲示板の古い依頼札が雨で滲んでいる。",
             "choices": ["掲示板を読む", "馬丁に話を聞く", "宿の外へ出る"],
+        },
+    ),
+    "quest_objective_npc_designer": ManagerSchema(
+        manager_name="quest_objective_npc_designer",
+        fields=(
+            FieldRule("name", (str,)),
+            FieldRule("display_alias", (str,), required=False, non_empty=False),
+            FieldRule("role_label", (str,), required=False, non_empty=False),
+            FieldRule("description", (str,)),
+            FieldRule("personality", (str,), required=False, non_empty=False),
+            FieldRule("look", (str,), required=False, non_empty=False),
+            FieldRule("species", (str,), required=False, non_empty=False),
+            FieldRule("category", (str,), required=False, non_empty=False),
+            FieldRule("hostile", (bool,), required=False, non_empty=False),
+            FieldRule("image_prompt", (str, list), required=False, non_empty=False, string_items=False),
+            FieldRule("aliases", (list,), required=False, non_empty=False),
+        ),
+        example={
+            "name": "森蔦の拘束者",
+            "display_alias": "町娘をさらった者",
+            "role_label": "妨害者",
+            "description": "依頼の舞台と噂に合う、救出対象を妨げる存在。",
+            "personality": "警戒心が強く、獲物を逃がさない。",
+            "look": "暗い森に溶け込む影と絡みつく蔦のような腕を持つ。",
+            "species": "魔物",
+            "category": "quest_objective",
+            "hostile": True,
+            "image_prompt": "fantasy monster, dark forest captor, vine-like limbs",
+            "aliases": ["拘束者", "さらった者"],
         },
     ),
     "quest_referee_with_free_action": ManagerSchema(
@@ -540,6 +686,21 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "choices": ["赤い印へ向かう", "宿で準備する"],
         },
     ),
+    "quest_procurement_checker": ManagerSchema(
+        manager_name="quest_procurement_checker",
+        fields=(
+            FieldRule("accepted", (bool,), aliases=("acceptable", "is_acceptable", "matched")),
+            FieldRule("item_uuid", (str,), aliases=("accepted_item_uuid", "uuid"), non_empty=False),
+            FieldRule("item_name", (str,), required=False, non_empty=False),
+            FieldRule("reason", (str,), non_empty=False),
+        ),
+        example={
+            "accepted": True,
+            "item_uuid": "item-uuid-from-candidates",
+            "item_name": "治癒のポーション",
+            "reason": "傷に効くポーションという依頼条件に合うため。",
+        },
+    ),
     "field_event_evaluator": ManagerSchema(
         manager_name="field_event_evaluator",
         fields=(
@@ -552,7 +713,8 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("quest", (dict, list), required=False, non_empty=False, string_items=False),
             FieldRule("quests", (list,), required=False, non_empty=False, string_items=False),
             FieldRule("npcs", (list,), required=False, non_empty=False, string_items=False),
-            FieldRule("monsters", (list,), required=False, non_empty=False, string_items=False),
+            FieldRule("enemies", (list,), required=False, non_empty=False, string_items=False),
+            FieldRule("opponents", (list,), required=False, non_empty=False, string_items=False),
             *STATUS_EFFECT_FIELDS,
             *REWARD_FIELDS,
             *VISUAL_FIELDS,
@@ -791,6 +953,80 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "choices": ["掲示板を見る", "周辺を探索する"],
         },
     ),
+    "encounter_target_resolver": ManagerSchema(
+        manager_name="encounter_target_resolver",
+        fields=(
+            FieldRule("target_name", (str,), aliases=("name", "monster_name", "enemy_name")),
+            FieldRule("opponent_type", (str,), required=False),
+            FieldRule("category", (str,), required=False),
+            FieldRule("description", (str,), required=False),
+            FieldRule("traits", (list,), required=False, non_empty=False, string_items=False),
+            FieldRule("image_generation_prompt", (list, str), required=False, non_empty=False),
+            FieldRule("confidence", (int, str), required=False, non_empty=False),
+            FieldRule("reason", (str,), required=False, non_empty=False),
+        ),
+        example={
+            "target_name": "触手",
+            "opponent_type": "character",
+            "category": "tentacle_monster",
+            "description": "水辺に潜む粘液をまとった触手状の魔物。",
+            "traits": [{"name": "絡みつく触手", "description": "多数の触手で相手の動きを封じる。"}],
+            "image_generation_prompt": ["tentacle monster", "slimy tendrils", "fantasy RPG monster"],
+            "confidence": 90,
+            "reason": "プレイヤー行動と直近ログの両方で触手が戦闘対象として示されているため。",
+        },
+    ),
+    "hostile_npc_encounter_evaluator": ManagerSchema(
+        manager_name="hostile_npc_encounter_evaluator",
+        fields=(
+            FieldRule("narration", (str,), aliases=("text", "message")),
+            FieldRule("combat_started", (bool,), aliases=("start_combat", "battle_started")),
+            FieldRule("opponent_name", (str,), required=False, non_empty=False, aliases=("target_name", "enemy_name")),
+            FieldRule("stance", (str,), required=False, non_empty=False),
+            FieldRule("choices", (list,), required=False, non_empty=False),
+            FieldRule("reason", (str,), required=False, non_empty=False),
+        ),
+        example={
+            "narration": "洞窟の奥に潜んでいた黒角の獣があなたに気づき、低く唸りながら身構えた。",
+            "combat_started": False,
+            "opponent_name": "黒角の獣",
+            "stance": "watching",
+            "choices": ["距離を取る", "武器を構える", "声をかける"],
+            "reason": "敵対的だが、まだ即座には襲いかかっていないため。",
+        },
+    ),
+    "combat_transition_detector": ManagerSchema(
+        manager_name="combat_transition_detector",
+        fields=(
+            FieldRule("combat_started", (bool,), aliases=("start_combat", "battle_started")),
+            FieldRule("opponent_name", (str,), required=False, non_empty=False, aliases=("target_name", "enemy_name")),
+            FieldRule("narration", (str,), required=False, non_empty=False, aliases=("text", "message")),
+            FieldRule("reason", (str,), required=False, non_empty=False),
+        ),
+        example={
+            "combat_started": True,
+            "opponent_name": "街道を塞ぐ蟲",
+            "narration": "蟲が牙を鳴らして飛びかかり、戦闘が始まった。",
+            "reason": "応答文で敵が明確に攻撃を開始しているため。",
+        },
+    ),
+    "context_reference_resolver": ManagerSchema(
+        manager_name="context_reference_resolver",
+        fields=(
+            FieldRule("target_type", (str,), aliases=("type", "kind")),
+            FieldRule("target_name", (str,), aliases=("name", "target", "character_name", "quest_name"), non_empty=False),
+            FieldRule("resolved_action", (str,), required=False, non_empty=False),
+            FieldRule("confidence", (int, str), required=False, non_empty=False),
+            FieldRule("reason", (str,)),
+        ),
+        example={
+            "target_type": "character",
+            "target_name": "ミラ",
+            "resolved_action": "ミラにさっきの依頼について尋ねる",
+            "confidence": 80,
+            "reason": "直近ログで会話していた宿の主人がミラで、入力の「あの人」がその人物を指すため。",
+        },
+    ),
     "referee_player_attack_new_new": ManagerSchema(
         manager_name="referee_player_attack_new_new",
         fields=(
@@ -871,6 +1107,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("intent", (str,), required=False),
             FieldRule("encounter_update", (dict, list), required=False, non_empty=False, string_items=False),
             FieldRule("effects", (list,), required=False, non_empty=False, string_items=False),
+            FieldRule("combat_judgement", (dict,), required=False, non_empty=False, string_items=False),
             FieldRule("finished", (bool,), required=False, non_empty=False),
             FieldRule("should_end_encounter", (bool,), required=False, non_empty=False),
             *STATUS_EFFECT_FIELDS,
@@ -893,6 +1130,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
                     }
                 ],
             },
+            "combat_judgement": {"offensive": False, "weakness_multiplier": 0.0, "reason": "降伏受諾のためHPダメージなし。"},
             "effects": [{"name": "戦闘停止", "duration": 1}],
             "finished": True,
             "should_end_encounter": True,
@@ -906,6 +1144,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("choices", (list,)),
             FieldRule("npc_action", (str,), required=False),
             FieldRule("encounter_update", (dict, list), required=False, non_empty=False, string_items=False),
+            FieldRule("combat_judgement", (dict,), required=False, non_empty=False, string_items=False),
             FieldRule("finished", (bool,), required=False, non_empty=False),
             FieldRule("rewrite_reason", (str,), required=False, non_empty=False),
             *STATUS_EFFECT_FIELDS,
@@ -928,9 +1167,28 @@ SCHEMAS: dict[str, ManagerSchema] = {
                     ]
                 },
             },
+            "combat_judgement": {"offensive": False, "weakness_multiplier": 0.0, "reason": "監視と武装解除のみでHPダメージなし。"},
             "finished": True,
             "rewrite_reason": "相手の慎重な性格と降伏の意思を反映した。",
             "choices": ["事情を説明する", "ゆっくり離れる"],
+        },
+    ),
+    "combat_damage_narrator": ManagerSchema(
+        manager_name="combat_damage_narrator",
+        fields=(
+            FieldRule("narration", (str,), aliases=("text", "message")),
+        ),
+        example={
+            "narration": "ナナはゴブリンへ素早い一閃を繰り出した。刃は的確に急所を捉え、ゴブリンはその場で力尽きた。",
+        },
+    ),
+    "combat_heal_narrator": ManagerSchema(
+        manager_name="combat_heal_narrator",
+        fields=(
+            FieldRule("narration", (str,), aliases=("text", "message")),
+        ),
+        example={
+            "narration": "ナナは癒しの魔法を唱えた。淡い光が傷を少しふさぎ、呼吸がいくらか楽になった。",
         },
     ),
     "create_character": ManagerSchema(
@@ -1068,9 +1326,12 @@ SCHEMAS: dict[str, ManagerSchema] = {
                 "single fantasy RPG character",
                 "full body",
                 "standing pose",
-                "plain light background",
+                "isolated cutout",
+                "pure white background",
+                "no scenery",
+                "no background objects",
             ],
-            "negative_prompt": "low quality, blurry, text, watermark, extra fingers, bad hands",
+            "negative_prompt": "low quality, blurry, text, watermark, extra fingers, bad hands, background objects, wall, pillar",
         },
     ),
     "monster_image_creator": ManagerSchema(
@@ -1085,9 +1346,12 @@ SCHEMAS: dict[str, ManagerSchema] = {
                 "best quality",
                 "single fantasy RPG monster",
                 "full body creature",
-                "plain light background",
+                "isolated cutout",
+                "pure white background",
+                "no scenery",
+                "no background objects",
             ],
-            "negative_prompt": "low quality, blurry, text, watermark, cropped, extra limbs",
+            "negative_prompt": "low quality, blurry, text, watermark, cropped, extra limbs, background objects, wall, pillar",
         },
     ),
     "background_image_creator": ManagerSchema(
@@ -1125,6 +1389,15 @@ def schema_instruction(manager_name: str) -> str:
     if not schema:
         return "応答はJSONオブジェクトだけにしてください。"
     instruction = schema.instruction()
+    if manager_name == "check_action_feasibility":
+        instruction += (
+            "\ncheck_action_feasibility rules:\n"
+            "- This is not a content-safety check. Judge only whether the player's input can be attempted inside the current world, location, inventory, NPC state, and recent context.\n"
+            "- Return action_possible=true for risky, foolish, dangerous, hostile, exploratory, bargaining, surrendering, fleeing, hiding, or uncertain attempts when the player can plausibly try them. Success or failure is decided later.\n"
+            "- Return action_possible=false when the input directly creates causeless money/items/victory/death/teleportation/new concepts/NPC personality changes/world-setting changes without an in-world method.\n"
+            "- message must be a short natural refusal addressed to the player when action_possible=false.\n"
+            "- Return compact JSON only. Do not add Markdown or commentary.\n"
+        )
     if manager_name == "create_world_overview":
         instruction += (
             "\ncreate_world_overview専用ルール:\n"
@@ -1134,6 +1407,7 @@ def schema_instruction(manager_name: str) -> str:
             "- kind は settlement/wilderness/dungeon/landmark/road/crossroad/coast/mountain/river/plain のいずれかを優先してください。街の施設は location にせず、settlement の facilities として扱います。\n"
             "- 宿屋、鍛冶屋、ギルド、店、寺院などの街施設を独立したロケーションにしないでください。\n"
             "- 洞窟やダンジョンの入口、内部、奥、深部などは同じ dungeon ロケーション内のサブ地点として扱い、別ロケーションにしないでください。\n"
+            "- ロケーション名は世界観、地形、文化、危険度、役割から新しく命名してください。白石街道、緑瓦の宿場、アルテミスなどの固定プリセットや同じモチーフの反復は避けてください。\n"
             "- structure には世界全体の地理ルール、危険度ルール、文化圏、主要テーマなどを入れてください。\n"
         )
     if manager_name == "create_world_overview":
@@ -1150,9 +1424,45 @@ def schema_instruction(manager_name: str) -> str:
             "- Each location must include name, kind, danger, and description. kind should be one of settlement, wilderness, dungeon, landmark, road, crossroad, coast, mountain, river, or plain.\n"
             "- Do not create town facilities as world-map locations. Inns, guilds, blacksmiths, shops, temples, and similar places belong inside a settlement's facilities data.\n"
             "- Do not split a dungeon/cave into separate entrance/interior/depth locations. Keep those as subareas of one dungeon location.\n"
+            "- Invent location names from the world tone, terrain, local culture, role, and danger. Do not use fixed preset-like names such as 白石街道, 緑瓦の宿場, or repeated motifs such as アルテミス unless explicitly specified.\n"
             "- danger is 0-9 and should generally rise with distance from the starting location, while allowing occasional world-appropriate exceptions.\n"
             "- connections must connect each new location to an existing location or another location from this same batch. Use hours=2 unless the prompt explicitly asks otherwise.\n"
             "- Return compact JSON only. Do not add Markdown or commentary.\n"
+        )
+    if manager_name == "dungeon_subnode_generator":
+        instruction += (
+            "\ndungeon_subnode_generator rules:\n"
+            "- Return 5 to 20 nodes total, including entrance and deepest.\n"
+            "- Include an entrance node with id=\"entrance\" and a deepest/goal node with id=\"deepest\".\n"
+            "- Make the graph branch like a small maze. Do not return a single straight line.\n"
+            "- Use varied node kinds and descriptions, such as ore_vein, herb_grove, treasure_room, monster_nest, underground_stream, ancient_altar, hidden_chamber, trap_hall, collapsed_passage, or crystal_cavity.\n"
+            "- edges must reference existing node ids only.\n"
+            "- Do not create separate world locations. These are subnodes inside the current dungeon.\n"
+        )
+    if manager_name == "settlement_quest_generator":
+        instruction += (
+            "\nsettlement_quest_generator rules:\n"
+            "- Generate only the requested 2 to 3 quests per response. Do not fill the whole board at once.\n"
+            "- Each quest object must include quest_type, one of rescue, retrieve, defeat, delivery, investigate, or procure.\n"
+            "- Defeating, hunting, clearing, or driving away monsters/enemies that block a road or place is always quest_type=\"defeat\".\n"
+            "- Only requests to obtain a suitable item from somewhere are quest_type=\"procure\".\n"
+            "- Include destination_hint with location_kind, anchor_kind, objective_subnode_name, and objective_description whenever possible.\n"
+        )
+    if manager_name == "master_ai_facilitator":
+        instruction += (
+            "\nmaster_ai_facilitator home construction rules:\n"
+            "- If the player is outside a settlement and clearly tries to build or improve their own house using a specified material item, return home_construction.\n"
+            "- home_construction should include usable, material_name, furniture_level_gain, narration, and reason. furniture_level_gain must be 0 to 3.\n"
+            "- If the material is not suitable as building material, set usable=false and explain the refusal in narration/reason.\n"
+            "- Do not create a player home only by narration. The game side creates the home when construction progress reaches 100%.\n"
+        )
+    if manager_name == "home_construction_evaluator":
+        instruction += (
+            "\nhome_construction_evaluator rules:\n"
+            "- Judge whether the specified item can reasonably be used as building material or furniture/workshop material for a player home in this world.\n"
+            "- Return usable=false for unsuitable items, missing items, obviously fragile/irrelevant items, or materials that cannot help build a home.\n"
+            "- furniture_level_gain is 0 to 3. Use 1 for basic material, 2 for good material, 3 for excellent/rare workshop material. Never exceed 3.\n"
+            "- Return JSON only.\n"
         )
     if manager_name == "create_settlement_detail":
         instruction += (
@@ -1319,7 +1629,7 @@ def _canonicalize_manager_response(manager_name: str, value: Any) -> Any:
             value,
             "quests",
             aliases=("quest", "generated_quest", "settlement_quest", "quest_list"),
-            item_keys=("name", "overview", "neighboring_settlement", "choices", "reward", "status", "objective"),
+            item_keys=("name", "overview", "quest_type", "neighboring_settlement", "choices", "reward", "status", "objective"),
         )
     if manager_name == "create_skill":
         return _wrap_collection_response(
@@ -1445,6 +1755,7 @@ def _settlement_facility_type(name: str) -> str:
     text = str(name or "").casefold()
     mapping = (
         ("guild", ("guild", "adventurer", "quest board", "ギルド", "冒険者", "依頼掲示板", "掲示板")),
+        ("town_hall", ("town hall", "city hall", "municipal", "役場", "市庁舎", "役所", "行政庁")),
         ("black_market", ("black market", "闇商店", "闇市")),
         ("blacksmith", ("blacksmith", "smith", "鍛冶", "武器", "防具", "武具")),
         ("apothecary", ("apothecary", "potion", "medicine", "薬", "薬品", "治療")),
@@ -1464,6 +1775,7 @@ def _settlement_facility_type(name: str) -> str:
 def _settlement_facility_role(facility_type: str) -> str:
     return {
         "guild": "ギルド受付",
+        "town_hall": "役場職員",
         "black_market": "闇商人",
         "blacksmith": "鍛冶職人",
         "apothecary": "薬師",

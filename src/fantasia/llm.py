@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import socket
 import subprocess
@@ -108,7 +109,7 @@ class FixtureLlmBackend(BaseLlmBackend):
             anchors = fixture_context.get("anchor_names") if isinstance(fixture_context, dict) else []
             anchor = str(anchors[0]) if isinstance(anchors, list) and anchors else "月影の森"
             base = batch_index * 10
-            names = [f"試作街道{base + 1}", f"試作森{base + 2}", f"試作洞窟{base + 3}"]
+            names = [f"ルミナール街道{base + 1}", f"セラフィル原野{base + 2}", f"ノクスディア迷宮{base + 3}"]
             content = {
                 "batch_summary": f"Fixture batch {batch_index}.",
                 "locations": [
@@ -120,6 +121,26 @@ class FixtureLlmBackend(BaseLlmBackend):
                     {"from": anchor, "to": names[0], "hours": 2},
                     {"from": names[0], "to": names[1], "hours": 2},
                     {"from": names[1], "to": names[2], "hours": 2},
+                ],
+            }
+        elif manager_name == "dungeon_subnode_generator":
+            content = {
+                "summary": "Fixture dungeon layout with branches and varied rooms.",
+                "nodes": [
+                    {"id": "entrance", "name": "入口", "kind": "entrance", "description": "外と内部をつなぐ出入口。"},
+                    {"id": "ore_vein", "name": "青鉄鉱の広間", "kind": "ore_vein", "description": "壁に青い鉱石が走る広間。"},
+                    {"id": "herb_grove", "name": "光苔の薬草群生地", "kind": "herb_grove", "description": "薬草と光苔が群生する湿った空間。"},
+                    {"id": "treasure_room", "name": "古い宝箱の間", "kind": "treasure_room", "description": "古びた宝箱が鎮座する小部屋。"},
+                    {"id": "monster_nest", "name": "魔物の巣", "kind": "monster_nest", "description": "爪痕と獣臭が残る危険な巣穴。"},
+                    {"id": "deepest", "name": "最奥部", "kind": "deepest", "description": "ダンジョンの中核に近い場所。"},
+                ],
+                "edges": [
+                    {"from": "entrance", "to": "ore_vein"},
+                    {"from": "ore_vein", "to": "herb_grove"},
+                    {"from": "herb_grove", "to": "deepest"},
+                    {"from": "ore_vein", "to": "treasure_room"},
+                    {"from": "treasure_room", "to": "monster_nest"},
+                    {"from": "monster_nest", "to": "deepest"},
                 ],
             }
         elif manager_name == "craft_item_generator":
@@ -147,6 +168,29 @@ class FixtureLlmBackend(BaseLlmBackend):
                 "reason": "プレイヤー入力として処理可能です。",
                 "message": "この行動を通常のナレーションへ渡せます。",
                 "suggested_action": "",
+            }
+        elif manager_name == "check_action_feasibility":
+            action = _extract_action(user_text) or user_text
+            impossible = (
+                "50000" in action
+                or "超現象" in action
+                or "いきなり死" in action
+                or "突然死" in action
+                or "instant kill" in action.lower()
+            )
+            content = {
+                "action_possible": not impossible,
+                "reason": (
+                    "因果や手段なしに大金や敵の死亡を発生させる入力です。"
+                    if impossible
+                    else "現在の状況で試みることはできます。"
+                ),
+                "message": (
+                    "そのようなことはできない。世界内の手段や因果に沿った行動を選んでください。"
+                    if impossible
+                    else "この行動は通常進行へ渡せます。"
+                ),
+                "suggested_action": "" if not impossible else "周囲を調べ、実際に使える手段を探す",
             }
         elif manager_name == "create_story":
             content = {
@@ -219,14 +263,28 @@ class FixtureLlmBackend(BaseLlmBackend):
                 "quests": [
                     {
                         "name": "消えた隊商",
+                        "quest_type": "investigate",
                         "overview": "最後に灯守りの宿を出た隊商の足取りを追う。",
                         "neighboring_settlement": "灯守りの宿",
+                        "destination_hint": {
+                            "location_kind": "wilderness",
+                            "anchor_kind": "road",
+                            "objective_subnode_name": "隊商の痕跡",
+                            "objective_description": "街道近くの森に残された車輪跡と破れた荷布。",
+                        },
                         "choices": ["掲示板を確認する", "馬丁に話を聞く"],
                     },
                     {
                         "name": "古井戸の光",
+                        "quest_type": "investigate",
                         "overview": "雨の夜に古井戸の底で揺れる青い光を調べる。",
                         "neighboring_settlement": "灯守りの宿",
+                        "destination_hint": {
+                            "location_kind": "dungeon",
+                            "anchor_kind": "road",
+                            "objective_subnode_name": "青い光の源",
+                            "objective_description": "井戸の地下通路の奥で揺れる青白い光。",
+                        },
                         "choices": ["古井戸を覗く", "礼拝所で話を聞く"],
                     },
                 ]
@@ -247,6 +305,19 @@ class FixtureLlmBackend(BaseLlmBackend):
                 },
                 "choices": ["炉番のレナに話しかける", "品物を見る", "街の地図を見る"],
             }
+        elif manager_name == "home_construction_evaluator":
+            unusable = any(word in user_text for word in ("食料", "飲料", "紙切れ", "花"))
+            content = {
+                "usable": not unusable,
+                "reason": "fixture home construction material check",
+                "narration": (
+                    "その品は家の建材としては頼りなく、建築には使えなかった。"
+                    if unusable
+                    else "あなたは素材を加工し、家の骨組みと作業家具を少しずつ整えた。"
+                ),
+                "furniture_level_gain": 0 if unusable else 2,
+                "consume_item": not unusable,
+            }
         elif manager_name == "quest_starter":
             quest_name = _extract_quest_name(user_text) or "消えた隊商"
             if "救難" in quest_name:
@@ -262,8 +333,10 @@ class FixtureLlmBackend(BaseLlmBackend):
                     "quest_name": quest_name,
                     "objective": "隊商が最後に通った道を調べる。",
                     "location": "灯守りの宿",
+                    "destination_location": "灯守りの宿近くの森",
+                    "objective_subnode_name": "隊商の痕跡",
                     "narration": "掲示板の依頼札は雨で滲んでいる。隊商は三日前、硝子森へ向かったまま戻っていない。",
-                    "choices": ["掲示板を読む", "馬丁に話を聞く", "硝子森へ向かう"],
+                    "choices": ["掲示板を読む", "馬丁に話を聞く", "灯守りの宿近くの森へ向かう"],
                 }
         elif manager_name == "field_event_evaluator":
             action = _extract_action(user_text) or "周辺を探索する"
@@ -289,6 +362,37 @@ class FixtureLlmBackend(BaseLlmBackend):
                 },
                 "choices": ["地下門へ近づく", "声に返事をする", "宿へ戻る"],
             }
+        elif manager_name == "quest_objective_npc_designer":
+            role_match = re.search(r'"objective_role"\s*:\s*"([^"]+)"', user_text)
+            objective_role = role_match.group(1) if role_match else ""
+            if objective_role == "blocker":
+                content = {
+                    "name": "森蔦の拘束者",
+                    "display_alias": "さらった者",
+                    "role_label": "妨害者",
+                    "description": "依頼の目的地に潜み、救出対象の退路を塞ぐ魔物。",
+                    "personality": "獲物を逃がさず、侵入者には敵意を見せる。",
+                    "look": "暗い森に溶ける緑黒い体と、絡みつく蔦のような腕を持つ。",
+                    "species": "魔物",
+                    "category": "quest_objective",
+                    "hostile": True,
+                    "image_prompt": "fantasy monster, forest captor, vine-like arms",
+                    "aliases": ["拘束者", "妨害者"],
+                }
+            else:
+                content = {
+                    "name": "攫われた娘",
+                    "display_alias": "町娘",
+                    "role_label": "救出対象",
+                    "description": "依頼主が探している救出対象。恐怖で震えているが、帰還を望んでいる。",
+                    "personality": "怯えているが、助けを求める意志は残っている。",
+                    "look": "旅装の乱れた若い町娘。",
+                    "species": "人間",
+                    "category": "quest_objective",
+                    "hostile": False,
+                    "image_prompt": "fantasy rescued town girl, anxious expression",
+                    "aliases": ["救出対象", "町娘"],
+                }
         elif manager_name == "quest_referee_with_free_action":
             action = _extract_action(user_text) or "手がかりを探す"
             quest_name = _extract_quest_name(user_text)
@@ -340,40 +444,72 @@ class FixtureLlmBackend(BaseLlmBackend):
                     "finished": False,
                     "choices": ["硝子森へ向かう", "宿の主人に報告する"],
                 }
+        elif manager_name == "quest_procurement_checker":
+            match = re.search(r'"item_uuid"\s*:\s*"([^"]+)"', user_text)
+            item_match = re.search(r'"name"\s*:\s*"([^"]+)"', user_text)
+            content = {
+                "accepted": bool(match),
+                "item_uuid": match.group(1) if match else "",
+                "item_name": item_match.group(1) if item_match else "",
+                "reason": "fixture procurement check",
+            }
         elif manager_name == "master_ai_facilitator":
             action = _extract_action(user_text) or "状況を見る"
-            no_recipients = "整理" in action or "考える" in action
-            content = {
-                "content_violation": False,
-                "think": "現在地、直近ログ、プレイヤー入力を照合し、通常進行として扱う。",
-                "narration": (
-                    "あなたは一度足を止め、雨音と宿場のざわめきの中で手がかりを整理した。"
-                    if no_recipients
-                    else "宿の主人ミラは、赤い印が硝子森へ続く古道を示しているのではないかと低い声で告げた。"
-                ),
-                "process": [
-                    {"step": "入力解釈", "result": f"プレイヤー行動「{action}」を通常進行として処理する"},
-                    {
-                        "step": "進行更新",
-                        "result": "次の行動候補を会話、掲示板確認、探索に整理する",
-                    },
-                ],
-                "finished": False,
-                "location": "灯守りの宿",
-                "recipients": [] if no_recipients else ["ミラ"],
-                "new_npc_requests": (
-                    [
+            if any(word in action for word in ("ゲームオーバー", "死ぬ", "破滅する")):
+                content = {
+                    "content_violation": False,
+                    "think": "プレイヤー行動の結果が確定的な冒険終了に至る。",
+                    "narration": "あなたの選択は取り返しのつかない結末を招き、冒険はそこで途切れた。",
+                    "process": [{"step": "ゲームオーバー判定", "result": "確定的な冒険終了"}],
+                    "finished": True,
+                    "game_over": True,
+                    "game_over_reason": "プレイヤー行動の結果が確定的なゲームオーバーになったため。",
+                    "choices": ["ゲームオーバー"],
+                }
+            elif any(word in action for word in ("数日", "三日", "3日", "滞在", "長く休む")):
+                content = {
+                    "content_violation": False,
+                    "think": "長い時間を過ごす行動として扱う。",
+                    "narration": "あなたはしばらく腰を落ち着け、数日を準備と休息に費やした。",
+                    "process": [{"step": "時間経過", "result": "長期滞在として72時間進める"}],
+                    "finished": False,
+                    "long_time_passage_hours": 72,
+                    "time_reason": "長期滞在",
+                    "choices": ["周囲を見る", "出発する"],
+                }
+            else:
+                no_recipients = "整理" in action or "考える" in action
+                content = {
+                    "content_violation": False,
+                    "think": "現在地、直近ログ、プレイヤー入力を照合し、通常進行として扱う。",
+                    "narration": (
+                        "あなたは一度足を止め、雨音と宿場のざわめきの中で手がかりを整理した。"
+                        if no_recipients
+                        else "宿の主人ミラは、赤い印が硝子森へ続く古道を示しているのではないかと低い声で告げた。"
+                    ),
+                    "process": [
+                        {"step": "入力解釈", "result": f"プレイヤー行動「{action}」を通常進行として処理する"},
                         {
-                            "role": "巡回薬師",
-                            "reason": "状況整理の中で、雨夜の古道に詳しい通りすがりのNPCが必要になった。",
-                            "location": "灯守りの宿",
-                        }
-                    ]
-                    if no_recipients
-                    else []
-                ),
-                "choices": ["赤い印について聞く", "掲示板を見る", "周辺を探索する"],
-            }
+                            "step": "進行更新",
+                            "result": "次の行動候補を会話、掲示板確認、探索に整理する",
+                        },
+                    ],
+                    "finished": False,
+                    "location": "灯守りの宿",
+                    "recipients": [] if no_recipients else ["ミラ"],
+                    "new_npc_requests": (
+                        [
+                            {
+                                "role": "巡回薬師",
+                                "reason": "状況整理の中で、雨夜の古道に詳しい通りすがりのNPCが必要になった。",
+                                "location": "灯守りの宿",
+                            }
+                        ]
+                        if no_recipients
+                        else []
+                    ),
+                    "choices": ["赤い印について聞く", "掲示板を見る", "周辺を探索する"],
+                }
         elif manager_name == "master_ai_process_summarizer":
             content = {
                 "summary": "ミラは赤い印が硝子森へ続く古道を示す可能性を伝えた。",
@@ -485,6 +621,62 @@ class FixtureLlmBackend(BaseLlmBackend):
                 "finished": True,
                 "choices": ["掲示板を見る", "周辺を探索する", "宿の外へ出る"],
             }
+        elif manager_name == "encounter_target_resolver":
+            action = _extract_action(user_text)
+            target = _extract_fixture_encounter_target(action) or _extract_fixture_encounter_target(user_text) or "未知の魔物"
+            is_tentacle = "触手" in target or "tentacle" in target.lower()
+            content = {
+                "target_name": target,
+                "opponent_type": "character",
+                "category": "tentacle_monster" if is_tentacle else "wild_encounter",
+                "description": (
+                    "水辺や暗がりに潜む、粘液をまとった触手状の魔物。"
+                    if is_tentacle
+                    else f"直近の文脈から戦闘相手として推定された{target}。"
+                ),
+                "traits": (
+                    [{"name": "絡みつく触手", "description": "多数の触手で相手の動きを封じる。"}]
+                    if is_tentacle
+                    else [{"name": "警戒", "description": "不用意に近づいた相手へ反応する。"}]
+                ),
+                "image_generation_prompt": (
+                    ["tentacle monster", "slimy tendrils", "fantasy RPG monster"]
+                    if is_tentacle
+                    else ["fantasy RPG monster", target]
+                ),
+                "confidence": 90 if target != "未知の魔物" else 30,
+                "reason": "プレイヤー行動と一時コンテキストログから戦闘対象を推定した。",
+            }
+        elif manager_name == "hostile_npc_encounter_evaluator":
+            target = _extract_fixture_visible_enemy(user_text) or "敵対者"
+            content = {
+                "narration": f"{target}があなたの気配に気づき、身構えた。",
+                "combat_started": False,
+                "opponent_name": target,
+                "stance": "watching",
+                "choices": ["距離を取る", "武器を構える", "声をかける"],
+                "reason": "Fixture hostile encounter response.",
+            }
+        elif manager_name == "combat_transition_detector":
+            text = user_text.casefold()
+            started = any(word in text for word in ("襲い掛", "襲いかか", "攻撃してき", "飛びかか", "attacks", "attack"))
+            target = _extract_fixture_visible_enemy(user_text) or _extract_fixture_encounter_target(user_text) or ""
+            content = {
+                "combat_started": started,
+                "opponent_name": target,
+                "narration": f"{target or '敵'}との戦闘が始まった。" if started else "",
+                "reason": "Fixture combat transition detector.",
+            }
+        elif manager_name == "context_reference_resolver":
+            action = _extract_action(user_text)
+            target_type, target_name = _extract_fixture_context_reference(user_text, action)
+            content = {
+                "target_type": target_type,
+                "target_name": target_name,
+                "resolved_action": action.replace("あの人", target_name).replace("その人", target_name).replace("その依頼", target_name),
+                "confidence": 80 if target_name else 20,
+                "reason": "fixture: プレイヤー行動と一時コンテキストログから曖昧参照を推定した。",
+            }
         elif manager_name == "referee_player_attack_new_new":
             action = _extract_action(user_text) or "攻撃する"
             target = _extract_referee_target(user_text) or "硝子森の影"
@@ -504,7 +696,7 @@ class FixtureLlmBackend(BaseLlmBackend):
             }
         elif manager_name == "referee_player_any_input_new_new":
             action = _extract_action(user_text) or "様子を見る"
-            surrendering = "降伏" in action or "武器を捨て" in action or "両手" in action
+            surrendering = any(word in action for word in ("降伏", "降参", "屈服", "武器を捨て", "両手", "身を委ね", "服を脱"))
             content = {
                 "intent": "surrender" if surrendering else "free_action",
                 "narration": (
@@ -539,6 +731,7 @@ class FixtureLlmBackend(BaseLlmBackend):
                         "opponent_status": "guarded",
                         "player_status": "surrender_accepted",
                     },
+                    "combat_judgement": {"offensive": False, "weakness_multiplier": 0.0, "reason": "降伏受諾のためHPダメージなし。"},
                     "effects": [{"name": "戦闘停止", "duration": 1}],
                     "finished": True,
                     "should_end_encounter": True,
@@ -550,6 +743,7 @@ class FixtureLlmBackend(BaseLlmBackend):
                     "intent": "self_defense",
                     "target": "Player",
                     "narration": f"{target}は傷ついた輪郭を震わせ、反撃の姿勢を取った。",
+                    "combat_judgement": {"offensive": True, "weakness_multiplier": 1.0, "reason": "通常の反撃。"},
                     "encounter_update": {"opponent_status": "hostile", "player_status": "threatened"},
                     "effects": [{"name": "圧迫", "duration": 1}],
                     "finished": False,
@@ -574,6 +768,11 @@ class FixtureLlmBackend(BaseLlmBackend):
                     if accepting
                     else {"opponent_status": "attacking", "player_status": "under_attack"}
                 ),
+                "combat_judgement": (
+                    {"offensive": False, "weakness_multiplier": 0.0, "reason": "降伏後の警戒でHPダメージなし。"}
+                    if accepting
+                    else {"offensive": True, "weakness_multiplier": 1.0, "reason": "攻撃行動。"}
+                ),
                 "finished": accepting,
                 "rewrite_reason": (
                     "降伏の意思と相手の慎重な性格を反映し、即時攻撃ではなく拘束/警戒に変えた。"
@@ -582,6 +781,35 @@ class FixtureLlmBackend(BaseLlmBackend):
                 ),
                 "choices": ["事情を説明する", "ゆっくり離れる"] if accepting else ["防御する", "反撃する", "降伏する"],
             }
+        elif manager_name == "combat_damage_narrator":
+            payload = _extract_fixture_payload(user_text)
+            result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+            lethal = bool(result.get("lethal"))
+            damage = int(result.get("damage") or 0)
+            actor = str(payload.get("actor") or "攻撃者")
+            target = str(payload.get("target") or "相手")
+            action = str(payload.get("action") or "攻撃")
+            if lethal:
+                narration = f"{actor}は{target}へ{action}を放った。決定的な一撃を受け、{target}はその場で力尽きた。"
+            elif damage <= 2:
+                narration = f"{actor}は{target}へ{action}を試みたが、傷は浅く、体勢を崩す程度に留まった。"
+            else:
+                narration = f"{actor}は{target}へ{action}を繰り出し、確かな手応えとともに傷を負わせた。"
+            content = {"narration": narration}
+        elif manager_name == "combat_heal_narrator":
+            payload = _extract_fixture_payload(user_text)
+            result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+            amount = int(result.get("healing") or 0)
+            actor = str(payload.get("actor") or "術者")
+            target = str(payload.get("target") or actor)
+            action = str(payload.get("skill") or payload.get("action") or "回復")
+            if amount <= 0:
+                narration = f"{actor}は{action}を試みたが、{target}の傷はほとんど癒えなかった。"
+            elif amount <= 5:
+                narration = f"{actor}は{action}を使った。{target}の傷は少しふさがり、呼吸がわずかに落ち着いた。"
+            else:
+                narration = f"{actor}は{action}を使った。温かな光が{target}を包み、傷が目に見えて癒えていく。"
+            content = {"narration": narration}
         elif manager_name == "create_character":
             name = _extract_character_name(user_text) or "ミラ"
             role = _extract_character_role(user_text) or "宿の主人"
@@ -668,10 +896,13 @@ class FixtureLlmBackend(BaseLlmBackend):
                     "single character",
                     "full body",
                     "standing pose",
-                    "plain light background",
+                    "isolated cutout",
+                    "pure white background",
+                    "no scenery",
+                    "no background objects",
                     "detailed outfit",
                 ],
-                "negative_prompt": "low quality, blurry, text, watermark, extra fingers, bad hands",
+                "negative_prompt": "low quality, blurry, text, watermark, extra fingers, bad hands, background objects, wall, pillar",
             }
         elif manager_name == "monster_image_creator":
             name = _extract_monster_name(user_text) or "硝子森の影"
@@ -684,9 +915,12 @@ class FixtureLlmBackend(BaseLlmBackend):
                     "single creature",
                     "full body",
                     "misty shadow beast",
-                    "plain light background",
+                    "isolated cutout",
+                    "pure white background",
+                    "no scenery",
+                    "no background objects",
                 ],
-                "negative_prompt": "low quality, blurry, text, watermark, cropped, extra limbs",
+                "negative_prompt": "low quality, blurry, text, watermark, cropped, extra limbs, background objects, wall, pillar",
             }
         elif manager_name == "background_image_creator":
             content = {
@@ -1367,6 +1601,11 @@ def _extract_json_payload(text: str) -> str:
     return ""
 
 
+def _extract_fixture_payload(text: str) -> dict[str, Any]:
+    parsed = _try_parse_json(_extract_json_payload(text))
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _extract_action(user_text: str) -> str:
     marker = "プレイヤー行動:"
     if marker in user_text:
@@ -1396,6 +1635,81 @@ def _extract_referee_target(user_text: str) -> str:
     if marker in user_text:
         return user_text.split(marker, 1)[-1].splitlines()[0].strip()
     return ""
+
+
+def _extract_fixture_encounter_target(text: str) -> str:
+    source = str(text or "").strip()
+    patterns = (
+        r"([^\s、。,.「」『』（）()\[\]{}:：]{1,30})(?:と|との)(?:戦い|戦闘|バトル|決闘)(?:を)?(?:始め|開始|する|行う)?",
+        r"([^\s、。,.「」『』（）()\[\]{}:：]{1,30})(?:に|へ|を)(?:攻撃|斬|撃|殴|刺|襲)",
+        r"(?:不意打ち|奇襲|先制攻撃|先制)(?:で|に|から)?([^\s、。,.「」『』（）()\[\]{}:：]{1,30})(?:を|に|へ)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, source)
+        if match:
+            value = str(match.group(1) or "").strip("「」[] ")
+            if value:
+                return value
+    return ""
+
+
+def _extract_fixture_visible_enemy(text: str) -> str:
+    source = str(text or "")
+    parsed = _try_parse_json(_extract_json_payload(source))
+    if isinstance(parsed, dict):
+        context = parsed.get("arrival_context") or parsed.get("context") or {}
+        if isinstance(context, dict):
+            hostile_npcs = context.get("hostile_npcs")
+            if isinstance(hostile_npcs, list):
+                for item in hostile_npcs:
+                    if isinstance(item, dict):
+                        name = str(item.get("name") or "").strip()
+                        if name:
+                            return name
+    for key in ("name", "opponent_name", "target_name"):
+        match = re.search(rf'"{key}"\s*:\s*"([^"]+)"', source)
+        if match:
+            return match.group(1)
+    return ""
+
+
+def _extract_fixture_context_reference(user_text: str, action: str) -> tuple[str, str]:
+    allowed = _extract_fixture_allowed_types(user_text)
+    source = str(user_text or "")
+    if "quest" in allowed:
+        for name in ("消えた隊商", "古井戸の光", "霧中の救難声"):
+            if name in source:
+                return "quest", name
+    if "character" in allowed:
+        for name in ("ミラ", "レナ", "ヨハン", "ガストン", "エリン", "マルタ"):
+            if name in source:
+                return "character", name
+        match = re.search(r'"visible_characters"\s*:\s*\[[\s\S]*?"name"\s*:\s*"([^"]+)"', source)
+        if match:
+            return "character", match.group(1)
+            if "character" in allowed or "monster" in allowed:
+                target = _extract_fixture_encounter_target(action) or _extract_fixture_encounter_target(source)
+                if target:
+                    return "character", target
+    if "location" in allowed:
+        match = re.search(r'"current_location"\s*:\s*"([^"]+)"', source)
+        if match and any(word in action for word in ("そこ", "その場所", "さっきの場所", "戻る")):
+            return "location", match.group(1)
+    return "unknown", ""
+
+
+def _extract_fixture_allowed_types(user_text: str) -> set[str]:
+    marker = "許可対象種別:"
+    if marker not in user_text:
+        return {"character", "monster", "location", "quest", "facility", "item", "action", "unknown"}
+    line = user_text.split(marker, 1)[-1].splitlines()[0].strip()
+    try:
+        parsed = json.loads(line)
+    except Exception:
+        parsed = []
+    if isinstance(parsed, list):
+        return {str(item).strip().casefold() for item in parsed if str(item).strip()}
+    return {str(parsed).strip().casefold()} if str(parsed).strip() else {"unknown"}
 
 
 def _extract_character_name(user_text: str) -> str:

@@ -25,6 +25,7 @@ $runtimeRoot = Join-Path $publishRoot ".fantasia_runtime"
 $configPath = Join-Path $root "config.json"
 $playGuideSource = Join-Path $root "docs\PLAY_GUIDE.txt"
 $dllLicenseSource = Join-Path $root "docs\DLL_LICENSES.txt"
+$updateSource = Join-Path $root "docs\update.md"
 $iconSource = Join-Path $root "docs\icon.png"
 $iconPath = Join-Path (Join-Path $root "build\icon") "Fantasia.ico"
 
@@ -155,6 +156,7 @@ try {
         "--output-filename=fantasia.exe",
         "--include-data-files=$root\config.json=config.json",
         "--include-data-files=$root\docs\icon.png=docs/icon.png",
+        "--include-data-files=$root\docs\update.md=docs/update.md",
         "--include-data-dir=$root\assets=assets"
     )
     if ($hasIcon) {
@@ -204,6 +206,11 @@ if (Test-Path $playGuideSource) {
 $dllLicenseTarget = Join-Path $publishRoot "DLL_LICENSES.txt"
 if (Test-Path $dllLicenseSource) {
     Copy-Item -LiteralPath $dllLicenseSource -Destination $dllLicenseTarget -Force
+}
+
+$updateTarget = Join-Path $publishRoot "update.md"
+if (Test-Path $updateSource) {
+    Copy-Item -LiteralPath $updateSource -Destination $updateTarget -Force
 }
 
 Write-Host "Built publish folder: $publishRoot"

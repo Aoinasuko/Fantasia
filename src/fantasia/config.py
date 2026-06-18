@@ -92,6 +92,10 @@ class AppConfig:
             return "en"
         return "ja"
 
+    @property
+    def allow_any_action_concept(self) -> bool:
+        return bool(self.ui_setting.get("allow_any_action_concept", False))
+
 
 def load_config(path: Path = CONFIG_PATH) -> AppConfig:
     with path.open("r", encoding="utf-8") as handle:

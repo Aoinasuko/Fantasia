@@ -95,7 +95,6 @@ class SaveStore:
         world_folder = self.world_dir(world.world_name)
         (world_folder / "backgrounds").mkdir(parents=True, exist_ok=True)
         (world_folder / "characters").mkdir(parents=True, exist_ok=True)
-        (world_folder / "monsters").mkdir(parents=True, exist_ok=True)
         (world_folder / "cgs").mkdir(parents=True, exist_ok=True)
         path = world_folder / "world_data.json"
         _write_json(path, world.to_dict())
@@ -275,22 +274,6 @@ class SaveStore:
         _write_generation_metadata(folder, prompts)
         return target
 
-    def save_monster_asset(
-        self,
-        world_name: str,
-        monster_name: str,
-        image_path: Path,
-        image_name: str,
-        prompts: dict[str, Any],
-    ) -> Path:
-        folder = self.world_dir(world_name) / "monsters" / _safe_segment(monster_name)
-        folder.mkdir(parents=True, exist_ok=True)
-        target = folder / image_name
-        _copy_if_needed(Path(image_path), target)
-        _write_json(folder / "prompts.json", prompts)
-        _write_generation_metadata(folder, prompts)
-        return target
-
     def save_cg_asset(
         self,
         world_name: str,
@@ -340,7 +323,6 @@ class SaveStore:
         target_folder.mkdir(parents=True, exist_ok=True)
         (target_folder / "backgrounds").mkdir(exist_ok=True)
         (target_folder / "characters").mkdir(exist_ok=True)
-        (target_folder / "monsters").mkdir(exist_ok=True)
         (target_folder / "cgs").mkdir(exist_ok=True)
         return WorldImportResult(
             world=world,
@@ -435,7 +417,7 @@ def _world_from_json_payload(data: dict[str, Any], source: Path) -> WorldData:
 
 
 def _copy_world_assets_from_directory(source: Path, target: Path) -> None:
-    for item_name in ("backgrounds", "characters", "monsters", "cgs"):
+    for item_name in ("backgrounds", "characters", "cgs"):
         source_item = source / item_name
         if not source_item.exists():
             continue
@@ -459,7 +441,7 @@ def _copy_world_assets_from_zip(path: Path, world_member: str, target: Path) -> 
             rel = _zip_world_relative_path(info.filename, world_prefix)
             if rel is None or rel.as_posix() == "world_data.json":
                 continue
-            if rel.parts[0] not in {"backgrounds", "characters", "monsters", "cgs"}:
+            if rel.parts[0] not in {"backgrounds", "characters", "cgs"}:
                 continue
             target_path = _safe_join(target, rel.parts)
             target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -538,11 +520,6 @@ def _rebase_world_asset_paths(world: WorldData, world_folder: Path) -> None:
     for character in world.characters.values():
         folder = world_folder / "characters" / _safe_segment(character.name)
         _rebase_image_map(character.image_paths, folder)
-
-    for monster in world.monsters.values():
-        folder = world_folder / "monsters" / _safe_segment(monster.name)
-        _rebase_image_map(monster.image_paths, folder)
-
 
 def _rebase_image_map(image_paths: dict[str, str], folder: Path) -> None:
     for key, value in list(image_paths.items()):

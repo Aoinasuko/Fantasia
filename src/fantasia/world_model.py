@@ -56,6 +56,8 @@ class CharacterData:
     max_hp: int = 0
     current_sp: int = 0
     max_sp: int = 0
+    attack: int = 0
+    defense: int = 0
     attributes: dict[str, int] = field(default_factory=dict)
     gender: str = ""
     age: str = ""
@@ -83,6 +85,8 @@ class CharacterData:
         kwargs["max_hp"] = max(0, _as_int(kwargs.get("max_hp"), 0))
         kwargs["current_sp"] = max(0, _as_int(kwargs.get("current_sp"), 0))
         kwargs["max_sp"] = max(0, _as_int(kwargs.get("max_sp"), 0))
+        kwargs["attack"] = max(0, _as_int(kwargs.get("attack"), 0))
+        kwargs["defense"] = max(0, _as_int(kwargs.get("defense"), 0))
         kwargs["attributes"] = _int_dict(kwargs.get("attributes"))
         kwargs["image_generation_prompt"] = _as_list(kwargs.get("image_generation_prompt"))
         kwargs["traits"] = _as_list(kwargs.get("traits"))
@@ -94,37 +98,6 @@ class CharacterData:
         kwargs["flags"] = _as_dict(kwargs.get("flags"))
         kwargs["extra"] = _as_dict(kwargs.get("extra"))
         kwargs["gold"] = int(kwargs.get("gold") or 0)
-        return cls(**kwargs)
-
-    def to_dict(self) -> dict[str, Any]:
-        return dataclass_to_dict(self)
-
-
-@dataclass
-class MonsterData:
-    name: str = "unknown"
-    category: str = ""
-    location: str = ""
-    state: str = "present"
-    description: str = ""
-    traits: list[dict[str, Any]] = field(default_factory=list)
-    skills: list[dict[str, Any]] = field(default_factory=list)
-    status_effects: list[dict[str, Any]] = field(default_factory=list)
-    image_paths: dict[str, str] = field(default_factory=dict)
-    prompts: dict[str, Any] = field(default_factory=dict)
-    flags: dict[str, Any] = field(default_factory=dict)
-    extra: dict[str, Any] = field(default_factory=dict)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], default_name: str = "unknown") -> "MonsterData":
-        kwargs = _known_kwargs(cls, data)
-        kwargs["name"] = str(kwargs.get("name") or default_name)
-        kwargs["traits"] = _as_list(kwargs.get("traits"))
-        kwargs["skills"] = _as_list(kwargs.get("skills"))
-        kwargs["status_effects"] = _as_list(kwargs.get("status_effects"))
-        kwargs["image_paths"] = _as_dict(kwargs.get("image_paths"))
-        kwargs["prompts"] = _as_dict(kwargs.get("prompts"))
-        kwargs["flags"] = _as_dict(kwargs.get("flags"))
         return cls(**kwargs)
 
     def to_dict(self) -> dict[str, Any]:
@@ -168,7 +141,6 @@ class WorldData:
     starting_location: str = "unknown"
     locations: dict[str, LocationData] = field(default_factory=dict)
     characters: dict[str, CharacterData] = field(default_factory=dict)
-    monsters: dict[str, MonsterData] = field(default_factory=dict)
     quests: list[QuestData] = field(default_factory=list)
     flags: dict[str, Any] = field(default_factory=dict)
     history: list[dict[str, Any]] = field(default_factory=list)
@@ -213,10 +185,10 @@ class WorldData:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "WorldData":
+        data = {key: value for key, value in data.items() if key != "monsters"}
         kwargs = _known_kwargs(cls, data)
         kwargs["locations"] = _location_map(kwargs.get("locations"))
         kwargs["characters"] = _character_map(kwargs.get("characters"))
-        kwargs["monsters"] = _monster_map(kwargs.get("monsters"))
         kwargs["quests"] = _quest_list(kwargs.get("quests"))
         kwargs["flags"] = _as_dict(kwargs.get("flags"))
         kwargs["history"] = _as_list(kwargs.get("history"))
@@ -397,23 +369,6 @@ def _character_map(value: Any) -> dict[str, CharacterData]:
             if isinstance(item, dict):
                 character = CharacterData.from_dict(item, f"Character {index + 1}")
                 result[character.name] = character
-        return result
-    return {}
-
-
-def _monster_map(value: Any) -> dict[str, MonsterData]:
-    if isinstance(value, dict):
-        return {
-            str(key): item if isinstance(item, MonsterData) else MonsterData.from_dict(item, str(key))
-            for key, item in value.items()
-            if isinstance(item, (dict, MonsterData))
-        }
-    if isinstance(value, list):
-        result: dict[str, MonsterData] = {}
-        for index, item in enumerate(value):
-            if isinstance(item, dict):
-                monster = MonsterData.from_dict(item, f"Monster {index + 1}")
-                result[monster.name] = monster
         return result
     return {}
 
