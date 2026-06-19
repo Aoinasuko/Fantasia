@@ -6,9 +6,16 @@ import random
 import re
 import uuid
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 from .i18n import ELEMENT_IDS, tr_enum
+from .status_effects import (
+    STATUS_IMMUNITY_EFFECT_IDS,
+    canonical_status_effect_id,
+    status_effect_label,
+)
+from .paths import ITEM_TEMPLATE_DIR, ROOT
 
 
 RARITY_ORDER = ("common", "uncommon", "rare", "epic", "legendary", "artifact")
@@ -43,6 +50,23 @@ RARITY_VALUE_MULTIPLIER = {
     "epic": 2.0,
     "legendary": 3.0,
     "artifact": 5.0,
+}
+RARITY_POWER_MULTIPLIER = {
+    "common": 1.0,
+    "uncommon": 1.2,
+    "rare": 1.5,
+    "epic": 2.0,
+    "legendary": 2.5,
+    "artifact": 3.0,
+}
+ITEM_USE_EFFECTS = {
+    "None",
+    "HP_Heal",
+    "SP_Heal",
+    "SP_Damage",
+    "HP_Damage",
+    "Hunger_Heal",
+    "Send_LLM",
 }
 ITEM_VALUE_VARIANCE_MIN = 0.95
 ITEM_VALUE_VARIANCE_MAX = 1.05
@@ -238,174 +262,93 @@ CATEGORY_BASE_VALUE = {
     "accessory_amulet": 35,
 }
 
-ITEM_TEMPLATES = {
-    "food": [
-        ("干し肉", "旅で食べやすい保存食。", 5),
-        ("黒パン", "腹持ちのよい素朴なパン。", 10),
-        ("焼き菓子", "甘く焼き固めた携帯食。", 15),
-    ],
-    "drink": [
-        ("水袋", "きれいな水を入れた革袋。", 5),
-        ("薬草茶", "体を温める香りのよい茶。", 10),
-        ("小瓶のエール", "短い休憩に向いた軽い酒。", 15),
-    ],
-    "medicine": [
-        ("止血薬", "浅い傷の出血を止める薬。", 15),
-        ("解毒薬", "毒やしびれを和らげる薬。", 20),
-        ("鎮痛軟膏", "痛みと腫れを抑える軟膏。", 20),
-    ],
-    "potion": [
-        ("治癒のポーション", "HPを回復する赤いポーション。", 30),
-        ("活力のポーション", "SPを回復する青いポーション。", 30),
-        ("精神集中のポーション", "集中力を整える澄んだポーション。", 30),
-    ],
-    "tool": [
-        ("ロープ", "登攀や固定に使える丈夫な縄。", 10),
-        ("ランタン", "暗所を照らす携帯灯。", 20),
-        ("探索用ナイフ", "採取や簡単な作業に使える小刀。", 15),
-    ],
-    "document": [
-        ("古い地図", "周辺の地形が大まかに描かれた地図。", 20),
-        ("依頼書の写し", "依頼の要点がまとめられた紙。", 10),
-        ("旅人の日誌", "道中の噂と記録が書かれた日誌。", 15),
-        ("宝の地図", "恐らく宝のありかが書かれた地図。", 100),
-    ],
-    "scroll": [
-        ("汎用の巻物", "弱いながらもある程度任意の魔法を引き出せる巻物。", 20),
-        ("火花の巻物", "小さな炎を呼ぶ使い捨ての巻物。", 30),
-        ("解錠の巻物", "単純な鍵や封印に働きかける巻物。", 30),
-        ("防護の巻物", "一時的な守りを与える巻物。", 50),
-    ],
-    "magicrod": [
-        ("火球の魔法杖", "相手に向かって火球を発射できる短い杖。", 50),
-        ("癒しの魔法杖", "使用者を癒すことが出来る杖。", 70),
-        ("鑑定の魔法杖", "よくわからない物を鑑定することが出来る杖。", 30),
-    ],
-    "material_common": [
-        ("丈夫な糸", "修理や裁縫に使える汎用素材。", 5),
-        ("獣骨片", "加工しやすい小さな骨片。", 10),
-        ("加工木材", "乾燥させて整えた木材。", 15),
-    ],
-    "material_liquid": [
-        ("澄んだ油", "灯りや調合に使える油。", 10),
-        ("薬草エキス", "薬効成分を抽出した液体。", 15),
-        ("魔力インク", "巻物や術式に使う淡く光るインク。", 20),
-    ],
-    "material_plant": [
-        ("薬草", "薬の材料になる野草。", 10),
-        ("香草", "食事や薬に香りを加える草。", 15),
-        ("月光花", "夜に淡く光る希少な花。", 20),
-    ],
-    "material_ore": [
-        ("銅鉱石", "加工しやすい赤みのある鉱石。", 5),
-        ("鉄鉱石", "武具の材料になる鉱石。", 10),
-        ("金鉱石", "装飾品にも使われる鉱石。", 15),
-        ("銀鉱石", "装飾品にも使われる鉱石。", 15),
-        ("黒曜石片", "鋭く割れる黒い石片。", 20),
-        ("金剛石片", "非常に丈夫な石片。", 30),
-    ],
-    "material_metal": [
-        ("銅インゴット", "鍛冶に使う精錬済みの金属。", 10),
-        ("鉄インゴット", "鍛冶に使う精錬済みの金属。", 20),
-        ("金インゴット", "魔術品にも使われる銀の塊。", 30),
-        ("銀インゴット", "魔術品にも使われる銀の塊。", 30),
-        ("強化金属片", "武具を強化できる金属片。", 50),
-    ],
-    "material_gem": [
-        ("水晶片", "魔力を通しやすい透明な欠片。", 35),
-        ("サファイア原石", "青く輝く未加工の宝石。", 60),
-        ("ルビー原石", "赤く輝く未加工の宝石。", 60),
-    ],
-    "material_creature": [
-        ("魔物の爪", "武具や薬の材料になる鋭い爪。", 10),
-        ("獣皮", "防具や服の素材になる皮。", 10),
-        ("透明な翅", "薄く魔力を帯びた生物素材。", 20),
-    ],
-    "material_magical": [
-        ("魔力粉", "術式の触媒になる細かな粉。", 20),
-        ("精霊の雫", "自然魔力を宿した液状の結晶。", 40),
-    ],
-    "junk": [
-        ("錆びた釘", "売るか素材にする程度の古い釘。", 2),
-        ("割れた陶片", "何かの器だった陶器の破片。", 2),
-        ("壊れた歯車", "修理すれば使えるかもしれない部品。", 4),
-    ],
-    "treasure": [
-        ("古貨幣", "今では使われていない古い貨幣。", 40),
-        ("銀の杯", "細工の入った価値ある杯。", 60),
-        ("宝石細工の箱", "小粒の宝石で飾られた箱。", 80),
-    ],
-    "relic": [
-        ("祈りの小像", "古い信仰に使われた小さな像。", 100),
-        ("古代の腕輪", "失われた意匠の腕輪。", 150),
-        ("失われた紋章", "由来の分からない紋章片。", 200),
-    ],
-    "weapon_small": [
-        ("短剣", "取り回しのよい小型武器。", 30),
-        ("小型斧", "片手で扱える小さな斧。", 40),
-    ],
-    "weapon_medium": [
-        ("鉄の剣", "標準的な片手剣。", 45),
-        ("戦槌", "鎧越しに衝撃を通す鈍器。", 50),
-        ("曲刀", "斬りつけに向いた湾曲した剣。", 60),
-    ],
-    "weapon_large": [
-        ("大剣", "両手で振るう重い剣。", 70),
-        ("戦斧", "破壊力のある大型斧。", 75),
-        ("重槌", "強烈な打撃を与える大槌。", 75),
-    ],
-    "weapon_long": [
-        ("槍", "間合いを取って突く長武器。", 55),
-        ("薙刀", "斬撃にも突きにも使える長柄武器。", 60),
-        ("長柄斧", "遠い間合いから振るう斧。", 60),
-    ],
-    "weapon_range": [
-        ("投石袋", "投げるのにちょうどいい石が詰まった袋。", 10),
-        ("弓", "離れた相手を狙える遠距離武器。", 50),
-        ("クロスボウ", "強い弦で矢を撃ち出す武器。", 60),
-        ("投げナイフ束", "複数本を束ねた投擲武器。", 40),
-    ],
-    "armor_shield": [
-        ("丸盾", "扱いやすい標準的な盾。", 35),
-        ("鉄盾", "重いが頼れる金属盾。", 50),
-        ("祈祷盾", "簡単な護符を刻んだ盾。", 80),
-    ],
-    "armor_head": [
-        ("革帽子", "軽く頭を守る帽子。", 20),
-        ("鉄兜", "頑丈な金属製の兜。", 30),
-        ("魔除けの頭巾", "不吉な力を避ける刺繍入りの頭巾。", 40),
-    ],
-    "armor_body": [
-        ("革鎧", "動きやすい胴防具。", 55),
-        ("鎖帷子", "刃を受け流す金属鎧。", 65),
-        ("鉄胸甲", "胴をしっかり守る胸当て。", 75),
-    ],
-    "armor_arm": [
-        ("革手袋", "手を守る厚手の手袋。", 20),
-        ("鉄籠手", "前腕まで覆う金属防具。", 35),
-        ("祈りの籠手", "守りの祈りが刻まれた腕防具。", 45),
-    ],
-    "armor_leg": [
-        ("革ブーツ", "旅に向いた丈夫なブーツ。", 20),
-        ("鉄脚甲", "脚を守る金属防具。", 40),
-        ("旅人の脚絆", "長旅で足を支える布防具。", 50),
-    ],
-    "armor_cloth": [
-        ("旅人の服", "動きやすく丈夫な服。", 15),
-        ("厚手の外套", "寒さと小傷を防ぐ外套。", 30),
-        ("魔術師のローブ", "術式の集中を助ける衣。", 45),
-    ],
-    "accessory_ring": [
-        ("銀の指輪", "簡素な銀製の指輪。", 35),
-        ("守りの指輪", "小さな守護紋を刻んだ指輪。", 55),
-        ("火除けの指輪", "熱を遠ざける赤石付きの指輪。", 70),
-    ],
-    "accessory_amulet": [
-        ("旅人の護符", "旅の安全を願った護符。", 35),
-        ("聖印の首飾り", "祈りの印を下げた首飾り。", 55),
-        ("黒曜石の護符", "闇や呪いを避けるとされる護符。", 70),
-    ],
-}
+ITEM_TEMPLATE_LOAD_ERRORS: list[str] = []
+
+
+def _template_dirs() -> list[Path]:
+    candidates = [ITEM_TEMPLATE_DIR, ROOT / "Data" / "Template" / "Item"]
+    result: list[Path] = []
+    for candidate in candidates:
+        if candidate not in result:
+            result.append(candidate)
+    return result
+
+
+def _template_int(value: Any, default: int = 0) -> int:
+    try:
+        if value is None or value == "":
+            return default
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _template_category(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    return text if text in ITEM_CATEGORY_IDS else ""
+
+
+def _template_use_effect(value: Any) -> str:
+    text = str(value or "None").strip()
+    if not text:
+        return "None"
+    lowered = text.lower()
+    for effect in ITEM_USE_EFFECTS:
+        if lowered == effect.lower():
+            return effect
+    return "None"
+
+
+def _normalise_item_template(raw: Any, source_path: Path) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    category = _template_category(raw.get("category"))
+    name = str(raw.get("name") or "").strip()
+    if not category or not name:
+        return None
+    value = _template_int(raw.get("value"), CATEGORY_BASE_VALUE.get(category, 5))
+    level = max(0, _template_int(raw.get("level"), 0))
+    power = max(0, _template_int(raw.get("power"), 0))
+    desc = str(raw.get("desc") or raw.get("description") or "").strip()
+    return {
+        "name": name,
+        "category": category,
+        "level": level,
+        "value": max(0, value),
+        "desc": desc,
+        "description": desc,
+        "use_effect": _template_use_effect(raw.get("use_effect")),
+        "power": power,
+        "send_llm": str(raw.get("send_llm") or "").strip(),
+        "element": str(raw.get("element") or "").strip(),
+        "source_path": str(source_path),
+    }
+
+
+def _load_item_templates() -> dict[str, list[dict[str, Any]]]:
+    loaded: dict[str, list[dict[str, Any]]] = {category: [] for category in ITEM_CATEGORY_IDS}
+    ITEM_TEMPLATE_LOAD_ERRORS.clear()
+    for directory in _template_dirs():
+        if not directory.exists():
+            continue
+        for template_path in sorted(directory.glob("*.json")):
+            try:
+                raw_items = json.loads(template_path.read_text(encoding="utf-8-sig"))
+            except Exception as exc:
+                ITEM_TEMPLATE_LOAD_ERRORS.append(f"{template_path}: {exc}")
+                continue
+            if not isinstance(raw_items, list):
+                ITEM_TEMPLATE_LOAD_ERRORS.append(f"{template_path}: root must be a JSON array")
+                continue
+            for raw in raw_items:
+                template = _normalise_item_template(raw, template_path)
+                if template is None:
+                    continue
+                loaded.setdefault(str(template["category"]), []).append(template)
+    return {category: values for category, values in loaded.items() if values}
+
+
+ITEM_TEMPLATES = _load_item_templates()
 
 LOOT_PROFILES = {
     "settlement": [("food", 4), ("drink", 2), ("tool", 3), ("junk", 4), ("document", 2), ("treasure", 1)],
@@ -526,21 +469,24 @@ def starter_items() -> list[dict[str, Any]]:
     ]
 
 
-def generate_loot_items(location_name: str, context: str = "", count: int | None = None) -> list[dict[str, Any]]:
+def generate_loot_items(location_name: str, context: str = "", count: int | None = None, danger_level: int = 0) -> list[dict[str, Any]]:
     profile_name = _loot_profile_name(f"{location_name} {context}")
     profile = LOOT_PROFILES[profile_name]
     rng = _rng("loot", location_name, context, profile_name)
     item_count = count if count is not None else rng.randint(2, 4)
-    return [_random_item(profile, rng, source="loot", context=location_name) for _ in range(max(1, item_count))]
+    return [
+        _random_item(profile, rng, source="loot", context=location_name, danger_level=danger_level)
+        for _ in range(max(1, item_count))
+    ]
 
 
-def generate_vendor_items(owner_name: str, context: str = "", count: int | None = None) -> list[dict[str, Any]]:
+def generate_vendor_items(owner_name: str, context: str = "", count: int | None = None, danger_level: int = 0) -> list[dict[str, Any]]:
     profile_name = _vendor_profile_name(f"{owner_name} {context}")
     profile = VENDOR_PROFILES.get(profile_name, VENDOR_PROFILES["general"])
     rng = _rng("vendor", owner_name, context, profile_name)
     item_count = count if count is not None else rng.randint(5, 8)
     return [
-        _random_item(profile, rng, source="vendor", context=owner_name, rarity_profile=profile_name)
+        _random_item(profile, rng, source="vendor", context=owner_name, rarity_profile=profile_name, danger_level=danger_level)
         for _ in range(max(1, item_count))
     ]
 
@@ -559,8 +505,11 @@ def make_item(
     category = normalise_category(category)
     rarity = normalise_rarity(rarity)
     cleaned_name = _clean_item_name(name, "")
-    template_name, template_description, template_value = _template_for(category, cleaned_name or None)
-    item_name = cleaned_name or str(template_name)
+    template = _template_for(category, cleaned_name or None)
+    item_name = cleaned_name or str(template.get("name") or CATEGORY_LABELS.get(category, category))
+    template_description = str(template.get("desc") or template.get("description") or "")
+    template_value = _safe_int(template.get("value"), CATEGORY_BASE_VALUE.get(category, 5))
+    template_power = _template_power(template, rarity)
     explicit_value = value is not None
     item_value = int(value if value is not None else template_value)
     if not explicit_value:
@@ -580,6 +529,12 @@ def make_item(
         "description": str(description or template_description),
         "source": source,
         "template_id": f"{category}:{item_name}",
+        "template_source": str(template.get("source_path") or ""),
+        "level": max(0, _safe_int(template.get("level"), 0)),
+        "use_effect": _template_use_effect(template.get("use_effect")),
+        "power": template_power,
+        "send_llm": str(template.get("send_llm") or ""),
+        "element": str(template.get("element") or ""),
         "stackable": stackable,
         "tradable": True,
         "icon_hint": _icon_hint(category, item_name),
@@ -588,12 +543,17 @@ def make_item(
     if category in EQUIPMENT_CATEGORIES:
         item["equipment_slot"] = equipment_slot_for_category(category)
         item["instance_id"] = _new_item_instance_id(category, item_name)
-        item["attack"] = _base_equipment_attack(category, rarity)
-        item["defense"] = _base_equipment_defense(category, rarity)
+        item["attack"] = template_power if category in WEAPON_CATEGORIES and template_power > 0 else _base_equipment_attack(category, rarity)
+        item["defense"] = template_power if category not in WEAPON_CATEGORIES and template_power > 0 else _base_equipment_defense(category, rarity)
         item["effects"] = deepcopy(effects) if effects is not None else _equipment_effects(category, rarity, item_name)
         item["llm_effects"] = _equipment_llm_effects(category, rarity, item_name)
     else:
-        item["effects"] = deepcopy(effects) if effects is not None else _default_effects(category)
+        item["effects"] = deepcopy(effects) if effects is not None else _template_effects(template, rarity)
+        if item["send_llm"] and not any(
+            isinstance(effect, dict) and str(effect.get("type") or "").lower() == "send_llm"
+            for effect in item["effects"]
+        ):
+            item["effects"].append({"type": "send_llm", "text": item["send_llm"]})
     return item
 
 
@@ -646,6 +606,12 @@ def normalise_item(raw: Any, source: str = "", fallback_category: str = "junk") 
         "llm_effects",
         "item_uuid",
         "item_uuids",
+        "level",
+        "use_effect",
+        "power",
+        "send_llm",
+        "element",
+        "template_source",
         "_craft_source",
         "_craft_source_uuid",
     ):
@@ -661,11 +627,25 @@ def normalise_item(raw: Any, source: str = "", fallback_category: str = "junk") 
     item["rarity"] = normalise_rarity(item.get("rarity") or rarity)
     item["rarity_label"] = tr_enum("rarity", str(item.get("rarity")), fallback=RARITY_LABELS.get(str(item.get("rarity")), str(item.get("rarity"))))
     item["rarity_color"] = RARITY_COLORS.get(str(item.get("rarity")), "white")
+    item["use_effect"] = _template_use_effect(item.get("use_effect"))
+    item["power"] = max(0, _safe_int(item.get("power"), 0))
+    item["send_llm"] = str(item.get("send_llm") or "")
+    item["element"] = str(item.get("element") or "")
+    if category not in EQUIPMENT_CATEGORIES and effects is None and any(key in data for key in ("use_effect", "power", "send_llm")):
+        item["effects"] = _template_effects(item, str(item.get("rarity")))
+        if item["send_llm"] and not any(
+            isinstance(effect, dict) and str(effect.get("type") or "").lower() == "send_llm"
+            for effect in item["effects"]
+        ):
+            item["effects"].append({"type": "send_llm", "text": item["send_llm"]})
     if category in EQUIPMENT_CATEGORIES:
         item["equipment_slot"] = equipment_slot_for_category(category) or str(item.get("equipment_slot") or "")
         item["instance_id"] = str(item.get("instance_id") or _new_item_instance_id(category, name))
-        item["attack"] = _safe_int(item.get("attack"), _base_equipment_attack(category, str(item.get("rarity"))))
-        item["defense"] = _safe_int(item.get("defense"), _base_equipment_defense(category, str(item.get("rarity"))))
+        template_power = max(0, _safe_int(item.get("power"), 0))
+        default_attack = template_power if category in WEAPON_CATEGORIES and template_power > 0 else _base_equipment_attack(category, str(item.get("rarity")))
+        default_defense = template_power if category not in WEAPON_CATEGORIES and template_power > 0 else _base_equipment_defense(category, str(item.get("rarity")))
+        item["attack"] = _safe_int(item.get("attack"), default_attack) if "attack" in data else default_attack
+        item["defense"] = _safe_int(item.get("defense"), default_defense) if "defense" in data else default_defense
         if not isinstance(item.get("llm_effects"), list):
             item["llm_effects"] = _equipment_llm_effects(category, str(item.get("rarity")), name)
     _ensure_item_uuids(item)
@@ -818,6 +798,20 @@ def item_sp_delta(item: dict[str, Any]) -> int:
         if key in normalised:
             value = _safe_int(normalised.get(key), 0)
             total += abs(value) if key not in {"sp_delta", "player_sp_delta"} else value
+    return total
+
+
+def item_hunger_delta(item: dict[str, Any]) -> int:
+    total = 0
+    normalised = normalise_item(item)
+    effects = normalised.get("effects")
+    if isinstance(effects, list):
+        for effect in effects:
+            total += _effect_hunger_delta(effect)
+    for key in ("hunger_delta", "player_hunger_delta", "restore_hunger", "recover_hunger", "hunger_restore"):
+        if key in normalised:
+            value = _safe_int(normalised.get(key), 0)
+            total += abs(value) if key not in {"hunger_delta", "player_hunger_delta"} else value
     return total
 
 
@@ -1092,8 +1086,9 @@ def calculate_equipment_summary(equipment: dict[str, Any] | None) -> dict[str, A
                 summary["attributes"][effect_type] += value
             elif effect_type in {"status_immunity", "immunity", "immune"}:
                 immunity = str(effect.get("status") or effect.get("status_id") or effect.get("target") or effect.get("value") or "").strip()
-                if immunity:
-                    immunities.append(immunity)
+                immunity_id = canonical_status_effect_id(immunity)
+                if immunity_id in STATUS_IMMUNITY_EFFECT_IDS:
+                    immunities.append(immunity_id)
             elif effect_type in {"element_resistance", "element_damage_reduction", "resist_element"}:
                 element = str(effect.get("element") or effect.get("target") or effect.get("attribute") or "").strip()
                 if element:
@@ -1205,12 +1200,14 @@ def _random_item(
     source: str,
     context: str,
     rarity_profile: str = "",
+    danger_level: int = 0,
 ) -> dict[str, Any]:
     categories, weights = zip(*profile)
     category = rng.choices(categories, weights=weights, k=1)[0]
-    name, description, base_value = rng.choice(
-        ITEM_TEMPLATES.get(category, [(CATEGORY_LABELS.get(category, "アイテム"), "", CATEGORY_BASE_VALUE.get(category, 5))])
-    )
+    template = rng.choice(_templates_for_category(category, danger_level=danger_level))
+    name = str(template.get("name") or CATEGORY_LABELS.get(category, category))
+    description = str(template.get("desc") or template.get("description") or "")
+    base_value = _safe_int(template.get("value"), CATEGORY_BASE_VALUE.get(category, 5))
     if category in EQUIPMENT_CATEGORIES:
         rarity = _random_equipment_rarity(rng, rarity_profile)
     else:
@@ -1297,27 +1294,70 @@ def _vendor_profile_name(text: str) -> str:
     return "general"
 
 
-def _template_for(category: str, name: str | None) -> tuple[str, str, int]:
-    templates = ITEM_TEMPLATES.get(category)
+def _fallback_template(category: str, name: str | None = None) -> dict[str, Any]:
+    return {
+        "name": name or CATEGORY_LABELS.get(category, category),
+        "category": category,
+        "level": 0,
+        "value": CATEGORY_BASE_VALUE.get(category, 5),
+        "desc": "",
+        "description": "",
+        "use_effect": "None",
+        "power": 0,
+        "send_llm": "",
+        "element": "",
+        "source_path": "",
+    }
+
+
+def _templates_for_category(category: str, danger_level: int = 0) -> list[dict[str, Any]]:
+    templates = ITEM_TEMPLATES.get(category) or []
     if not templates:
-        return (name or CATEGORY_LABELS.get(category, "アイテム"), "", CATEGORY_BASE_VALUE.get(category, 5))
+        return [_fallback_template(category)]
+    level = max(0, _safe_int(danger_level, 0))
+    eligible = [template for template in templates if _safe_int(template.get("level"), 0) <= level]
+    return eligible or list(templates)
+
+
+def _template_for(category: str, name: str | None) -> dict[str, Any]:
+    templates = ITEM_TEMPLATES.get(category) or []
     if name:
-        for template_name, description, value in templates:
-            if template_name == name:
-                return template_name, description, value
-        return name, "", CATEGORY_BASE_VALUE.get(category, templates[0][2])
-    return templates[0]
+        for template in templates:
+            if str(template.get("name") or "") == name:
+                return template
+        if templates:
+            fallback = dict(templates[0])
+            fallback["name"] = name
+            return fallback
+        return _fallback_template(category, name)
+    return templates[0] if templates else _fallback_template(category)
 
 
-def _default_effects(category: str) -> list[dict[str, Any]]:
-    if category == "medicine":
-        return [{"type": "heal", "value": 8}]
-    if category == "potion":
-        return [{"type": "heal", "value": 14}]
-    if category in {"food", "drink"}:
-        return [{"type": "stamina", "value": 4}]
-    if category in {"scroll", "magicrod"}:
-        return [{"type": "magic", "value": 1}]
+def _template_power(template: dict[str, Any], rarity: str) -> int:
+    base_power = max(0, _safe_int(template.get("power"), 0))
+    if base_power <= 0:
+        return 0
+    multiplier = RARITY_POWER_MULTIPLIER.get(normalise_rarity(rarity), 1.0)
+    return max(1, int(round(base_power * multiplier)))
+
+
+def _template_effects(template: dict[str, Any], rarity: str) -> list[dict[str, Any]]:
+    use_effect = _template_use_effect(template.get("use_effect"))
+    power = _template_power(template, rarity)
+    if power <= 0:
+        power = max(0, _safe_int(template.get("power"), 0))
+    if use_effect == "HP_Heal":
+        return [{"type": "heal", "value": power}]
+    if use_effect == "SP_Heal":
+        return [{"type": "restore_sp", "value": power}]
+    if use_effect == "SP_Damage":
+        return [{"type": "sp_damage", "value": power}]
+    if use_effect == "HP_Damage":
+        return [{"type": "hp_damage", "value": power}]
+    if use_effect == "Hunger_Heal":
+        return [{"type": "hunger", "value": power}]
+    if use_effect == "Send_LLM":
+        return [{"type": "send_llm", "text": str(template.get("send_llm") or "")}]
     return []
 
 
@@ -1515,7 +1555,7 @@ def _equipment_effects(category: str, rarity: str, name: str) -> list[dict[str, 
         elif effect_type == "sp_regen":
             effects.append({"type": "sp_regen", "value": max(1, power // 5)})
         elif effect_type == "status_immunity":
-            status = rng.choice(["poison", "bleed", "burn", "freeze", "sleep", "paralysis", "fear", "curse"])
+            status = rng.choice(list(STATUS_IMMUNITY_EFFECT_IDS))
             effects.append({"type": "status_immunity", "status": status, "value": 1})
         elif effect_type == "element_resistance":
             elements = [element_id for element_id in ELEMENT_IDS if element_id != "none"]
@@ -1564,7 +1604,11 @@ def _equipment_effect_label(effect: Any, language: str = "ja") -> str:
     }
     if effect_type in {"status_immunity", "immunity", "immune"}:
         status = effect.get("status") or effect.get("status_id") or effect.get("target") or effect.get("value")
-        return f"状態異常無効: {status}"
+        status_id = canonical_status_effect_id(status)
+        label = status_effect_label(status_id or status, language)
+        if str(language or "").strip().lower().startswith("en"):
+            return f"Status immunity: {label}"
+        return f"状態異常無効: {label}"
     if effect_type in {"element_resistance", "element_damage_reduction", "resist_element"}:
         element = str(effect.get("element") or effect.get("target") or effect.get("attribute") or "").strip()
         label = tr_enum("element", element, language, fallback=element)
@@ -1599,12 +1643,22 @@ def _effect_text(item: dict[str, Any]) -> str:
     for effect in effects:
         if not isinstance(effect, dict):
             continue
-        effect_type = str(effect.get("type") or effect.get("name") or "")
+        effect_type = str(effect.get("type") or effect.get("name") or "").strip().lower()
         value = effect.get("value")
         if effect_type == "heal":
             parts.append(f"HPが少し回復した(+{value})。")
-        elif effect_type == "stamina":
-            parts.append(f"体力が少し戻った(+{value})。")
+        elif effect_type in {"stamina", "restore_sp", "recover_sp", "sp_restore"}:
+            parts.append(f"SPが少し回復した(+{value})。")
+        elif effect_type in {"hp_damage", "damage"}:
+            parts.append(f"HPに影響が出た(-{value})。")
+        elif effect_type in {"sp_damage", "consume_sp", "fatigue"}:
+            parts.append(f"SPに影響が出た(-{value})。")
+        elif effect_type in {"hunger", "restore_hunger", "hunger_heal"}:
+            parts.append(f"空腹度が回復した(+{value})。")
+        elif effect_type == "send_llm":
+            text = str(effect.get("text") or "").strip()
+            if text:
+                parts.append(text)
         elif effect_type:
             parts.append(f"{effect_type} の効果が発生した。")
     return " ".join(parts)
@@ -1644,6 +1698,25 @@ def _effect_sp_delta(effect: Any) -> int:
     if effect_type in {"restore_sp", "recover_sp", "sp_restore", "sp_recovery", "mana", "mp", "focus", "will"}:
         return abs(value)
     if effect_type in {"consume_sp", "sp_cost", "sp_damage", "drain_sp", "fatigue"}:
+        return -abs(value)
+    return 0
+
+
+def _effect_hunger_delta(effect: Any) -> int:
+    if not isinstance(effect, dict):
+        return 0
+    effect_type = str(effect.get("type") or effect.get("name") or effect.get("kind") or "").strip().lower()
+    if "hunger_delta" in effect:
+        return _safe_int(effect.get("hunger_delta"), 0)
+    if "player_hunger_delta" in effect:
+        return _safe_int(effect.get("player_hunger_delta"), 0)
+    value = _safe_int(
+        effect.get("value", effect.get("amount", effect.get("points", effect.get("hunger", 0)))),
+        0,
+    )
+    if effect_type in {"hunger", "hunger_heal", "restore_hunger", "recover_hunger", "hunger_restore", "meal", "food"}:
+        return abs(value)
+    if effect_type in {"hunger_damage", "starvation", "consume_hunger"}:
         return -abs(value)
     return 0
 

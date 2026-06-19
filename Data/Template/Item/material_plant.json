@@ -1,0 +1,35 @@
+[
+  {
+    "name": "薬草",
+    "category": "material_plant",
+    "level": 0,
+    "value": 10,
+    "desc": "薬の材料になる野草。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "香草",
+    "category": "material_plant",
+    "level": 0,
+    "value": 15,
+    "desc": "食事や薬に香りを加える草。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "月光花",
+    "category": "material_plant",
+    "level": 0,
+    "value": 20,
+    "desc": "夜に淡く光る希少な花。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  }
+]

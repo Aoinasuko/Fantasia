@@ -1,0 +1,46 @@
+[
+  {
+    "name": "丈夫な糸",
+    "category": "material_common",
+    "level": 0,
+    "value": 5,
+    "desc": "修理や裁縫に使える汎用素材。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "獣の骨片",
+    "category": "material_common",
+    "level": 0,
+    "value": 10,
+    "desc": "加工しやすい小さな骨片。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "加工木材",
+    "category": "material_common",
+    "level": 0,
+    "value": 15,
+    "desc": "乾燥させて整えた木材。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "加工石材",
+    "category": "material_common",
+    "level": 0,
+    "value": 15,
+    "desc": "加工しやすいように整えた石材。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  }
+]

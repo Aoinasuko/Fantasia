@@ -40,6 +40,7 @@ from .items import (
     generate_loot_items,
     generate_vendor_items,
     inventory_slot_count,
+    item_hunger_delta,
     item_hp_delta,
     item_sp_delta,
     item_label as format_item_label,
@@ -90,6 +91,15 @@ UI_NPC_ROSTER_MIN_HEIGHT = 300
 UI_PLAYER_SLOT_HEIGHT = 78
 BUILTIN_FONT_PATH = "assets/fonts/JF-Dot-MPlus10.ttf"
 BUILTIN_FONT_NAME = "JF-Dot-MPlus10"
+CRAFT_INTENT_IDS = ("auto", "mix", "synthesis", "smithing", "alchemy", "cooking")
+CRAFT_INTENT_UI_KEYS = {
+    "auto": "craft_intent_auto",
+    "mix": "craft_intent_mix",
+    "synthesis": "craft_intent_synthesis",
+    "smithing": "craft_intent_smithing",
+    "alchemy": "craft_intent_alchemy",
+    "cooking": "craft_intent_cooking",
+}
 
 
 class GradientCanvas(tk.Canvas):
@@ -2606,6 +2616,7 @@ class FantasiaApp(tk.Tk):
         location = self._display_location_name()
         quest = state.active_quest or "-"
         quest_remaining = self.engine.active_quest_remaining_time_label() if state.active_quest else "-"
+        hunger, max_hunger = self.engine.player_hunger_status()
         language = self.config_data.language
         info_labels = (
             {
@@ -2615,6 +2626,7 @@ class FantasiaApp(tk.Tk):
                 "time": "日時",
                 "location": "現在地",
                 "quest": "クエスト",
+                "hunger": "空腹度",
             }
             if language == "ja"
             else {
@@ -2624,6 +2636,7 @@ class FantasiaApp(tk.Tk):
                 "time": "Time",
                 "location": "Location",
                 "quest": "Quest",
+                "hunger": "Hunger",
             }
         )
         label = lambda key: info_labels.get(key, tr_enum("status_field", key, language))
@@ -2636,6 +2649,7 @@ class FantasiaApp(tk.Tk):
                 f"{label('location')}: {location}",
                 f"{label('quest')}: {quest}",
                 f"{'残り時間' if language == 'ja' else 'Quest time'}: {quest_remaining}",
+                f"{label('hunger')}: {hunger}/{max_hunger}",
             ]
         )
 
@@ -3640,6 +3654,7 @@ class FantasiaApp(tk.Tk):
         dialog.rowconfigure(1, weight=1)
 
         detail_var = tk.StringVar(value="")
+        craft_intent_var = tk.StringVar(value=_craft_intent_label(self.config_data, "auto"))
         tk.Label(dialog, text=_ui_text(self.config_data, "game_inventory"), bg=APP_DEEP_BG, fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 6))
         tk.Label(dialog, text=_ui_text(self.config_data, "craft_materials"), bg=APP_DEEP_BG, fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=2, sticky="ew", padx=16, pady=(14, 6))
         player_list = tk.Listbox(dialog, bg=APP_PANEL_BG, fg="#f2f2f2", selectbackground="#263654", relief="solid", bd=1, font=self.ui_fonts.normal(-2))
@@ -3668,8 +3683,22 @@ class FantasiaApp(tk.Tk):
         actions = tk.Frame(dialog, bg=APP_DEEP_BG)
         actions.grid(row=3, column=0, columnspan=3, sticky="ew", padx=16, pady=(10, 14))
         actions.columnconfigure(0, weight=1)
-        self._instant_button(actions, _ui_text(self.config_data, "craft_create"), lambda: craft_selected()).grid(row=0, column=1, sticky="e", padx=(0, 8))
-        self._instant_button(actions, _ui_text(self.config_data, "character_close"), lambda: close_dialog()).grid(row=0, column=2, sticky="e")
+        tk.Label(
+            actions,
+            text=_ui_text(self.config_data, "craft_intent"),
+            bg=APP_DEEP_BG,
+            fg="#f2f2f2",
+            font=self.ui_fonts.bold(-3),
+        ).grid(row=0, column=1, sticky="e", padx=(0, 6))
+        ttk.Combobox(
+            actions,
+            textvariable=craft_intent_var,
+            values=_craft_intent_options(self.config_data),
+            state="readonly",
+            width=14,
+        ).grid(row=0, column=2, sticky="e", padx=(0, 8))
+        self._instant_button(actions, _ui_text(self.config_data, "craft_create"), lambda: craft_selected()).grid(row=0, column=3, sticky="e", padx=(0, 8))
+        self._instant_button(actions, _ui_text(self.config_data, "character_close"), lambda: close_dialog()).grid(row=0, column=4, sticky="e")
 
         def refresh() -> None:
             player_list.delete(0, "end")
@@ -3745,10 +3774,14 @@ class FantasiaApp(tk.Tk):
                 messagebox.showwarning(_ui_text(self.config_data, "craft_title"), _ui_text(self.config_data, "craft_empty_help"))
                 return
             ingredients = [deepcopy(item) for item in craft_inventory]
+            craft_intent = _craft_intent_id_from_label(self.config_data, craft_intent_var.get())
             dialog.destroy()
             self._run_task(
                 _ui_text(self.config_data, "craft_title"),
-                lambda ingredients=ingredients: self.engine.resolve_craft_from_selected_items(ingredients),
+                lambda ingredients=ingredients, craft_intent=craft_intent: self.engine.resolve_craft_from_selected_items(
+                    ingredients,
+                    craft_category=craft_intent,
+                ),
                 self._set_log,
             )
             return
@@ -4127,6 +4160,14 @@ class FantasiaApp(tk.Tk):
                 )
                 if sp_event.get("line"):
                     self._append_inventory_event(str(sp_event["line"]))
+                hunger_event = self.engine.apply_player_hunger_delta(
+                    item_hunger_delta(used),
+                    source="item",
+                    reason=str(used.get("name") or ""),
+                    save_game=False,
+                )
+                if hunger_event.get("line"):
+                    self._append_inventory_event(str(hunger_event["line"]))
                 self._save_inventory_change()
                 refresh()
 
@@ -6981,8 +7022,6 @@ def _character_attributes(character: dict[str, object]) -> dict[str, int]:
         "int": _safe_int(attrs.get("int", 10), 10),
         "wis": _safe_int(attrs.get("wis", 10), 10),
         "cha": _safe_int(attrs.get("cha", 10), 10),
-        "sta": _safe_int(attrs.get("sta", 10), 10),
-        "stamina": _safe_int(attrs.get("stamina", 10), 10),
     }
 
 
@@ -7029,7 +7068,6 @@ def _format_character_status_detail(data: dict[str, object], encounter: dict[str
                 f"INT {attrs['int']}",
                 f"WIS {attrs['wis']}",
                 f"CHA {attrs['cha']}",
-                f"STA {attrs['sta']}",
             ]
         ),
     ]
@@ -7112,7 +7150,7 @@ def _format_status_effect_section(title: str, value: object) -> list[str]:
     return _format_display_entry_section(
         title,
         value,
-        description_keys=("description", "effect_text", "display_effect", "mechanical_effect", "effect", "summary", "text", "note", "details"),
+        description_keys=("description", "llm_effect", "remove_condition", "effect_text", "display_effect", "mechanical_effect", "effect", "summary", "text", "note", "details"),
     )
 
 
@@ -8289,10 +8327,51 @@ UI_TEXT["ja"].update(
 )
 
 
+UI_TEXT["en"].update(
+    {
+        "craft_intent": "Category",
+        "craft_intent_auto": "Auto",
+        "craft_intent_mix": "Mix",
+        "craft_intent_synthesis": "Synthesis",
+        "craft_intent_smithing": "Smithing",
+        "craft_intent_alchemy": "Alchemy",
+        "craft_intent_cooking": "Cooking",
+    }
+)
+UI_TEXT["ja"].update(
+    {
+        "craft_intent": "カテゴリ",
+        "craft_intent_auto": "おまかせ",
+        "craft_intent_mix": "混合",
+        "craft_intent_synthesis": "合成",
+        "craft_intent_smithing": "鍛冶",
+        "craft_intent_alchemy": "錬金術",
+        "craft_intent_cooking": "料理",
+    }
+)
+
+
 def _ui_text(config_data, key: str) -> str:
     language = getattr(config_data, "language", "ja")
     table = UI_TEXT.get(language, UI_TEXT["ja"])
     return table.get(key, UI_TEXT["en"].get(key, key))
+
+
+def _craft_intent_label(config_data, intent_id: str) -> str:
+    key = CRAFT_INTENT_UI_KEYS.get(str(intent_id or ""), CRAFT_INTENT_UI_KEYS["auto"])
+    return _ui_text(config_data, key)
+
+
+def _craft_intent_options(config_data) -> tuple[str, ...]:
+    return tuple(_craft_intent_label(config_data, intent_id) for intent_id in CRAFT_INTENT_IDS)
+
+
+def _craft_intent_id_from_label(config_data, label: str) -> str:
+    value = str(label or "").strip()
+    for intent_id in CRAFT_INTENT_IDS:
+        if value == _craft_intent_label(config_data, intent_id):
+            return intent_id
+    return "auto"
 
 
 def _builtin_font_label(language: str = "ja") -> str:

@@ -1,0 +1,35 @@
+[
+  {
+    "name": "水晶片",
+    "category": "material_gem",
+    "level": 0,
+    "value": 35,
+    "desc": "魔力を通しやすい透明な欠片。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "サファイア原石",
+    "category": "material_gem",
+    "level": 0,
+    "value": 60,
+    "desc": "青く輝く未加工の宝石。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "ルビー原石",
+    "category": "material_gem",
+    "level": 0,
+    "value": 60,
+    "desc": "赤く輝く未加工の宝石。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  }
+]

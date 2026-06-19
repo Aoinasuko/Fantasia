@@ -1,0 +1,46 @@
+[
+  {
+    "name": "汚い水",
+    "category": "drink",
+    "level": 0,
+    "value": 1,
+    "desc": "汚れた水。腹を多少は満たせるが食中毒になる可能性がある。",
+    "use_effect": "Hunger_Heal",
+    "power": 1,
+    "send_llm": "食中毒になる可能性がある。",
+    "element": "水"
+  },
+  {
+    "name": "きれいな水",
+    "category": "drink",
+    "level": 0,
+    "value": 5,
+    "desc": "飲料に適した水。スープなどの料理の材料にもなる。",
+    "use_effect": "Hunger_Heal",
+    "power": 3,
+    "send_llm": "",
+    "element": "水"
+  },
+  {
+    "name": "薬草茶",
+    "category": "drink",
+    "level": 0,
+    "value": 10,
+    "desc": "体を温める香りのよい茶。気持ちを少し落ち着かせることが出来る。",
+    "use_effect": "Hunger_Heal",
+    "power": 3,
+    "send_llm": "気持ちを少し落ち着かせる。",
+    "element": ""
+  },
+  {
+    "name": "小瓶のエール",
+    "category": "drink",
+    "level": 0,
+    "value": 15,
+    "desc": "短い休憩に向いた軽い酒。",
+    "use_effect": "Hunger_Heal",
+    "power": 3,
+    "send_llm": "少し酔っぱらう。",
+    "element": "お酒"
+  }
+]

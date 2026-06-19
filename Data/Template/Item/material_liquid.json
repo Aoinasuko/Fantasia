@@ -1,0 +1,35 @@
+[
+  {
+    "name": "澄んだ油",
+    "category": "material_liquid",
+    "level": 0,
+    "value": 10,
+    "desc": "灯りや調合に使える油。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "薬草エキス",
+    "category": "material_liquid",
+    "level": 0,
+    "value": 15,
+    "desc": "薬効成分を抽出した液体。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "魔力インク",
+    "category": "material_liquid",
+    "level": 0,
+    "value": 20,
+    "desc": "巻物や術式に使う淡く光るインク。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  }
+]

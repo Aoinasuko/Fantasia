@@ -1,0 +1,35 @@
+[
+  {
+    "name": "祈りの小像",
+    "category": "relic",
+    "level": 0,
+    "value": 100,
+    "desc": "古い信仰に使われた小さな像。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "古代の腕輪",
+    "category": "relic",
+    "level": 0,
+    "value": 150,
+    "desc": "失われた意匠の腕輪。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "失われた紋章",
+    "category": "relic",
+    "level": 0,
+    "value": 200,
+    "desc": "由来の分からない紋章片。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  }
+]

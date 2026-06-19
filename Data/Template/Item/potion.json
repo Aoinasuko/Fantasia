@@ -1,0 +1,101 @@
+[
+  {
+    "name": "軽傷治癒のポーション",
+    "category": "potion",
+    "level": 0,
+    "value": 20,
+    "desc": "HPを少し回復する薄い赤いポーション。",
+    "use_effect": "HP_Heal",
+    "power": 15,
+    "send_llm": "",
+    "element": "回復薬"
+  },
+  {
+    "name": "重症治癒のポーション",
+    "category": "potion",
+    "level": 5,
+    "value": 35,
+    "desc": "HPを回復する赤いポーション。",
+    "use_effect": "HP_Heal",
+    "power": 35,
+    "send_llm": "",
+    "element": "回復薬"
+  },
+  {
+    "name": "致命傷治癒のポーション",
+    "category": "potion",
+    "level": 15,
+    "value": 60,
+    "desc": "HPを大きく回復する濃い赤いポーション。",
+    "use_effect": "HP_Heal",
+    "power": 70,
+    "send_llm": "",
+    "element": "回復薬"
+  },
+  {
+    "name": "軽活力のポーション",
+    "category": "potion",
+    "level": 0,
+    "value": 30,
+    "desc": "SPを少し回復する薄い青いポーション。",
+    "use_effect": "SP_Heal",
+    "power": 15,
+    "send_llm": "",
+    "element": "回復薬"
+  },
+  {
+    "name": "活力のポーション",
+    "category": "potion",
+    "level": 5,
+    "value": 30,
+    "desc": "SPを回復する青いポーション。",
+    "use_effect": "SP_Heal",
+    "power": 35,
+    "send_llm": "",
+    "element": "回復薬"
+  },
+  {
+    "name": "超活力のポーション",
+    "category": "potion",
+    "level": 15,
+    "value": 60,
+    "desc": "SPを大きく回復する濃い青いポーション。",
+    "use_effect": "SP_Heal",
+    "power": 70,
+    "send_llm": "",
+    "element": "回復薬"
+  },
+  {
+    "name": "怪力のポーション",
+    "category": "potion",
+    "level": 0,
+    "value": 30,
+    "desc": "攻撃力を一時的に上昇させる黄色いポーション。",
+    "use_effect": "HP_Heal",
+    "power": 10,
+    "send_llm": "攻撃力を一時的に上昇させる。",
+    "element": ""
+  },
+  {
+    "name": "鉄壁のポーション",
+    "category": "potion",
+    "level": 0,
+    "value": 30,
+    "desc": "防御力を一時的に上昇させる緑色のポーション。",
+    "use_effect": "HP_Heal",
+    "power": 10,
+    "send_llm": "防御力を一時的に上昇させる。",
+    "element": ""
+  },
+  {
+    "name": "増幅のポーション",
+    "category": "potion",
+    "level": 0,
+    "value": 50,
+    "desc": "クラフトに使うことで、アイテムの効果を強化することが出来る灰色のポーション。",
+    "use_effect": "None",
+    "power": 10,
+    "send_llm": "",
+    "element": "アイテムの効果強化"
+  }
+]

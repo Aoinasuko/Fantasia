@@ -1,0 +1,68 @@
+[
+  {
+    "name": "銅鉱石",
+    "category": "material_ore",
+    "level": 0,
+    "value": 5,
+    "desc": "加工しやすい赤みのある鉱石。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": "鉱石"
+  },
+  {
+    "name": "鉄鉱石",
+    "category": "material_ore",
+    "level": 0,
+    "value": 10,
+    "desc": "武具の材料になる鉱石。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": "鉱石"
+  },
+  {
+    "name": "金鉱石",
+    "category": "material_ore",
+    "level": 0,
+    "value": 15,
+    "desc": "装飾品にも使われる鉱石。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": "鉱石"
+  },
+  {
+    "name": "銀鉱石",
+    "category": "material_ore",
+    "level": 0,
+    "value": 15,
+    "desc": "装飾品にも使われる鉱石。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": "鉱石"
+  },
+  {
+    "name": "黒曜石片",
+    "category": "material_ore",
+    "level": 0,
+    "value": 20,
+    "desc": "鋭く割れる黒い石片。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": "鉱石"
+  },
+  {
+    "name": "金剛石片",
+    "category": "material_ore",
+    "level": 0,
+    "value": 30,
+    "desc": "非常に丈夫な石片。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": "鉱石"
+  }
+]

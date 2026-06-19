@@ -1,0 +1,79 @@
+[
+  {
+    "name": "錆びた釘",
+    "category": "junk",
+    "level": 0,
+    "value": 2,
+    "desc": "売るか素材にする程度の古い釘。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "割れた陶片",
+    "category": "junk",
+    "level": 0,
+    "value": 2,
+    "desc": "何かの器だった陶器の破片。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "壊れた歯車",
+    "category": "junk",
+    "level": 0,
+    "value": 4,
+    "desc": "修理すれば使えるかもしれない部品。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "折れた短剣",
+    "category": "junk",
+    "level": 0,
+    "value": 10,
+    "desc": "壊れた短剣。修理すれば使えそうだ。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": "短剣の素材"
+  },
+  {
+    "name": "折れた剣",
+    "category": "junk",
+    "level": 0,
+    "value": 10,
+    "desc": "壊れた剣。修理すれば使えそうだ。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": "剣の素材"
+  },
+  {
+    "name": "折れた槌",
+    "category": "junk",
+    "level": 0,
+    "value": 10,
+    "desc": "壊れた槌。修理すれば使えそうだ。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": "槌の素材"
+  },
+  {
+    "name": "壊れた弓",
+    "category": "junk",
+    "level": 0,
+    "value": 10,
+    "desc": "壊れた弓。修理すれば使えそうだ。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": "弓の素材"
+  }
+]

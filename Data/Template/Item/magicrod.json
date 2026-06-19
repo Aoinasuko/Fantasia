@@ -1,0 +1,35 @@
+[
+  {
+    "name": "火球の魔法杖",
+    "category": "magicrod",
+    "level": 0,
+    "value": 50,
+    "desc": "相手に向かって火球を発射できる短い杖。",
+    "use_effect": "Send_LLM",
+    "power": 5,
+    "send_llm": "相手に向かって火球を発射できる。",
+    "element": ""
+  },
+  {
+    "name": "癒しの魔法杖",
+    "category": "magicrod",
+    "level": 0,
+    "value": 70,
+    "desc": "使用者を癒すことが出来る杖。",
+    "use_effect": "Send_LLM",
+    "power": 5,
+    "send_llm": "使用者を癒すことが出来る。",
+    "element": ""
+  },
+  {
+    "name": "鑑定の魔法杖",
+    "category": "magicrod",
+    "level": 0,
+    "value": 30,
+    "desc": "よくわからない物を鑑定することが出来る杖。",
+    "use_effect": "Send_LLM",
+    "power": 5,
+    "send_llm": "よくわからない物を鑑定することが出来る。",
+    "element": ""
+  }
+]

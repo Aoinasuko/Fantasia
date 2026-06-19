@@ -68,6 +68,10 @@ class ManagerSchema:
             lines.append(
                 "- SP changes: use player_sp_delta/sp_delta for signed changes, restore_sp/recover_sp for recovery, consume_sp for spent SP, or player_sp for an absolute current SP value. Skills should use sp_cost instead of max_uses."
             )
+        if any(field.name in {"player_hunger_delta", "hunger_delta", "restore_hunger", "recover_hunger", "player_hunger", "hunger", "hunger_effect", "hunger_effects"} for field in self.fields):
+            lines.append(
+                "- Hunger changes: use player_hunger_delta/hunger_delta for signed changes, restore_hunger/recover_hunger for meals or food, or player_hunger/hunger for an absolute hunger value. The game clamps hunger to 0-50."
+            )
         if any(field.name in {"gold_delta", "player_gold_delta", "pay_gold", "spend_gold", "receive_gold", "gold_effect", "gold_effects"} for field in self.fields):
             lines.append(
                 "- Gold changes: use gold_delta/player_gold_delta for signed changes, receive_gold/gain_gold for rewards, and pay_gold/spend_gold/cost_gold for payments. The game clamps gold at 0."
@@ -91,10 +95,9 @@ class ManagerSchema:
         if any(field.name in {"status_effects", "player_status_effects", "character_status_effects", "long_term_statuses"} for field in self.fields):
             lines.append(
                 "- 状態付与が必要な場合は status_effects/player_status_effects/character_status_effects に、"
-                "name, target, effect, duration, permanent, long_term, stage, remove_condition を持つオブジェクトを返してください。"
-                "行動不能系の状態は表示名を「行動不能」にせず、攻撃手段に合う具体名と説明にし、"
-                "機械的判定用に tags に incapacitated を入れ、prevents_action/prevents_attack/prevents_escape/prevents_movement を true にしてください。"
-                "長期・永続状態は permanent=true または long_term=true にしてください。"
+                "name, description, remove_condition, power, duration, effect_id, llm_effect を持つオブジェクトを返してください。"
+                "duration は残り時間、-1 は永続です。effect_id は HP_Damage/SP_Damage/Paralysis/Silence/Psychosis/Inoperable/SendLLM/Atk_Mod/Def_Mod のいずれかです。"
+                "効果IDで決められない描写や補助効果は llm_effect に書いてください。行動不能系は effect_id=Inoperable にし、表示名は攻撃手段に合う具体名と説明にしてください。"
             )
         if any(field.name == "npc_action" for field in self.fields):
             lines.append(
@@ -112,7 +115,7 @@ class ManagerSchema:
         if any(field.name in {"status_effects", "player_status_effects", "character_status_effects", "long_term_statuses"} for field in self.fields):
             lines.append(
                 "- 治療、解呪、休息、交渉などで状態が解除される場合は remove_status_effects/cure_status_effects/treated_status_effects に、"
-                "target, name, id, reason, treatment を持つオブジェクトを返してください。長期・永続状態も解除対象にできます。"
+                "target, name, effect_id, reason, treatment を持つオブジェクトを返してください。永続状態も解除対象にできます。"
             )
         if any(field.name in {"item_rewards", "items", "rewards", "gold", "lost_items", "stolen_items", "given_items"} for field in self.fields):
             lines.append(
@@ -287,6 +290,16 @@ STATUS_EFFECT_FIELDS = (
     FieldRule("sp_effect", (dict, list), required=False, non_empty=False, string_items=False),
     FieldRule("sp_effects", (dict, list), required=False, non_empty=False, string_items=False),
     FieldRule("sp_reason", (str,), required=False, non_empty=False),
+    FieldRule("player_hunger_delta", (int, str), required=False, non_empty=False),
+    FieldRule("hunger_delta", (int, str), required=False, non_empty=False),
+    FieldRule("restore_hunger", (int, str), required=False, non_empty=False),
+    FieldRule("recover_hunger", (int, str), required=False, non_empty=False),
+    FieldRule("consume_hunger", (int, str), required=False, non_empty=False),
+    FieldRule("player_hunger", (int, str), required=False, non_empty=False),
+    FieldRule("hunger", (int, str), required=False, non_empty=False),
+    FieldRule("hunger_effect", (dict, list), required=False, non_empty=False, string_items=False),
+    FieldRule("hunger_effects", (dict, list), required=False, non_empty=False, string_items=False),
+    FieldRule("hunger_reason", (str,), required=False, non_empty=False),
     FieldRule("gold_delta", (int, str), required=False, non_empty=False),
     FieldRule("player_gold_delta", (int, str), required=False, non_empty=False),
     FieldRule("receive_gold", (int, str, dict), required=False, non_empty=False, string_items=False),
@@ -1134,9 +1147,12 @@ SCHEMAS: dict[str, ManagerSchema] = {
                 "opponent_status_effects": [
                     {
                         "name": "幻霧の裂傷",
-                        "effect": "霧の傷が残り、次の3ターンは毎ターン1ダメージを受ける。",
+                        "description": "霧の傷が残り、行動ごとにHPが少し削られる。",
+                        "remove_condition": "止血する、霧の魔力を払う、または時間経過で治まる。",
+                        "power": 1,
                         "duration": 3,
-                        "damage_per_turn": 1,
+                        "effect_id": "HP_Damage",
+                        "llm_effect": "傷口に幻霧がまとわりつき、痛みと視界の揺らぎを描写に反映する。",
                     }
                 ],
             },
@@ -1168,8 +1184,12 @@ SCHEMAS: dict[str, ManagerSchema] = {
                 "player_status_effects": [
                     {
                         "name": "武装解除",
-                        "effect": "武器を下ろしているため、再武装するまで攻撃行動が不利になる。",
+                        "description": "武器を下ろしているため、再武装するまで攻撃行動が不利になる。",
                         "remove_condition": "武器を拾い直す、または敵が降伏を受け入れる。",
+                        "power": -2,
+                        "duration": -1,
+                        "effect_id": "Atk_Mod",
+                        "llm_effect": "武器を構えていないため、攻撃するには一手遅れる。",
                     }
                 ],
             },
@@ -1207,13 +1227,11 @@ SCHEMAS: dict[str, ManagerSchema] = {
                     {
                         "name": "影縛り",
                         "description": "影の糸に足元を縫い止められ、攻撃・逃走・移動ができない。",
-                        "effect": "影による拘束。攻撃・逃走・移動を妨げる。",
+                        "remove_condition": "影の糸を切る、術者を説得する、または拘束を解く。",
+                        "power": 0,
                         "duration": 2,
-                        "tags": ["incapacitated"],
-                        "prevents_action": True,
-                        "prevents_attack": True,
-                        "prevents_escape": True,
-                        "prevents_movement": True,
+                        "effect_id": "Inoperable",
+                        "llm_effect": "影による拘束。攻撃・逃走・移動を妨げる。",
                     }
                 ],
             },
@@ -1249,8 +1267,11 @@ SCHEMAS: dict[str, ManagerSchema] = {
                         {
                             "name": "監視下",
                             "description": "敵に見張られている。急な攻撃や逃走は疑われやすい。",
-                            "effect": "監視による行動圧力。会話や慎重な移動は可能。",
                             "remove_condition": "会話で安全を得る、またはその場を離れる。",
+                            "power": 0,
+                            "duration": -1,
+                            "effect_id": "SendLLM",
+                            "llm_effect": "監視による行動圧力。会話や慎重な移動は可能。",
                         }
                     ]
                 },

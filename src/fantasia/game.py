@@ -36,6 +36,12 @@ from .llm import BaseLlmBackend
 from .paths import GENERATED_DIR
 from .prompt_templates import PromptTemplateStore
 from .save_store import SaveSlot, SaveStore
+from .status_effects import (
+    STATUS_IMMUNITY_EFFECT_IDS,
+    canonical_status_effect_id,
+    status_effect_description,
+    status_effect_label,
+)
 from .world_model import CharacterData, GameStateData, LocationData, QuestData, WorldData
 
 
@@ -44,6 +50,9 @@ DAYS_PER_SEASON = 60
 HOURS_PER_DAY = 24
 WORLD_DAYS_PER_YEAR = DAYS_PER_SEASON * len(SEASONS)
 INITIAL_WORLD_TIME_HOURS = 8
+PLAYER_MAX_HUNGER = 50
+PLAYER_HUNGER_PER_HOUR = 1
+PLAYER_STARVATION_HP_SP_DAMAGE = 3
 PLAYER_MAX_LEVEL = 50
 PLAYER_BASE_EXP_TO_NEXT = 5
 PLAYER_MAX_EXP_TO_NEXT = 100_000_000
@@ -90,8 +99,40 @@ WORLD_CRIME_RISK_OPTIONS = {"none", "normal", "strict"}
 DEFAULT_WORLD_CRIME_RISK = "none"
 WORLD_ENEMY_STRENGTH_OPTIONS = {"weak", "normal", "strong"}
 DEFAULT_WORLD_ENEMY_STRENGTH = "normal"
+CRAFT_INTENT_DEFINITIONS = {
+    "auto": {
+        "label_ja": "おまかせ",
+        "label_en": "Auto",
+        "instruction": "Let the materials and craft roll decide the most natural result.",
+    },
+    "mix": {
+        "label_ja": "混合",
+        "label_en": "Mix",
+        "instruction": "Prioritize mixing materials or item properties into a combined practical result.",
+    },
+    "synthesis": {
+        "label_ja": "合成",
+        "label_en": "Synthesis",
+        "instruction": "Prioritize fusing multiple ingredients into a new item with a coherent identity.",
+    },
+    "smithing": {
+        "label_ja": "鍛冶",
+        "label_en": "Smithing",
+        "instruction": "Prioritize metalwork, weapon improvement, armor improvement, or durable tools.",
+    },
+    "alchemy": {
+        "label_ja": "錬金術",
+        "label_en": "Alchemy",
+        "instruction": "Prioritize potions, medicine, reagents, magical materials, or transmutation results.",
+    },
+    "cooking": {
+        "label_ja": "料理",
+        "label_en": "Cooking",
+        "instruction": "Prioritize food, drink, meals, preserved food, or edible restorative results.",
+    },
+}
 COMBAT_MAX_OPPONENTS = 3
-INCAPACITATED_STATUS_ID = "incapacitated"
+INCAPACITATED_STATUS_ID = "Inoperable"
 INCAPACITATED_STATUS_NAME = "行動不能"
 SURRENDERED_STATUS_ID = "surrendered"
 FLED_STATUS_ID = "fled"
@@ -718,6 +759,7 @@ class GameEngine:
         max_sp = self._player_max_sp(character)
         current_sp = self._player_current_sp(max_sp)
         self._set_player_sp(current_sp, max_sp=max_sp)
+        self._set_player_hunger(self._player_hunger())
         self.state.flags["player_character"] = character.to_dict()
         self.state.world_data.history.append(
             {
@@ -726,6 +768,17 @@ class GameEngine:
                 "response": _character_ai_context(character),
             }
         )
+
+    def _append_turn(
+        self,
+        action: str,
+        narration: str,
+        location: str,
+        choices: list[str],
+        input_type: str = "free_action",
+    ) -> None:
+        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self.state.display_log.extend(self._apply_starvation_turn_penalty())
 
     def _player_inventory(self) -> list[dict[str, Any]]:
         inventory = self.state.inventory
@@ -928,7 +981,7 @@ class GameEngine:
             append_log=False,
         )
         narration = "自分の家で身体を休めた。家具の整った静かな空間で、疲労がゆっくりと抜けていく。"
-        self.state.append_turn(action, narration, self.state.current_location, self._home_choices(), input_type=input_type)
+        self._append_turn(action, narration, self.state.current_location, self._home_choices(), input_type=input_type)
         if time_event.get("line"):
             self.state.display_log.append(str(time_event["line"]))
         self.state.display_log.append(f"> [休息] HP {old_hp}/{max_hp} -> {max_hp}/{max_hp} / SP {old_sp}/{max_sp} -> {max_sp}/{max_sp}")
@@ -944,7 +997,7 @@ class GameEngine:
         self._set_current_subnode(location_name, parent)
         narration = "家を出て、外の空気を吸い込んだ。"
         choices = self._location_default_choices(location_name)
-        self.state.append_turn(action, narration, location_name, choices, input_type=input_type)
+        self._append_turn(action, narration, location_name, choices, input_type=input_type)
         self.save_game()
         return self.state.log_text(16)
 
@@ -1112,14 +1165,14 @@ class GameEngine:
         settlement = self._current_settlement_location()
         if settlement is None:
             narration = "ここは街や村ではないため、施設の地図は使えない。"
-            self.state.append_turn(MOVE_CHOICE_LABEL, narration, self.state.current_location, self.state.choices, input_type="choice")
+            self._append_turn(MOVE_CHOICE_LABEL, narration, self.state.current_location, self.state.choices, input_type="choice")
             self.save_game()
             return self.state.log_text(16)
 
         facility = self._find_or_create_facility_record(settlement, facility_name)
         if not facility:
             narration = f"{settlement.name}には「{facility_name}」という施設は見当たらない。"
-            self.state.append_turn(MOVE_CHOICE_LABEL, narration, self.state.current_location, self._location_default_choices(settlement.name), input_type="choice")
+            self._append_turn(MOVE_CHOICE_LABEL, narration, self.state.current_location, self._location_default_choices(settlement.name), input_type="choice")
             self.save_game()
             return self.state.log_text(16)
 
@@ -1127,7 +1180,7 @@ class GameEngine:
 
     def accept_quest_from_board(self, quest_name: str) -> str:
         if self.state.active_quest:
-            self.state.append_turn(
+            self._append_turn(
                 QUEST_BOARD_CHOICE_LABEL,
                 "進行中の依頼があるため、別の依頼はまだ受けられない。",
                 self.state.current_location,
@@ -1137,7 +1190,7 @@ class GameEngine:
             self.save_game()
             return self.state.log_text(16)
         if not self.is_current_location_guild():
-            self.state.append_turn(
+            self._append_turn(
                 QUEST_BOARD_CHOICE_LABEL,
                 "依頼掲示板はギルドの中で確認できる。",
                 self.state.current_location,
@@ -1148,7 +1201,7 @@ class GameEngine:
             return self.state.log_text(16)
         quest = self._find_quest_by_name(quest_name)
         if not quest or quest.status not in {"available", ""} or quest.flags.get("wild"):
-            self.state.append_turn(
+            self._append_turn(
                 QUEST_BOARD_CHOICE_LABEL,
                 "その依頼は現在受けられない。",
                 self.state.current_location,
@@ -1236,36 +1289,31 @@ class GameEngine:
         for effect in effects:
             if not isinstance(effect, dict):
                 continue
-            for key in ("attack_delta", "atk_delta", "attack_bonus", "atk_bonus"):
-                if key in effect:
-                    bonuses["attack"] += _safe_int(effect.get(key), 0)
-            for key in ("defense_delta", "def_delta", "defense_bonus", "def_bonus"):
-                if key in effect:
-                    bonuses["defense"] += _safe_int(effect.get(key), 0)
-            effect_type = str(effect.get("type") or effect.get("stat") or effect.get("name") or "").strip().lower()
-            value = _safe_int(effect.get("value", effect.get("amount", 0)), 0)
-            if effect_type in {"attack", "atk", "attack_up", "attack_down"}:
-                bonuses["attack"] += value
-            elif effect_type in {"defense", "def", "defense_up", "defense_down"}:
-                bonuses["defense"] += value
+            normalised = _normalise_status_effect(effect)
+            effect_id = _status_effect_id(normalised)
+            power = _safe_int(normalised.get("power"), 0)
+            if effect_id == "Atk_Mod":
+                bonuses["attack"] += power
+            elif effect_id == "Def_Mod":
+                bonuses["defense"] += power
+            elif effect_id == "Paralysis":
+                bonuses["attack"] -= max(1, abs(power) if power else 1)
         return bonuses
 
     def _player_status_immunity_ids(self) -> set[str]:
         summary = self.player_equipment_summary()
         result: set[str] = set()
         for value in summary.get("status_immunities", []):
-            effect = _normalise_status_effect({"name": value})
-            effect_id = _status_effect_id(effect)
-            if effect_id:
+            effect_id = canonical_status_effect_id(value)
+            if effect_id in STATUS_IMMUNITY_EFFECT_IDS:
                 result.add(effect_id)
-            text = str(value or "").strip().lower()
-            if text:
-                result.add(text)
         return result
 
     def _player_is_immune_to_status(self, effect: dict[str, Any]) -> bool:
         effect_id = _status_effect_id(effect)
         if not effect_id:
+            return False
+        if effect_id not in STATUS_IMMUNITY_EFFECT_IDS:
             return False
         return effect_id in self._player_status_immunity_ids()
 
@@ -1384,10 +1432,23 @@ class GameEngine:
         self.state.display_log.extend(str(item.get("line")) for item in equipment_events if item.get("line"))
         return event
 
-    def resolve_craft_from_selected_items(self, ingredients: list[dict[str, Any]], intent: str = "") -> str:
-        action = intent.strip() or "クラフトする"
+    def resolve_craft_from_selected_items(
+        self,
+        ingredients: list[dict[str, Any]],
+        intent: str = "",
+        craft_category: str = "auto",
+    ) -> str:
+        craft_intent = _normalise_craft_intent(craft_category)
+        intent_info = _craft_intent_payload(craft_intent)
+        action = intent.strip() or f"craft selected materials as {intent_info['label_en']}"
         items = [normalise_item(item, source="craft") for item in ingredients if isinstance(item, dict)]
-        return self._resolve_craft_with_ingredients(action, "free_action", items, source="craft_menu")
+        return self._resolve_craft_with_ingredients(
+            action,
+            "free_action",
+            items,
+            source="craft_menu",
+            craft_intent=craft_intent,
+        )
 
     def _resolve_home_action(self, action: str, input_type: str) -> str | None:
         text = str(action or "").strip()
@@ -1399,11 +1460,11 @@ class GameEngine:
             if any(word in text for word in ("外に出", "出る", "leave", "exit")):
                 return self._resolve_home_exit(action, input_type)
             if any(word in text for word in ("保存箱", "倉庫", "storage", "stash")):
-                self.state.append_turn(action, "家の保存箱を開いた。", self.state.current_location, self._home_choices(), input_type=input_type)
+                self._append_turn(action, "家の保存箱を開いた。", self.state.current_location, self._home_choices(), input_type=input_type)
                 self.save_game()
                 return self.state.log_text(16)
             if any(word in text for word in ("クラフト", "合成", "調合", "鍛冶", "料理", "craft")):
-                self.state.append_turn(action, "家の作業台を使う準備をした。", self.state.current_location, self._home_choices(), input_type=input_type)
+                self._append_turn(action, "家の作業台を使う準備をした。", self.state.current_location, self._home_choices(), input_type=input_type)
                 self.save_game()
                 return self.state.log_text(16)
 
@@ -1433,7 +1494,7 @@ class GameEngine:
         self._clear_active_facility(reset_subnode=False)
         self._set_current_subnode(location_name, str(home.get("subnode_id") or PLAYER_HOME_SUBNODE_ID))
         narration = "あなたは自分の家へ戻った。鍛冶、料理、調合、クラフトに使える家具が静かに並んでいる。"
-        self.state.append_turn(action, narration, location_name, self._home_choices(), input_type=input_type)
+        self._append_turn(action, narration, location_name, self._home_choices(), input_type=input_type)
         self.save_game()
         return self.state.log_text(16)
 
@@ -1449,27 +1510,27 @@ class GameEngine:
             return None
         if self._player_home_for_location(settlement.name):
             narration = f"{settlement.name}には、すでにあなたの家がある。"
-            self.state.append_turn(action, narration, settlement.name, self._location_default_choices(settlement.name), input_type=input_type)
+            self._append_turn(action, narration, settlement.name, self._location_default_choices(settlement.name), input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
         plan = _town_hall_home_plan_from_action(action)
         if not plan:
             choices = [f"{cost}Goldで家を建てる" for cost in sorted(PLAYER_HOME_TOWN_HALL_PLANS)]
             narration = "役場では、土地と小さな家の手続きを行える。500Gold、1000Gold、10000Goldの三つのプランが提示された。"
-            self.state.append_turn(action, narration, settlement.name, _exploration_choices(choices), input_type=input_type)
+            self._append_turn(action, narration, settlement.name, _exploration_choices(choices), input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
         cost, level = plan
         if self.state.gold < cost:
             narration = f"役場職員は首を横に振った。{cost}Goldの支払いには所持金が足りない。"
-            self.state.append_turn(action, narration, settlement.name, self._location_default_choices(settlement.name), input_type=input_type)
+            self._append_turn(action, narration, settlement.name, self._location_default_choices(settlement.name), input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
         gold_event = self._apply_gold_delta(-cost, source="town_hall_home", reason="家の購入", append_log=False)
         self._create_player_home(settlement.name, level, source="town_hall", parent_subnode_id=DEFAULT_SUBNODE_ID, cost=cost)
         narration = f"役場で{cost}Goldを支払い、{settlement.name}にあなたの家を用意した。家具レベルは{level}。"
         choices = [MOVE_CHOICE_LABEL, f"{PLAYER_HOME_NAME}へ移動", "周囲を見る"]
-        self.state.append_turn(action, narration, settlement.name, _exploration_choices(choices), input_type=input_type)
+        self._append_turn(action, narration, settlement.name, _exploration_choices(choices), input_type=input_type)
         if gold_event.get("line"):
             self.state.display_log.append(str(gold_event["line"]))
         self.save_game()
@@ -1479,18 +1540,18 @@ class GameEngine:
         location_name = self.state.current_location or self.state.world_data.starting_location
         if self._current_settlement_location() is not None:
             narration = "街の中で自分の家を増築するには、役場で土地と建物の手続きを行う必要がある。"
-            self.state.append_turn(action, narration, location_name, self._location_default_choices(location_name), input_type=input_type)
+            self._append_turn(action, narration, location_name, self._location_default_choices(location_name), input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
         if self._player_home_for_location(location_name):
             narration = "このロケーションには、すでにあなたの家がある。"
-            self.state.append_turn(action, narration, location_name, self._location_default_choices(location_name), input_type=input_type)
+            self._append_turn(action, narration, location_name, self._location_default_choices(location_name), input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
         material = self._home_build_material_from_action(action)
         if not material:
             narration = "家の建築に使う具体的な建材が見つからない。所持品か周囲にある素材を指定する必要がある。"
-            self.state.append_turn(action, narration, location_name, self._location_default_choices(location_name), input_type=input_type)
+            self._append_turn(action, narration, location_name, self._location_default_choices(location_name), input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
         response = self._home_construction_evaluator(action, material)
@@ -1604,17 +1665,17 @@ class GameEngine:
             if not narration:
                 narration = "その素材は家の建築には向いていない。"
             if append_turn:
-                self.state.append_turn(action or "家を建てる", narration, location_name, self._location_default_choices(location_name), input_type=input_type)
+                self._append_turn(action or "家を建てる", narration, location_name, self._location_default_choices(location_name), input_type=input_type)
             return []
         if not item:
             narration = "建築に使う素材が見つからない。"
             if append_turn:
-                self.state.append_turn(action or "家を建てる", narration, location_name, self._location_default_choices(location_name), input_type=input_type)
+                self._append_turn(action or "家を建てる", narration, location_name, self._location_default_choices(location_name), input_type=input_type)
             return []
         if self._player_home_for_location(location_name):
             narration = "このロケーションには、すでにあなたの家がある。"
             if append_turn:
-                self.state.append_turn(action or "家を建てる", narration, location_name, self._location_default_choices(location_name), input_type=input_type)
+                self._append_turn(action or "家を建てる", narration, location_name, self._location_default_choices(location_name), input_type=input_type)
             return []
         consume = entry.get("consume_item")
         if consume is None:
@@ -1632,7 +1693,7 @@ class GameEngine:
             if not removed:
                 narration = "建築に使う素材を消費できなかった。"
                 if append_turn:
-                    self.state.append_turn(action or "家を建てる", narration, location_name, self._location_default_choices(location_name), input_type=input_type)
+                    self._append_turn(action or "家を建てる", narration, location_name, self._location_default_choices(location_name), input_type=input_type)
                 return []
 
         progress_key = f"{location_name}::{subnode_id}"
@@ -1674,7 +1735,7 @@ class GameEngine:
             narration = "\n".join([narration, f"建築進捗は{new_progress}%になった。"])
             choices = self._location_default_choices(location_name)
         if append_turn:
-            self.state.append_turn(action or "家を建てる", narration, location_name, choices, input_type=input_type)
+            self._append_turn(action or "家を建てる", narration, location_name, choices, input_type=input_type)
         self.state.world_data.extra.setdefault("player_home_events", []).append(
             {
                 "type": "construction",
@@ -1694,15 +1755,21 @@ class GameEngine:
         items, missing = self._craft_ingredients_from_action(action)
         if missing:
             message = "指定された素材が見つかりません: " + ", ".join(missing)
-            self.state.append_turn(action, message, self.state.current_location, self.state.choices, input_type=input_type)
+            self._append_turn(action, message, self.state.current_location, self.state.choices, input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
         if len(items) < 2:
             message = "クラフトには、所持品か周囲にある素材を2つ以上指定してください。"
-            self.state.append_turn(action, message, self.state.current_location, self.state.choices, input_type=input_type)
+            self._append_turn(action, message, self.state.current_location, self.state.choices, input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
-        return self._resolve_craft_with_ingredients(action, input_type, items, source="free_action")
+        return self._resolve_craft_with_ingredients(
+            action,
+            input_type,
+            items,
+            source="free_action",
+            craft_intent=_craft_intent_from_action(action),
+        )
 
     def _resolve_craft_with_ingredients(
         self,
@@ -1711,21 +1778,22 @@ class GameEngine:
         ingredients: list[dict[str, Any]],
         *,
         source: str,
+        craft_intent: str = "auto",
     ) -> str:
         items = [normalise_item(item, source="craft") for item in ingredients if isinstance(item, dict)]
         if len(items) < 2:
             message = "クラフトには素材が2つ以上必要です。"
-            self.state.append_turn(action, message, self.state.current_location, self.state.choices, input_type=input_type)
+            self._append_turn(action, message, self.state.current_location, self.state.choices, input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
         if not self._craft_ingredients_available(items):
             message = "指定された素材は、すでに所持品や周囲から見つかりません。"
-            self.state.append_turn(action, message, self.state.current_location, self.state.choices, input_type=input_type)
+            self._append_turn(action, message, self.state.current_location, self.state.choices, input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
         if not self._craft_result_can_fit_after_consumption(items):
             message = self._inventory_full_line()
-            self.state.append_turn(action, message, self.state.current_location, self.state.choices, input_type=input_type)
+            self._append_turn(action, message, self.state.current_location, self.state.choices, input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
 
@@ -1734,7 +1802,7 @@ class GameEngine:
         if craft_roll.get("critical_failure"):
             removed = self._consume_craft_ingredients(items, source=source)
             narration = "クラフトは失敗し、素材は失われました。"
-            self.state.append_turn(action, narration, self.state.current_location, self.state.choices, input_type=input_type)
+            self._append_turn(action, narration, self.state.current_location, self.state.choices, input_type=input_type)
             self._append_action_roll_log(craft_roll)
             self.state.world_data.extra.setdefault("craft_events", []).append(
                 {
@@ -1749,7 +1817,8 @@ class GameEngine:
             self.save_game()
             return self.state.log_text(16)
 
-        response = self._craft_item_generator(action, items, craft_roll)
+        craft_intent = _normalise_craft_intent(craft_intent)
+        response = self._craft_item_generator(action, items, craft_roll, craft_intent)
         result = self._crafted_item_from_response(response, items)
         removed = self._consume_craft_ingredients(items, source=source)
         added = self._add_player_item_stack(result, source="craft")
@@ -1759,7 +1828,7 @@ class GameEngine:
             added_to_location = add_item_stack(location_inventory, result, source="craft_overflow")
             if added_to_location:
                 narration = "\n".join([narration, "所持品に空きがないため、完成品はその場に置かれました。"])
-        self.state.append_turn(action, narration, self.state.current_location, self.state.choices, input_type=input_type)
+        self._append_turn(action, narration, self.state.current_location, self.state.choices, input_type=input_type)
         self._append_action_roll_log(craft_roll)
         if added:
             self.state.display_log.append(f"> [クラフト] {item_label(added)}")
@@ -1770,6 +1839,7 @@ class GameEngine:
             "ingredients": ingredient_labels,
             "removed": removed,
             "roll": craft_roll,
+            "craft_intent": _craft_intent_payload(craft_intent),
             "result": normalise_item(added or result, source="craft"),
             "response": _strip_response_metadata(response),
         }
@@ -1783,12 +1853,14 @@ class GameEngine:
         action: str,
         ingredients: list[dict[str, Any]],
         craft_roll: dict[str, Any],
+        craft_intent: str = "auto",
     ) -> dict[str, Any]:
         world_payload = _ai_json(_world_ai_context(self.state.world_data, include_characters=False, include_monsters=False, include_quests=True))
         location = self.state.world_data.locations.get(self.state.current_location)
         location_payload = _ai_json(_location_ai_context(location)) if location else "{}"
         ingredients_payload = _ai_json([_compact_item_for_ai(item) for item in ingredients])
         roll_payload = json.dumps(craft_roll, ensure_ascii=False)
+        craft_intent_payload = _ai_json(_craft_intent_payload(craft_intent))
         categories = ", ".join(ITEM_CATEGORY_IDS)
         messages = [
             {
@@ -1799,6 +1871,7 @@ class GameEngine:
                     "戻り値は narration と item を中心にし、item は name, category, description, quantity, value, rarity を含めます。"
                     "category は次のIDから選んでください: "
                     f"{categories}。"
+                    "craft_intent はプレイヤーがクラフト画面で選んだ作成方針です。auto以外では、素材と世界観から無理なく可能な範囲でその方針を優先してください。"
                     "判定が高いほど品質や価値を上げ、critical_success なら特別な希少性や効果を与えてください。"
                     "存在しない素材を勝手に足さず、素材から自然に作れる物にしてください。"
                 ),
@@ -1810,6 +1883,7 @@ class GameEngine:
                     f"現在地: {self.state.current_location}\n"
                     f"現在地データ: {location_payload}\n"
                     f"プレイヤーのクラフト意図: {action}\n"
+                    f"craft_intent: {craft_intent_payload}\n"
                     f"素材: {ingredients_payload}\n"
                     f"game_side_craft_roll: {roll_payload}\n"
                     "このクラフトで完成するアイテムを1つ生成してください。"
@@ -2232,6 +2306,7 @@ class GameEngine:
         lines: list[str] = []
         lines.extend(self._apply_response_gold_effects(response, source))
         lines.extend(self._apply_response_time_effects(response, source))
+        lines.extend(self._apply_response_hunger_effects(response, source))
         lines.extend(self._apply_response_exp_effects(response, source))
         lines.extend(self._apply_equipment_regen_effects(source))
         lines.extend(self._apply_response_game_over_effects(response, source, encounter=encounter))
@@ -2479,6 +2554,13 @@ class GameEngine:
         self._set_world_time_total_hours(new_hours)
         new_label = self._world_time_label(new_hours)
         companion_lines = self._resolve_pending_companion_returns(source=source)
+        hunger_event = self._apply_player_hunger_delta(
+            -requested_hours * PLAYER_HUNGER_PER_HOUR,
+            source="time",
+            reason=reason or source,
+        )
+        if hunger_event.get("line"):
+            companion_lines.append(str(hunger_event["line"]))
         reason_text = f" {reason}" if reason else ""
         line = f"> [時間] {old_label} -> {new_label} (+{requested_hours}時間){reason_text}"
         event = {
@@ -3074,7 +3156,7 @@ class GameEngine:
         self.state.flags["active_encounter"] = encounter
         self.state.flags["screen_mode"] = "battle"
         narration = f"{settlement.name}の衛兵があなたを見つけ、武器を構えた。"
-        self.state.append_turn(action, narration, self.state.current_location, self._encounter_choices(encounter), input_type=input_type)
+        self._append_turn(action, narration, self.state.current_location, self._encounter_choices(encounter), input_type=input_type)
         self.state.display_log.append(f"> [警備] お尋ね者として衛兵に見つかった。")
         self.save_game()
         return self.state.log_text(16)
@@ -3362,6 +3444,8 @@ class GameEngine:
             "player_max_hp": player_max_hp,
             "player_sp": player_sp,
             "player_max_sp": player_max_sp,
+            "player_hunger": self._player_hunger(),
+            "player_max_hunger": PLAYER_MAX_HUNGER,
             "player_attack": combat_stats["attack"],
             "player_attack_bonus": combat_stats["attack_bonus"],
             "player_defense": combat_stats["defense"],
@@ -3440,7 +3524,7 @@ class GameEngine:
             return None
         if settlement is None:
             narration = f"この場所には「{requested}」のような街の施設は存在しない。"
-            self.state.append_turn(action, narration, self.state.current_location, self.state.choices, input_type=input_type)
+            self._append_turn(action, narration, self.state.current_location, self.state.choices, input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
         existing = self._find_or_create_facility_record(settlement, requested)
@@ -3460,7 +3544,7 @@ class GameEngine:
                     "response": _strip_response_metadata(response),
                 }
             )
-            self.state.append_turn(action, narration, settlement.name, self._location_default_choices(settlement.name), input_type=input_type)
+            self._append_turn(action, narration, settlement.name, self._location_default_choices(settlement.name), input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
 
@@ -3495,7 +3579,7 @@ class GameEngine:
         block_reason = self._player_incapacitated_action_block(action, for_movement=True)
         if block_reason:
             narration = self._player_incapacitated_message(block_reason)
-            self.state.append_turn(action, narration, location_name, self._location_default_choices(location_name), input_type=input_type)
+            self._append_turn(action, narration, location_name, self._location_default_choices(location_name), input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
         narrator_response = self._direct_travel_narrator(
@@ -3525,7 +3609,7 @@ class GameEngine:
         narration, choices, _ = self._evaluate_hostile_arrival(action, input_type, "facility_travel", settlement.name, narration, choices)
         if not self._active_encounter():
             self.state.flags["screen_mode"] = "exploration"
-        self.state.append_turn(action, narration, settlement.name, choices, input_type=input_type)
+        self._append_turn(action, narration, settlement.name, choices, input_type=input_type)
         visual_response = self._merge_visual_response(response or {}, narrator_response)
         self._apply_visual_intent(visual_response, "facility_travel", settlement.name, previous_location)
         self.save_game()
@@ -5207,7 +5291,13 @@ class GameEngine:
                     )
                     if str(part or "").strip()
                 )
-                inventory.extend(generate_loot_items(f"{location.name}:{subnode_id}", context))
+                inventory.extend(
+                    generate_loot_items(
+                        f"{location.name}:{subnode_id}",
+                        context,
+                        danger_level=self._current_location_danger(location.name),
+                    )
+                )
                 slot["seeded"] = True
             label = f"{location.name} / {node.get('name') or subnode_id}"
             return label, inventory
@@ -5217,7 +5307,7 @@ class GameEngine:
             location.extra["inventory"] = inventory
         if not location.flags.get("inventory_seeded") and not inventory:
             context = " ".join(part for part in (location.area, location.description) if part)
-            inventory.extend(generate_loot_items(location.name, context))
+            inventory.extend(generate_loot_items(location.name, context, danger_level=self._current_location_danger(location.name)))
             location.flags["inventory_seeded"] = True
         return location.name, inventory
 
@@ -5506,7 +5596,7 @@ class GameEngine:
         )
         if not self._active_encounter():
             self.state.flags["screen_mode"] = "exploration"
-        self.state.append_turn("\u30b5\u30d6\u30de\u30c3\u30d7\u79fb\u52d5", narration, location_name, choices, input_type="choice")
+        self._append_turn("\u30b5\u30d6\u30de\u30c3\u30d7\u79fb\u52d5", narration, location_name, choices, input_type="choice")
         self._apply_visual_intent(narrator_response, "subnode_travel", location_name, location_name)
         self.save_game()
         return self.state.log_text(16)
@@ -5550,7 +5640,7 @@ class GameEngine:
         )
         if not self._active_encounter():
             self.state.flags["screen_mode"] = "exploration"
-        self.state.append_turn("\u30b5\u30d6\u30de\u30c3\u30d7\u79fb\u52d5", narration, target_location, choices, input_type="choice")
+        self._append_turn("\u30b5\u30d6\u30de\u30c3\u30d7\u79fb\u52d5", narration, target_location, choices, input_type="choice")
         if time_event.get("line"):
             self.state.display_log.append(str(time_event["line"]))
         self.state.display_log.extend(str(item) for item in time_event.get("companion_lines", []) if item)
@@ -5659,7 +5749,7 @@ class GameEngine:
         )
         if not self._active_encounter():
             self.state.flags["screen_mode"] = "exploration"
-        self.state.append_turn("ワールドマップ移動", narration, target, choices, input_type="choice")
+        self._append_turn("ワールドマップ移動", narration, target, choices, input_type="choice")
         if time_event.get("line"):
             self.state.display_log.append(str(time_event["line"]))
         self.state.display_log.extend(str(item) for item in time_event.get("companion_lines", []) if item)
@@ -6364,7 +6454,11 @@ class GameEngine:
             )
             if part
         )
-        character.inventory = generate_vendor_items(character.name, context)
+        character.inventory = generate_vendor_items(
+            character.name,
+            context,
+            danger_level=self._current_location_danger(character.location or self.state.current_location),
+        )
         character.gold = character.gold or 120
         extra["vendor_inventory_day"] = day
         extra["vendor_base_price_multiplier"] = SHOP_FACILITY_PRICE_MULTIPLIERS.get(facility_type, 1.0)
@@ -6521,7 +6615,7 @@ class GameEngine:
         else:
             narration = f"{character.name}に値引き交渉を試みた。現在の購入価格は{percent}%になった。"
         choices = self.state.choices or self._location_default_choices(location)
-        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self._append_turn(action, narration, location, choices, input_type=input_type)
         if vendor_event.get("changed"):
             self.state.world_data.history.append(
                 {
@@ -8602,7 +8696,7 @@ class GameEngine:
         illegal_check = input_gate
         if _as_bool(illegal_check.get("content_violation")):
             message = str(illegal_check.get("message") or illegal_check.get("reason") or "その行動は処理されませんでした。")
-            self.state.append_turn(
+            self._append_turn(
                 action_text,
                 message,
                 self.state.current_location,
@@ -8628,7 +8722,7 @@ class GameEngine:
                     or feasibility_check.get("reason")
                     or "その行動は、現在の状況では実現できない。"
                 )
-                self.state.append_turn(
+                self._append_turn(
                     action_text,
                     message,
                     self.state.current_location,
@@ -8846,7 +8940,7 @@ class GameEngine:
         self.state.flags["last_master_ai_finished"] = finished
         if not self._active_encounter():
             self.state.flags["screen_mode"] = "exploration"
-        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self._append_turn(action, narration, location, choices, input_type=input_type)
         self._set_player_presence(location)
         self._append_action_roll_log(action_roll)
         status_lines = [] if content_violation else self._apply_response_status_effects(response, "master_ai_facilitator", default_target="player")
@@ -9240,7 +9334,7 @@ class GameEngine:
         opponent_name = str(encounter.get("opponent_name") or "敵")
         location = str(encounter.get("location") or self.state.current_location)
         narration = f"{opponent_name}があなたの敵意に反応し、戦闘態勢に入った。"
-        self.state.append_turn(action, narration, location, self._encounter_choices(encounter), input_type=input_type)
+        self._append_turn(action, narration, location, self._encounter_choices(encounter), input_type=input_type)
         self.state.world_data.extra.setdefault("encounters", []).append(
             {
                 "event": "engage",
@@ -9260,7 +9354,7 @@ class GameEngine:
         if not skill:
             narration = f"スキル「{skill_name or action}」は使用できない。"
             self.state.flags["screen_mode"] = "battle"
-            self.state.append_turn(action, narration, str(encounter.get("location") or self.state.current_location), self._encounter_choices(encounter), input_type=input_type)
+            self._append_turn(action, narration, str(encounter.get("location") or self.state.current_location), self._encounter_choices(encounter), input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
         cost = max(0, _safe_int(skill.get("sp_cost"), _skill_sp_cost(skill)))
@@ -9269,7 +9363,7 @@ class GameEngine:
         if cost > current_sp:
             narration = f"SPが足りない。{skill.get('name')} はSP {cost} 必要。"
             self.state.flags["screen_mode"] = "battle"
-            self.state.append_turn(action, narration, str(encounter.get("location") or self.state.current_location), self._encounter_choices(encounter), input_type=input_type)
+            self._append_turn(action, narration, str(encounter.get("location") or self.state.current_location), self._encounter_choices(encounter), input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
         if cost:
@@ -9689,7 +9783,7 @@ class GameEngine:
                 "remaining": [item.name for item in acting],
             }
         )
-        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self._append_turn(action, narration, location, choices, input_type=input_type)
         self.save_game()
         return self.state.log_text(16)
 
@@ -9792,7 +9886,7 @@ class GameEngine:
                 ],
             )
             self.state.flags["screen_mode"] = "battle"
-            self.state.append_turn(action, narration, location, choices, input_type=input_type)
+            self._append_turn(action, narration, location, choices, input_type=input_type)
             self._apply_visual_intent(player_response, "referee_player_any_input_new_new", location, previous_location)
             self.save_game()
             return self.state.log_text(16)
@@ -9822,7 +9916,7 @@ class GameEngine:
             ],
         )
         self.state.flags["screen_mode"] = "battle"
-        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self._append_turn(action, narration, location, choices, input_type=input_type)
         self._apply_visual_intent(player_response, manager_name, location, previous_location)
         self.save_game()
         return self.state.log_text(16)
@@ -10043,7 +10137,7 @@ class GameEngine:
                     "response": record["response"],
                 }
             )
-        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self._append_turn(action, narration, location, choices, input_type=input_type)
         self._apply_visual_intent(player_response, player_manager, location, previous_location)
         self._apply_response_rewards(player_response, player_manager)
         self._maybe_finish_active_quest_from_response(player_response, player_manager, action)
@@ -10254,7 +10348,7 @@ class GameEngine:
 
         previous_location = self.state.current_location
         location = str(encounter.get("location") or self.state.current_location)
-        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self._append_turn(action, narration, location, choices, input_type=input_type)
         visual_response = rewrite_response or npc_response or player_response
         self._apply_visual_intent(visual_response, "referee_npc_rewrite", location, previous_location)
         for manager_name, response in (
@@ -10429,8 +10523,10 @@ class GameEngine:
                     "Surrender does not end the encounter by itself; the player may accept the surrender or keep fighting. "
                     "For flee or surrender, set combat_judgement.offensive=false and do not describe HP damage. "
                     "If the NPC attack also applies a debuff/status effect, include that debuff in narration as part of the same action. "
-                    "For incapacitating effects, do not use a generic display name such as 行動不能; create a concrete name and description from the attack, "
-                    "such as 粘糸拘束, 触手拘束, 影縛り, 氷縛, or 電撃麻痺, and include tags=['incapacitated'] plus prevents_action/prevents_attack/prevents_escape/prevents_movement=true."
+                    "Return status effects with name, description, remove_condition, power, duration, effect_id, and llm_effect. "
+                    "Use effect_id=Inoperable for restraints or sleep, Psychosis for skill-sealing mental disorder, Silence for mouth/voice sealing, "
+                    "Paralysis for action penalties, HP_Damage/SP_Damage for automatic damage, and Atk_Mod/Def_Mod for temporary stat changes. "
+                    "For incapacitating effects, do not use a generic display name such as 行動不能; create a concrete name and description from the attack."
                 ),
             }
         )
@@ -10521,7 +10617,8 @@ class GameEngine:
                     "unless combat_judgement.offensive is truly appropriate. Preserve npc_action='flee' or npc_action='surrender' "
                     "when that is the chosen tool, keep combat_judgement.offensive=false for those tools, and do not mark surrender as encounter finished unless the player accepted it. "
                     "If a debuff/status effect is applied, rewrite narration so the attack method and debuff are described together. "
-                    "Do not leave an incapacitating effect with a generic display name such as 行動不能; use a concrete name and description based on the NPC's method, while keeping tags=['incapacitated'] and prevention flags for mechanics."
+                    "Use the status object fields name, description, remove_condition, power, duration, effect_id, and llm_effect. "
+                    "For restraints or sleep use effect_id=Inoperable, and do not leave the display name as generic 行動不能; use a concrete name and description based on the NPC's method."
                 ),
             }
         )
@@ -11335,6 +11432,9 @@ class GameEngine:
                 "current_sp": current_sp,
                 "max_sp": max_sp,
                 "sp_ratio": round(current_sp / max_sp, 3),
+                "hunger": self._player_hunger(),
+                "max_hunger": PLAYER_MAX_HUNGER,
+                "hunger_ratio": round(self._player_hunger() / PLAYER_MAX_HUNGER, 3),
                 "player_status": encounter.get("player_status"),
                 "player_status_effects": self._actor_status_effects("player", encounter),
                 "player_character": _character_ai_context(player, details=True) if player else {},
@@ -11413,8 +11513,14 @@ class GameEngine:
             if text_key in {"player_sp_delta", "sp_delta"}:
                 self._apply_player_sp_delta(value, source="encounter_update", encounter=encounter)
                 continue
+            if text_key in {"player_hunger_delta", "hunger_delta"}:
+                self._apply_player_hunger_delta(value, source="encounter_update")
+                continue
             if text_key in {"player_sp", "current_sp"}:
                 self._set_player_sp(value, max_sp=self._hp_number(encounter.get("player_max_sp"), self._player_max_sp()), encounter=encounter)
+                continue
+            if text_key in {"player_hunger", "current_hunger", "hunger"}:
+                self._set_player_hunger(value)
                 continue
             if text_key in {"player_max_sp", "max_sp"}:
                 current_sp = self._player_current_sp(max(1, self._hp_number(value, self._player_max_sp())))
@@ -11534,17 +11640,9 @@ class GameEngine:
             contextualised["name"] = detail["name"]
         if _status_effect_has_generic_incapacitated_description(contextualised):
             contextualised["description"] = detail["description"]
-        if not str(contextualised.get("effect") or "").strip():
-            contextualised["effect"] = detail["effect"]
-        contextualised["prevents_action"] = True
-        contextualised["prevents_movement"] = True
-        contextualised["prevents_attack"] = True
-        contextualised["prevents_escape"] = True
-        contextualised["blocked_actions"] = _dedupe_strs(
-            _as_str_list(contextualised.get("blocked_actions"))
-            + ["attack", "escape", "aggressive_action", "movement"]
-        )
-        contextualised["tags"] = _dedupe_strs(_as_str_list(contextualised.get("tags")) + ["incapacitated", "restraint"])
+        if not str(contextualised.get("llm_effect") or contextualised.get("effect") or "").strip():
+            contextualised["llm_effect"] = detail["effect"]
+        contextualised["effect_id"] = "Inoperable"
         return contextualised
 
     def _add_targeted_status_effects(
@@ -11613,14 +11711,16 @@ class GameEngine:
         return applied
 
     def _remove_actor_status_effects(self, target: str, value: Any, *, encounter: dict[str, Any] | None = None) -> None:
-        remove_ids = {_status_effect_id(item) for item in _status_effect_items(value)}
+        remove_effects = [_normalise_status_effect(item) for item in _status_effect_items(value)]
+        remove_keys = {_status_effect_merge_key(effect) for effect in remove_effects if effect.get("name")}
+        remove_ids = {_status_effect_id(effect) for effect in remove_effects}
         remove_ids.discard("")
-        if not remove_ids:
+        if not remove_ids and not remove_keys:
             return
         status_list = [
             effect
             for effect in self._actor_status_effects(target, encounter)
-            if _status_effect_id(effect) not in remove_ids
+            if _status_effect_merge_key(effect) not in remove_keys and (remove_keys or _status_effect_id(effect) not in remove_ids)
         ]
         self._sync_actor_status_effects(target, status_list, encounter)
 
@@ -11643,6 +11743,20 @@ class GameEngine:
                 effects.append(effect)
         return effects
 
+    def _player_active_status_effects(self) -> list[dict[str, Any]]:
+        effects: list[dict[str, Any]] = []
+        for raw in self._actor_status_effects("player"):
+            effect = _normalise_status_effect(raw)
+            if effect:
+                effects.append(effect)
+        return effects
+
+    def _player_skill_block_effects(self) -> list[dict[str, Any]]:
+        return [effect for effect in self._player_active_status_effects() if _status_effect_blocks_skill(effect)]
+
+    def _player_silence_block_effects(self) -> list[dict[str, Any]]:
+        return [effect for effect in self._player_active_status_effects() if _status_effect_id(effect) == "Silence"]
+
     def _player_incapacitated_action_block(
         self,
         action: str,
@@ -11650,11 +11764,16 @@ class GameEngine:
         encounter: dict[str, Any] | None = None,
         for_movement: bool = False,
     ) -> str:
+        if for_movement:
+            effects = self._player_incapacitated_effects()
+            return "movement" if any(_status_effect_blocks_movement(effect) for effect in effects) else ""
+        if _is_skill_action(action) and self._player_skill_block_effects():
+            return "skill"
+        if _status_effect_action_uses_mouth(action) and self._player_silence_block_effects():
+            return "silence"
         effects = self._player_incapacitated_effects()
         if not effects:
             return ""
-        if for_movement:
-            return "movement" if any(_status_effect_blocks_movement(effect) for effect in effects) else ""
         if _is_escape_action(action):
             return "escape" if any(_status_effect_blocks_escape(effect) for effect in effects) else ""
         if _is_attack_action(action) or _is_aggressive_player_action(action):
@@ -11676,6 +11795,14 @@ class GameEngine:
             return f"{label}のため、今は逃走できない。"
         if reason == "attack":
             return f"{label}のため、今は攻撃的な行動を取れない。"
+        if reason == "skill":
+            names = _dedupe_strs(str(effect.get("name") or "精神異常") for effect in self._player_skill_block_effects())
+            skill_label = " / ".join(names) if names else "精神異常"
+            return f"{skill_label}のため、今はスキルを使えない。"
+        if reason == "silence":
+            names = _dedupe_strs(str(effect.get("name") or "沈黙") for effect in self._player_silence_block_effects())
+            silence_label = " / ".join(names) if names else "沈黙"
+            return f"{silence_label}のため、今は声や口を使う行動ができない。"
         return f"{label}のため、今はその行動を取れない。"
 
     def _resolve_blocked_player_action(
@@ -11690,7 +11817,7 @@ class GameEngine:
         choices = self._encounter_choices(encounter) if encounter else self.state.choices
         self.state.flags["screen_mode"] = "battle" if encounter else self.state.flags.get("screen_mode", "exploration")
         narration = self._player_incapacitated_message(reason)
-        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self._append_turn(action, narration, location, choices, input_type=input_type)
         self.state.world_data.history.append(
             {
                 "manager": "player_action_guard",
@@ -11989,14 +12116,24 @@ class GameEngine:
         if not resolved:
             return []
         kind, name, status_list, _label = resolved
-        remove_ids = {_status_effect_id(item) for item in _status_effect_items(value)}
+        remove_effects = [_normalise_status_effect(item) for item in _status_effect_items(value)]
+        remove_keys = {_status_effect_merge_key(effect) for effect in remove_effects if effect.get("name")}
+        remove_ids = {_status_effect_id(effect) for effect in remove_effects}
         remove_ids.discard("")
-        if not remove_ids:
+        if not remove_ids and not remove_keys:
             return []
-        removed = [effect for effect in status_list if _status_effect_id(effect) in remove_ids]
+        removed = [
+            effect
+            for effect in status_list
+            if _status_effect_merge_key(effect) in remove_keys or (not remove_keys and _status_effect_id(effect) in remove_ids)
+        ]
         if not removed:
             return []
-        kept = [effect for effect in status_list if _status_effect_id(effect) not in remove_ids]
+        kept = [
+            effect
+            for effect in status_list
+            if _status_effect_merge_key(effect) not in remove_keys and (remove_keys or _status_effect_id(effect) not in remove_ids)
+        ]
         self._sync_status_target(kind, name, kept)
         return [
             {
@@ -12049,7 +12186,7 @@ class GameEngine:
         enriched = dict(effect)
         enriched.setdefault("started_day", self.state.day)
         enriched.setdefault("started_location", self.state.current_location)
-        if enriched.get("long_term") or enriched.get("persistent") or enriched.get("permanent"):
+        if _safe_int(enriched.get("duration"), 0) == -1:
             enriched.setdefault("scope", "character")
         return enriched
 
@@ -12060,11 +12197,15 @@ class GameEngine:
             player_status_list = self._actor_status_effects("player", encounter)
             if player_status_list:
                 hp = max(0, int(encounter.get("player_hp") or 0))
-                updated, hp_delta, tick_lines = _tick_status_effects(player_status_list, self.state.player_name or "Player")
+                updated, hp_delta, sp_delta, tick_lines = _tick_status_effects(player_status_list, self.state.player_name or "Player")
                 if hp_delta:
                     max_hp = _safe_int(encounter.get("player_max_hp"), hp)
                     hp = max(0, min(max_hp if max_hp > 0 else hp + hp_delta, hp + hp_delta))
                     encounter["player_hp"] = hp
+                if sp_delta:
+                    max_sp = _safe_int(encounter.get("player_max_sp"), self._player_max_sp())
+                    sp = max(0, _safe_int(encounter.get("player_sp"), self._player_current_sp(max_sp)) + sp_delta)
+                    encounter["player_sp"] = min(max_sp if max_sp > 0 else sp, sp)
                 lines.extend(tick_lines)
                 self._sync_actor_status_effects("player", updated, encounter)
             active_uuid = str(encounter.get("active_opponent_uuid") or encounter.get("opponent_uuid") or "")
@@ -12074,9 +12215,12 @@ class GameEngine:
                 opponent_status_list = self._actor_status_effects("opponent", encounter)
                 if not opponent_status_list:
                     continue
-                updated, hp_delta, tick_lines = _tick_status_effects(opponent_status_list, opponent.name)
+                updated, hp_delta, sp_delta, tick_lines = _tick_status_effects(opponent_status_list, opponent.name)
                 if hp_delta:
                     self._apply_opponent_hp_delta(encounter, hp_delta, source="status_tick", reason="status")
+                if sp_delta:
+                    max_sp = max(0, _safe_int(opponent.max_sp, 0))
+                    opponent.current_sp = max(0, min(max_sp if max_sp > 0 else opponent.current_sp + sp_delta, _safe_int(opponent.current_sp, 0) + sp_delta))
                 lines.extend(tick_lines)
                 self._sync_actor_status_effects("opponent", updated, encounter)
             restore = self._character_from_reference(active_name, active_uuid)
@@ -12092,11 +12236,17 @@ class GameEngine:
             if not status_list:
                 continue
             hp = max(0, int(encounter.get(hp_key) or 0))
-            updated, hp_delta, tick_lines = _tick_status_effects(status_list, label)
+            updated, hp_delta, sp_delta, tick_lines = _tick_status_effects(status_list, label)
             if hp_delta:
                 max_hp = _safe_int(encounter.get("player_max_hp" if target == "player" else "opponent_max_hp"), hp)
                 hp = max(0, min(max_hp if max_hp > 0 else hp + hp_delta, hp + hp_delta))
                 encounter[hp_key] = hp
+            if sp_delta:
+                sp_key = "player_sp" if target == "player" else "opponent_sp"
+                max_sp_key = "player_max_sp" if target == "player" else "opponent_max_sp"
+                max_sp = _safe_int(encounter.get(max_sp_key), 0)
+                sp = max(0, _safe_int(encounter.get(sp_key), 0) + sp_delta)
+                encounter[sp_key] = min(max_sp if max_sp > 0 else sp, sp)
             lines.extend(tick_lines)
             self._sync_actor_status_effects(target, updated, encounter)
         self._sync_player_battle_state(encounter)
@@ -12194,6 +12344,8 @@ class GameEngine:
         encounter["player_max_hp"] = max_hp
         encounter["player_sp"] = sp
         encounter["player_max_sp"] = max_sp
+        encounter["player_hunger"] = self._player_hunger()
+        encounter["player_max_hunger"] = PLAYER_MAX_HUNGER
         combat_stats = self.player_combat_stats()
         encounter["player_attack"] = combat_stats["attack"]
         encounter["player_attack_bonus"] = combat_stats["attack_bonus"]
@@ -12596,6 +12748,174 @@ class GameEngine:
 
     def _response_sp_reason(self, response: dict[str, Any]) -> str:
         reason = response.get("sp_reason") or response.get("resource_reason") or response.get("reason") or response.get("event")
+        if isinstance(reason, (dict, list)):
+            return ""
+        return _short_text(str(reason or "").strip(), 40)
+
+    def player_hunger_status(self) -> tuple[int, int]:
+        return self._player_hunger(), PLAYER_MAX_HUNGER
+
+    def apply_player_hunger_delta(
+        self,
+        delta: Any,
+        *,
+        source: str = "event",
+        reason: str = "",
+        save_game: bool = True,
+    ) -> dict[str, Any]:
+        event = self._apply_player_hunger_delta(delta, source=source, reason=reason)
+        if save_game and event.get("changed"):
+            self.save_game()
+        return event
+
+    def _apply_response_hunger_effects(self, response: dict[str, Any], source: str) -> list[str]:
+        if not isinstance(response, dict):
+            return []
+        lines: list[str] = []
+        absolute_hunger = self._response_player_hunger_absolute(response)
+        if absolute_hunger is not None:
+            event = self._apply_player_hunger_delta(
+                absolute_hunger - self._player_hunger(),
+                source=source,
+                reason=self._response_hunger_reason(response),
+            )
+            if event.get("line"):
+                lines.append(str(event["line"]))
+        delta = self._response_player_hunger_delta(response)
+        if delta:
+            event = self._apply_player_hunger_delta(
+                delta,
+                source=source,
+                reason=self._response_hunger_reason(response),
+            )
+            if event.get("line"):
+                lines.append(str(event["line"]))
+        return lines
+
+    def _apply_player_hunger_delta(self, delta: Any, *, source: str, reason: str = "") -> dict[str, Any]:
+        requested_delta = self._hp_number(delta, 0)
+        if requested_delta == 0:
+            return {"changed": False, "requested_delta": 0}
+        old_hunger = self._player_hunger()
+        new_hunger = max(0, min(PLAYER_MAX_HUNGER, old_hunger + requested_delta))
+        actual_delta = new_hunger - old_hunger
+        if actual_delta == 0:
+            return {
+                "changed": False,
+                "requested_delta": requested_delta,
+                "old_hunger": old_hunger,
+                "new_hunger": new_hunger,
+                "max_hunger": PLAYER_MAX_HUNGER,
+            }
+        self._set_player_hunger(new_hunger)
+        sign = f"+{actual_delta}" if actual_delta > 0 else str(actual_delta)
+        reason_text = f" {reason}" if reason else ""
+        line = f"> [空腹度] {old_hunger}/{PLAYER_MAX_HUNGER} -> {new_hunger}/{PLAYER_MAX_HUNGER} ({sign}){reason_text}"
+        event = {
+            "source": source,
+            "reason": reason,
+            "location": self.state.current_location,
+            "day": self.state.day,
+            "requested_delta": requested_delta,
+            "actual_delta": actual_delta,
+            "old_hunger": old_hunger,
+            "new_hunger": new_hunger,
+            "max_hunger": PLAYER_MAX_HUNGER,
+            "line": line,
+            "changed": True,
+        }
+        self.state.world_data.extra.setdefault("hunger_events", []).append(dict(event))
+        return event
+
+    def _player_hunger(self) -> int:
+        for value in (
+            getattr(self.state, "hunger", None),
+            self.state.flags.get("player_hunger"),
+            self.state.extra.get("hunger"),
+            self.state.extra.get("player_hunger"),
+        ):
+            if value is not None:
+                hunger = max(0, min(PLAYER_MAX_HUNGER, self._hp_number(value, PLAYER_MAX_HUNGER)))
+                self._set_player_hunger(hunger)
+                return hunger
+        self._set_player_hunger(PLAYER_MAX_HUNGER)
+        return PLAYER_MAX_HUNGER
+
+    def _set_player_hunger(self, hunger: Any) -> None:
+        resolved = max(0, min(PLAYER_MAX_HUNGER, self._hp_number(hunger, PLAYER_MAX_HUNGER)))
+        self.state.hunger = resolved
+        self.state.flags["player_hunger"] = resolved
+        self.state.flags["player_max_hunger"] = PLAYER_MAX_HUNGER
+        self.state.extra["hunger"] = resolved
+        self.state.extra["player_hunger"] = resolved
+        self.state.extra["max_hunger"] = PLAYER_MAX_HUNGER
+        self.state.extra["player_max_hunger"] = PLAYER_MAX_HUNGER
+        player = self.state.world_data.characters.get(self.state.player_name)
+        if player:
+            player.extra["hunger"] = resolved
+            player.extra["max_hunger"] = PLAYER_MAX_HUNGER
+        if self.state.party and isinstance(self.state.party[0], dict):
+            self.state.party[0]["hunger"] = f"{resolved}/{PLAYER_MAX_HUNGER}"
+            extra = self.state.party[0].setdefault("extra", {})
+            if isinstance(extra, dict):
+                extra["hunger"] = resolved
+                extra["max_hunger"] = PLAYER_MAX_HUNGER
+
+    def _apply_starvation_turn_penalty(self) -> list[str]:
+        if self._player_hunger() > 0:
+            return []
+        lines = ["> [空腹] 空腹で体力と気力が削られている。"]
+        hp_event = self._apply_player_hp_delta(
+            -PLAYER_STARVATION_HP_SP_DAMAGE,
+            source="hunger",
+            reason="空腹",
+        )
+        if hp_event.get("line"):
+            lines.append(str(hp_event["line"]))
+        sp_event = self._apply_player_sp_delta(
+            -PLAYER_STARVATION_HP_SP_DAMAGE,
+            source="hunger",
+            reason="空腹",
+        )
+        if sp_event.get("line"):
+            lines.append(str(sp_event["line"]))
+        return lines
+
+    def _response_player_hunger_delta(self, payload: Any) -> int:
+        if isinstance(payload, list):
+            return sum(self._response_player_hunger_delta(item) for item in payload)
+        if not isinstance(payload, dict):
+            return 0
+        total = 0
+        effect_type = str(payload.get("type") or payload.get("name") or payload.get("kind") or "").strip().lower()
+        value = self._hp_number(
+            payload.get("value", payload.get("amount", payload.get("points", payload.get("hunger", 0)))),
+            0,
+        )
+        if effect_type in {"hunger", "hunger_heal", "restore_hunger", "recover_hunger", "meal", "food"}:
+            total += abs(value)
+        elif effect_type in {"hunger_damage", "starvation", "consume_hunger"}:
+            total -= abs(value)
+        for key, value in payload.items():
+            key_text = str(key).strip().lower()
+            if key_text in {"player_hunger_delta", "hunger_delta"}:
+                total += self._hp_number(value, 0)
+            elif key_text in {"restore_hunger", "recover_hunger", "hunger_restore", "hunger_heal", "meal_hunger"}:
+                total += abs(self._hp_number(value, 0))
+            elif key_text in {"consume_hunger", "hunger_damage", "starvation"}:
+                total -= abs(self._hp_number(value, 0))
+            elif key_text in {"hunger_effect", "hunger_effects", "player_hunger_effect", "player_hunger_effects"}:
+                total += self._response_player_hunger_delta(value)
+        return total
+
+    def _response_player_hunger_absolute(self, response: dict[str, Any]) -> int | None:
+        for key in ("player_hunger", "hunger", "current_hunger"):
+            if key in response:
+                return self._hp_number(response.get(key), PLAYER_MAX_HUNGER)
+        return None
+
+    def _response_hunger_reason(self, response: dict[str, Any]) -> str:
+        reason = response.get("hunger_reason") or response.get("meal_reason") or response.get("reason") or response.get("event")
         if isinstance(reason, (dict, list)):
             return ""
         return _short_text(str(reason or "").strip(), 40)
@@ -13073,6 +13393,8 @@ class GameEngine:
         choices = ["攻撃", "スキル", "行動", "逃走"]
         if self._player_incapacitated_effects():
             choices = [choice for choice in choices if choice not in {"攻撃", "逃走"}]
+        if self._player_skill_block_effects():
+            choices = [choice for choice in choices if choice != "スキル"]
         if self._encounter_has_surrendered_opponents(encounter):
             choices.append("降伏を受け入れる")
         return choices
@@ -13093,7 +13415,7 @@ class GameEngine:
                     "response": _strip_response_metadata(response),
                 }
             )
-            self.state.append_turn(action, narration, location, choices, input_type=input_type)
+            self._append_turn(action, narration, location, choices, input_type=input_type)
             self.save_game()
             return self.state.log_text(16)
 
@@ -13118,7 +13440,7 @@ class GameEngine:
                 "response": _strip_response_metadata(response),
             }
         )
-        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self._append_turn(action, narration, location, choices, input_type=input_type)
         status_lines = self._apply_response_status_effects(response, "conversation_starter", default_target=character.name, context_character=character)
         status_lines.extend(self._apply_response_hp_effects(response, "conversation_starter"))
         status_lines.extend(self._apply_response_sp_effects(response, "conversation_starter"))
@@ -13226,7 +13548,7 @@ class GameEngine:
         else:
             self.state.flags["screen_mode"] = "conversation"
 
-        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self._append_turn(action, narration, location, choices, input_type=input_type)
         self._append_action_roll_log(action_roll)
         visual_response = resolver_response or response
         status_lines = [] if content_violation else self._apply_response_status_effects(response, "conversation_facilitator", default_target=character.name, context_character=character)
@@ -13561,7 +13883,7 @@ class GameEngine:
             self.state.flags["screen_mode"] = "exploration"
         narration = _hide_internal_quest_tokens(narration)
         choices = [_hide_internal_quest_tokens(choice) for choice in choices]
-        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self._append_turn(action, narration, location, choices, input_type=input_type)
         self._set_player_presence(location)
         self._append_action_roll_log(action_roll)
         status_lines = self._apply_response_status_effects(response, "field_event_evaluator", default_target="player")
@@ -13922,6 +14244,8 @@ class GameEngine:
             "active_facility": active_facility or {},
             "player": _character_ai_context(player) if player else {"name": self.state.player_name},
             "player_gold": self.state.gold,
+            "player_hunger": self._player_hunger(),
+            "player_max_hunger": PLAYER_MAX_HUNGER,
             "player_inventory": [_compact_item_for_ai(item) for item in self._player_inventory()[:18] if isinstance(item, dict)],
             "nearby_npcs": nearby_npcs,
             "active_encounter": _compact_value(active_encounter or {}, max_chars=900),
@@ -14070,7 +14394,7 @@ class GameEngine:
             }
         )
         self.state.flags["screen_mode"] = "exploration"
-        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self._append_turn(action, narration, location, choices, input_type=input_type)
         status_lines = self._apply_response_status_effects(response, "quest_starter", default_target="player")
         status_lines.extend(self._apply_response_hp_effects(response, "quest_starter"))
         status_lines.extend(self._apply_response_sp_effects(response, "quest_starter"))
@@ -15517,7 +15841,7 @@ class GameEngine:
             self.state.flags["screen_mode"] = "exploration"
             narration = _hide_internal_quest_tokens(narration)
             choices = [_hide_internal_quest_tokens(choice) for choice in choices]
-            self.state.append_turn(action, narration, location, choices, input_type=input_type)
+            self._append_turn(action, narration, location, choices, input_type=input_type)
             self._finish_quest(quest, "abandoned", "player_abandoned", {"narration": narration})
             self._apply_visual_intent({}, "quest_abandoned", location, previous_location)
             self.save_game()
@@ -15658,7 +15982,7 @@ class GameEngine:
             self.state.flags["screen_mode"] = "exploration"
         narration = _hide_internal_quest_tokens(narration)
         choices = [_hide_internal_quest_tokens(choice) for choice in choices]
-        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self._append_turn(action, narration, location, choices, input_type=input_type)
         self._append_action_roll_log(action_roll)
         status_lines = self._apply_response_status_effects(referee, "quest_referee_with_free_action", default_target="player")
         status_lines.extend(str(line) for line in movement_result.get("status_lines", []) if str(line).strip())
@@ -16246,7 +16570,7 @@ def _character_visual_feature_parts(character: CharacterData) -> list[str]:
     ]
     parts.extend(_dict_list_visual_parts(character.traits, ("name", "description", "effect", "severity", "visual", "appearance")))
     parts.extend(_dict_list_visual_parts(character.skills, ("name", "description", "effect", "element", "skill_type", "visual_effect")))
-    parts.extend(_dict_list_visual_parts(character.status_effects, ("name", "description", "effect", "severity", "visual")))
+    parts.extend(_dict_list_visual_parts(character.status_effects, ("name", "description", "llm_effect", "severity", "visual")))
     parts.extend(_ability_visual_parts(character.extra))
     parts.extend(_dict_list_visual_parts(character.inventory[:4], ("name", "category", "description")))
     return _dedupe_strs(parts)[:36]
@@ -16470,7 +16794,7 @@ def _status_effect_applied_line(item: dict[str, Any]) -> str:
     label = str(item.get("label") or item.get("target") or "対象")
     effect = item.get("effect") if isinstance(item.get("effect"), dict) else {}
     name = str(effect.get("name") or "状態")
-    marker = "長期状態" if effect.get("long_term") or effect.get("persistent") or effect.get("permanent") else "状態"
+    marker = "長期状態" if _safe_int(effect.get("duration"), 0) == -1 else "状態"
     stage = str(effect.get("stage") or "")
     suffix = f" ({stage})" if stage else ""
     return f"[{marker}] {label}に{name}{suffix}が付与された。"
@@ -16480,7 +16804,7 @@ def _status_effect_removed_line(item: dict[str, Any]) -> str:
     label = str(item.get("label") or item.get("target") or "target")
     effect = item.get("effect") if isinstance(item.get("effect"), dict) else {}
     name = str(effect.get("name") or "status")
-    marker = "long-term status removed" if effect.get("long_term") or effect.get("persistent") or effect.get("permanent") else "status removed"
+    marker = "long-term status removed" if _safe_int(effect.get("duration"), 0) == -1 else "status removed"
     treatment = str(item.get("treatment") or "")
     suffix = f" ({treatment})" if treatment else ""
     return f"[{marker}] {label}: {name}{suffix}"
@@ -16501,12 +16825,17 @@ def _status_effect_items(value: Any) -> list[Any]:
                 "title",
                 "label",
                 "id",
+                "effect_id",
                 "status",
                 "condition",
                 "effect",
                 "effect_text",
+                "llm_effect",
                 "description",
                 "mechanics",
+                "power",
+                "duration",
+                "remove_condition",
             )
         ):
             return [value]
@@ -16532,7 +16861,7 @@ def _normalise_status_effect(value: Any, *, source: str = "") -> dict[str, Any]:
     else:
         raw_name = str(value).strip()
         data = {"name": raw_name}
-    effect_text = _first_status_text(
+    raw_effect_text = _first_status_text(
         data,
         "effect",
         "effect_text",
@@ -16541,41 +16870,65 @@ def _normalise_status_effect(value: Any, *, source: str = "") -> dict[str, Any]:
         "rule",
         "rules",
     )
+    effect_text_is_id = bool(canonical_status_effect_id(raw_effect_text))
     description = _first_status_text(data, "description", "summary", "detail")
-    raw_name = raw_name or _status_name_from_text(effect_text or description)
-    if not raw_name:
+    llm_effect = _first_status_text(data, "llm_effect", "send_llm", "send_llm_text", "llm_text")
+    if not llm_effect and raw_effect_text and not effect_text_is_id:
+        llm_effect = raw_effect_text
+    raw_name = raw_name or _status_name_from_text(llm_effect or description)
+    combined = " ".join(part for part in (raw_name, raw_effect_text, description, llm_effect) if part)
+    preset = _status_effect_preset(combined)
+    raw_id = str(
+        data.get("effect_id")
+        or data.get("effect_type")
+        or data.get("status_id")
+        or data.get("id")
+        or (raw_effect_text if effect_text_is_id else "")
+        or preset.get("effect_id")
+        or preset.get("id")
+        or ""
+    ).strip()
+    system_id = raw_id if raw_id in {"dead", "defeated", SURRENDERED_STATUS_ID, FLED_STATUS_ID} else ""
+    effect_id = canonical_status_effect_id(raw_id) or canonical_status_effect_id(combined) or system_id
+    if not effect_id:
+        effect_id = "SendLLM" if (llm_effect or description or raw_name) else ""
+    if not effect_id:
         return {}
-    preset = _status_effect_preset(" ".join(part for part in (raw_name, effect_text, description) if part))
-    effect_id = str(data.get("id") or preset.get("id") or _slug_status(raw_name))
-    name = str(data.get("name") or preset.get("name") or raw_name)
-    inferred_duration = _infer_status_duration(effect_text or description or raw_name)
-    duration_value = data.get("duration", data.get("turns", preset.get("duration", inferred_duration)))
-    permanent = _is_permanent_status_duration(duration_value) or _as_bool(data.get("permanent") or data.get("persistent") or preset.get("persistent"))
-    long_term = permanent or _as_bool(data.get("long_term") or data.get("longterm") or preset.get("long_term"))
-    duration = 0 if permanent else _safe_int(
-        duration_value,
-        _safe_int(preset.get("duration", inferred_duration), 0),
+    name = str(data.get("name") or preset.get("name") or raw_name or status_effect_label(effect_id)).strip()
+    if name == effect_id:
+        name = status_effect_label(effect_id)
+    description = description or str(preset.get("description") or status_effect_description(effect_id) or "")
+    remove_condition = str(data.get("remove_condition") or data.get("cure_condition") or preset.get("remove_condition") or "").strip()
+    inferred_duration = _infer_status_duration(llm_effect or description or raw_name)
+    duration_value = (
+        data.get("duration")
+        if "duration" in data
+        else data.get("time", data.get("turns", preset.get("duration", inferred_duration)))
     )
+    permanent = _is_permanent_status_duration(duration_value) or _as_bool(data.get("permanent") or data.get("persistent") or preset.get("persistent"))
+    duration = -1 if permanent else _safe_int(duration_value, _safe_int(preset.get("duration", inferred_duration), 0))
     if duration <= 0 and inferred_duration > 0:
         duration = inferred_duration
-    remaining = _safe_int(data.get("remaining_turns", duration), duration)
-    damage = _safe_int(
+    power = _safe_int(
         data.get(
-            "damage_per_turn",
-            data.get("tick_damage", data.get("hp_damage_per_turn", preset.get("damage_per_turn", 0))),
+            "power",
+            data.get(
+                "value",
+                data.get("amount", data.get("effect_amount", preset.get("power", 0))),
+            ),
         ),
-        _safe_int(preset.get("damage_per_turn"), 0),
+        _safe_int(preset.get("power"), 0),
     )
-    hp_delta = _status_hp_delta_per_turn(data, effect_text or description or raw_name, damage)
+    if effect_id in {"HP_Damage", "SP_Damage", "Paralysis"}:
+        power = abs(power)
     result = {
-        "id": effect_id,
         "name": name,
-        "description": description or str(preset.get("description") or ""),
-        "effect": effect_text,
+        "description": description,
+        "remove_condition": remove_condition,
+        "power": power,
         "duration": duration,
-        "remaining_turns": remaining,
-        "damage_per_turn": damage,
-        "hp_delta_per_turn": hp_delta,
+        "effect_id": effect_id,
+        "llm_effect": llm_effect,
         "source": source or str(data.get("source") or ""),
     }
     for key in (
@@ -16588,31 +16941,17 @@ def _normalise_status_effect(value: Any, *, source: str = "") -> dict[str, Any]:
         "tick_text",
         "expire_text",
         "apply_text",
-        "remove_condition",
         "started_day",
         "started_location",
         "expected_day",
         "due_day",
         "expires_day",
         "notes",
-        "tags",
-        "modifiers",
-        "stat_modifiers",
-        "prevents_action",
-        "prevents_movement",
-        "prevents_attack",
-        "prevents_escape",
-        "blocked_actions",
         "combat_state",
     ):
         item = data.get(key) if key in data else preset.get(key)
         if item not in (None, "", [], {}):
             result[key] = item
-    if permanent:
-        result["permanent"] = True
-        result["persistent"] = True
-    if long_term:
-        result["long_term"] = True
     return _drop_empty(result)
 
 
@@ -16668,54 +17007,6 @@ def _is_permanent_status_duration(value: Any) -> bool:
     }
 
 
-def _status_hp_delta_per_turn(data: dict[str, Any], text: str, damage_per_turn: int) -> int:
-    for key in ("hp_delta_per_turn", "hp_delta_each_turn", "health_delta_per_turn"):
-        if key in data:
-            return _safe_int(data.get(key), 0)
-    for key in ("heal_per_turn", "healing_per_turn", "regeneration_per_turn"):
-        if key in data:
-            return max(0, _safe_int(data.get(key), 0))
-    if damage_per_turn:
-        return -max(0, damage_per_turn)
-    inferred = _infer_status_hp_delta(text)
-    return inferred
-
-
-def _infer_status_hp_delta(text: str) -> int:
-    source = str(text or "")
-    lowered = source.lower()
-    heal_words = ("回復", "癒", "heal", "regenerat", "restore")
-    damage_words = ("ダメージ", "損傷", "傷", "減る", "失う", "damage", "lose hp", "hp loss")
-    if any(word in lowered for word in heal_words):
-        amount = _first_int_near_status_word(source, heal_words)
-        if amount:
-            return amount
-    if any(word in lowered for word in damage_words):
-        amount = _first_int_near_status_word(source, damage_words)
-        if amount:
-            return -amount
-    return 0
-
-
-def _first_int_near_status_word(text: str, words: tuple[str, ...]) -> int:
-    source = str(text or "")
-    lowered = source.lower()
-    for word in words:
-        index = lowered.find(str(word).lower())
-        if index < 0:
-            continue
-        after = source[index : index + 36]
-        match = re.search(r"(\d+)", after)
-        if match:
-            return max(0, _safe_int(match.group(1), 0))
-        before = source[max(0, index - 36) : index]
-        matches = list(re.finditer(r"(\d+)", before))
-        if matches:
-            return max(0, _safe_int(matches[-1].group(1), 0))
-    match = re.search(r"(\d+)", source)
-    return max(0, _safe_int(match.group(1), 0)) if match else 0
-
-
 def _format_status_template(template: Any, actor_label: str, name: str, hp_delta: int) -> str:
     text = str(template or "").strip()
     if not text:
@@ -16734,74 +17025,45 @@ def _format_status_template(template: Any, actor_label: str, name: str, hp_delta
 
 
 def _status_effect_preset(text: str) -> dict[str, Any]:
-    lowered = text.lower()
-    if (
-        any(
-            word in lowered
-            for word in (
-                "incapacitated",
-                "immobilized",
-                "immobilised",
-                "restrained",
-                "bound",
-                "tied up",
-                "unable to act",
-                "cannot act",
-            )
-        )
-        or any(word in text for word in ("行動不能", "拘束", "捕縛", "縛ら", "身動き", "動けない", "動けず"))
-    ):
+    source = str(text or "")
+    lowered = source.casefold()
+    effect_id = canonical_status_effect_id(source)
+    if effect_id:
+        power = 1 if effect_id in {"HP_Damage", "SP_Damage", "Paralysis"} else 0
         return {
-            "id": INCAPACITATED_STATUS_ID,
-            "name": INCAPACITATED_STATUS_NAME,
-            "duration": 0,
-            "damage_per_turn": 0,
-            "description": "拘束や麻痺などにより、攻撃・逃走・移動ができない。",
-            "category": "control",
-            "prevents_action": True,
-            "prevents_movement": True,
-            "prevents_attack": True,
-            "prevents_escape": True,
-            "blocked_actions": ["attack", "escape", "aggressive_action", "movement"],
-            "tags": ["incapacitated", "restraint"],
+            "effect_id": effect_id,
+            "name": status_effect_label(effect_id),
+            "description": status_effect_description(effect_id),
+            "duration": 3 if effect_id in {"HP_Damage", "SP_Damage", "Paralysis", "Silence", "Psychosis", "Inoperable"} else 0,
+            "power": power,
         }
-    if "pregnan" in lowered or "妊娠" in text:
+    if any(word in lowered for word in ("dead", "death")) or "死亡" in source:
+        return {"effect_id": "dead", "name": "死亡", "duration": -1, "power": 0}
+    if any(word in lowered for word in ("defeated", "unconscious")) or "戦闘不能" in source:
+        return {"effect_id": "defeated", "name": "戦闘不能", "duration": -1, "power": 0}
+    if "surrender" in lowered or "降伏" in source:
+        return {"effect_id": SURRENDERED_STATUS_ID, "name": "降伏", "duration": -1, "power": 0}
+    if any(word in lowered for word in ("fled", "escaped")) or "逃走" in source:
+        return {"effect_id": FLED_STATUS_ID, "name": "逃走", "duration": -1, "power": 0}
+    if "pregnan" in lowered or "妊娠" in source:
         return {
-            "id": "pregnancy",
+            "effect_id": "SendLLM",
             "name": "妊娠",
-            "duration": 0,
-            "damage_per_turn": 0,
             "description": "長期的に保持される身体状態。",
-            "category": "long_term_condition",
+            "duration": -1,
+            "power": 0,
+            "llm_effect": "妊娠している。行動や描写で必要に応じて考慮する。",
             "scope": "character",
-            "long_term": True,
-            "persistent": True,
         }
-    if any(word in lowered for word in ("poison", "venom")) or "毒" in text:
-        return {"id": "poison", "name": "毒", "duration": 3, "damage_per_turn": 1, "description": "毒が体力を削る。"}
-    if any(word in lowered for word in ("bleed", "bleeding")) or "出血" in text:
-        return {"id": "bleeding", "name": "出血", "duration": 3, "damage_per_turn": 1, "description": "出血が続いている。"}
-    if any(word in lowered for word in ("burn", "burning")) or "火傷" in text or "炎上" in text:
-        return {"id": "burning", "name": "火傷", "duration": 2, "damage_per_turn": 1, "description": "火傷が痛む。"}
-    if any(word in lowered for word in ("paralysis", "paralyzed", "stun", "stunned")) or "麻痺" in text or "しびれ" in text or "気絶" in text:
+    if any(word in lowered for word in ("wounded", "injured")) or "負傷" in source or "重傷" in source:
         return {
-            "id": "paralyzed",
-            "name": "麻痺",
-            "duration": 2,
-            "damage_per_turn": 0,
-            "description": "体がうまく動かない。",
-            "prevents_action": True,
-            "prevents_movement": True,
-            "prevents_attack": True,
-            "prevents_escape": True,
-            "blocked_actions": ["attack", "escape", "aggressive_action", "movement"],
+            "effect_id": "SendLLM",
+            "name": "負傷",
+            "description": "傷を負っており、行動や描写に影響する。",
+            "duration": 0,
+            "power": 0,
+            "llm_effect": "負傷している。痛みや動作の鈍りを描写に反映する。",
         }
-    if any(word in lowered for word in ("dead", "death")) or "死亡" in text:
-        return {"id": "dead", "name": "死亡", "duration": 0, "damage_per_turn": 0}
-    if any(word in lowered for word in ("defeated", "unconscious")) or "戦闘不能" in text:
-        return {"id": "defeated", "name": "戦闘不能", "duration": 0, "damage_per_turn": 0}
-    if any(word in lowered for word in ("wounded", "injured")) or "負傷" in text or "重傷" in text:
-        return {"id": "wounded", "name": "負傷", "duration": 0, "damage_per_turn": 0}
     return {}
 
 
@@ -16814,51 +17076,56 @@ def _status_effect_id_matches(effect: dict[str, Any], ids: set[str]) -> bool:
     effect_id = _status_effect_id(effect)
     if effect_id in ids:
         return True
-    text = json.dumps(effect, ensure_ascii=False, default=str).casefold()
-    return any(item.casefold() in text for item in ids)
-
-
-def _status_effect_blocked_actions(effect: dict[str, Any]) -> set[str]:
-    raw = effect.get("blocked_actions")
-    actions: set[str] = set()
-    if isinstance(raw, str):
-        actions.update(part.strip().casefold() for part in re.split(r"[,/| ]+", raw) if part.strip())
-    elif isinstance(raw, (list, tuple, set)):
-        actions.update(str(part or "").strip().casefold() for part in raw if str(part or "").strip())
-    return actions
+    return False
 
 
 def _status_effect_blocks_action(effect: dict[str, Any]) -> bool:
-    if _as_bool(effect.get("prevents_action")):
-        return True
-    if _status_effect_id_matches(effect, {INCAPACITATED_STATUS_ID, "paralyzed", "stunned"}):
-        return True
-    blocked = _status_effect_blocked_actions(effect)
-    return bool(blocked.intersection({"action", "actions", "all", "attack", "escape", "aggressive_action"}))
+    return _status_effect_id(effect) == "Inoperable"
 
 
 def _status_effect_blocks_movement(effect: dict[str, Any]) -> bool:
-    if _as_bool(effect.get("prevents_movement")):
-        return True
-    if _status_effect_id_matches(effect, {INCAPACITATED_STATUS_ID, "paralyzed", "stunned"}):
-        return True
-    return bool(_status_effect_blocked_actions(effect).intersection({"movement", "move", "travel", "map", "subnode"}))
+    return _status_effect_id(effect) == "Inoperable"
 
 
 def _status_effect_blocks_attack(effect: dict[str, Any]) -> bool:
-    if _as_bool(effect.get("prevents_attack")):
-        return True
-    if _status_effect_blocks_action(effect):
-        return True
-    return bool(_status_effect_blocked_actions(effect).intersection({"attack", "aggressive_action"}))
+    return _status_effect_id(effect) == "Inoperable"
 
 
 def _status_effect_blocks_escape(effect: dict[str, Any]) -> bool:
-    if _as_bool(effect.get("prevents_escape")):
-        return True
-    if _status_effect_blocks_movement(effect):
-        return True
-    return bool(_status_effect_blocked_actions(effect).intersection({"escape", "flee", "run"}))
+    return _status_effect_id(effect) == "Inoperable"
+
+
+def _status_effect_blocks_skill(effect: dict[str, Any]) -> bool:
+    return _status_effect_id(effect) == "Psychosis"
+
+
+def _status_effect_action_uses_mouth(action: str) -> bool:
+    text = str(action or "").casefold()
+    if not text:
+        return False
+    return any(
+        keyword in text
+        for keyword in (
+            "詠唱",
+            "唱える",
+            "唱え",
+            "話す",
+            "話しかけ",
+            "説得",
+            "交渉",
+            "叫ぶ",
+            "歌う",
+            "speech",
+            "speak",
+            "talk",
+            "negotiate",
+            "persuade",
+            "chant",
+            "cast",
+            "sing",
+            "shout",
+        )
+    )
 
 
 def _status_effect_is_surrendered_or_fled(effect: dict[str, Any]) -> bool:
@@ -16894,13 +17161,7 @@ def _status_response_context_text(value: Any) -> str:
 def _status_effect_is_incapacitating(effect: dict[str, Any]) -> bool:
     if not isinstance(effect, dict):
         return False
-    if _status_effect_id_matches(effect, {INCAPACITATED_STATUS_ID}):
-        return True
-    return (
-        _as_bool(effect.get("prevents_action"))
-        and _as_bool(effect.get("prevents_attack"))
-        and (_as_bool(effect.get("prevents_escape")) or _as_bool(effect.get("prevents_movement")))
-    )
+    return _status_effect_id(effect) == "Inoperable"
 
 
 def _status_effect_has_generic_incapacitated_text(effect: dict[str, Any]) -> bool:
@@ -16933,7 +17194,7 @@ def _status_effect_has_generic_incapacitated_name(effect: dict[str, Any]) -> boo
 
 def _status_effect_has_generic_incapacitated_description(effect: dict[str, Any]) -> bool:
     description = str(effect.get("description") or "").strip()
-    effect_text = str(effect.get("effect") or "").strip()
+    effect_text = str(effect.get("llm_effect") or effect.get("effect") or "").strip()
     if not description and not effect_text:
         return True
     generic_parts = (
@@ -17043,13 +17304,13 @@ def _combat_status_effects_payload(value: Any) -> list[dict[str, Any]]:
             continue
         seen.add(key)
         item = {
-            "id": _status_effect_id(effect),
+            "effect_id": _status_effect_id(effect),
             "name": name,
             "description": str(effect.get("description") or ""),
-            "effect": str(effect.get("effect") or ""),
+            "remove_condition": str(effect.get("remove_condition") or ""),
+            "power": effect.get("power"),
             "duration": effect.get("duration"),
-            "remaining_turns": effect.get("remaining_turns"),
-            "tags": _as_str_list(effect.get("tags")),
+            "llm_effect": str(effect.get("llm_effect") or ""),
         }
         effects.append({key: value for key, value in item.items() if value not in (None, "", [], {})})
     return effects[:3]
@@ -17063,7 +17324,7 @@ def _combat_status_effects_fallback_note(value: Any, target_name: str) -> str:
     parts: list[str] = []
     for effect in effects[:2]:
         name = str(effect.get("name") or "状態異常")
-        description = str(effect.get("description") or effect.get("effect") or "")
+        description = str(effect.get("description") or effect.get("llm_effect") or "")
         parts.append(f"{target}は「{name}」を受けた。{description}".strip())
     return " " + " ".join(parts)
 
@@ -17074,7 +17335,7 @@ def _combat_status_effects_mentioned(text: str, value: Any) -> bool:
         return False
     for effect in _combat_status_effects_payload(value):
         name = str(effect.get("name") or "").strip()
-        description = str(effect.get("description") or effect.get("effect") or "").strip()
+        description = str(effect.get("description") or effect.get("llm_effect") or "").strip()
         if name and name in source:
             return True
         if description:
@@ -17084,32 +17345,38 @@ def _combat_status_effects_mentioned(text: str, value: Any) -> bool:
     return False
 
 
+def _status_effect_merge_key(effect: dict[str, Any]) -> str:
+    return f"{_status_effect_id(effect)}|{str(effect.get('name') or '').casefold()}"
+
+
 def _merge_status_effect(status_list: list[dict[str, Any]], effect: dict[str, Any]) -> None:
-    effect_id = _status_effect_id(effect)
+    effect_key = _status_effect_merge_key(effect)
     for existing in status_list:
-        if _status_effect_id(existing) != effect_id:
+        if _status_effect_merge_key(existing) != effect_key:
             continue
         existing.update({key: value for key, value in effect.items() if value not in (None, "", [])})
-        existing["remaining_turns"] = max(
-            _safe_int(existing.get("remaining_turns"), 0),
-            _safe_int(effect.get("remaining_turns"), 0),
-        )
-        existing["duration"] = max(_safe_int(existing.get("duration"), 0), _safe_int(effect.get("duration"), 0))
-        existing["damage_per_turn"] = max(_safe_int(existing.get("damage_per_turn"), 0), _safe_int(effect.get("damage_per_turn"), 0))
+        existing_duration = _safe_int(existing.get("duration"), 0)
+        effect_duration = _safe_int(effect.get("duration"), 0)
+        existing["duration"] = -1 if -1 in {existing_duration, effect_duration} else max(existing_duration, effect_duration)
+        existing["power"] = max(_safe_int(existing.get("power"), 0), _safe_int(effect.get("power"), 0))
         return
     status_list.append(effect)
 
 
-def _tick_status_effects(status_list: list[dict[str, Any]], actor_label: str) -> tuple[list[dict[str, Any]], int, list[str]]:
+def _tick_status_effects(status_list: list[dict[str, Any]], actor_label: str) -> tuple[list[dict[str, Any]], int, int, list[str]]:
     updated: list[dict[str, Any]] = []
     total_hp_delta = 0
+    total_sp_delta = 0
     lines: list[str] = []
     for raw in status_list:
         effect = _normalise_status_effect(raw, source=str(raw.get("source") or "") if isinstance(raw, dict) else "")
         if not effect:
             continue
         name = str(effect.get("name") or "状態異常")
-        hp_delta = _safe_int(effect.get("hp_delta_per_turn"), -max(0, _safe_int(effect.get("damage_per_turn"), 0)))
+        effect_id = _status_effect_id(effect)
+        power = max(0, _safe_int(effect.get("power"), 0))
+        hp_delta = -power if effect_id == "HP_Damage" and power else 0
+        sp_delta = -power if effect_id == "SP_Damage" and power else 0
         if hp_delta:
             total_hp_delta += hp_delta
             tick_text = _format_status_template(effect.get("tick_text"), actor_label, name, hp_delta)
@@ -17119,39 +17386,45 @@ def _tick_status_effects(status_list: list[dict[str, Any]], actor_label: str) ->
                 lines.append(f"[状態] {actor_label}は{name}により{abs(hp_delta)}ダメージを受けた。")
             else:
                 lines.append(f"[状態] {actor_label}は{name}により{hp_delta}回復した。")
+        if sp_delta:
+            total_sp_delta += sp_delta
+            lines.append(f"[状態] {actor_label}は{name}によりSPを{abs(sp_delta)}失った。")
         elif effect.get("tick_text"):
             lines.append(_format_status_template(effect.get("tick_text"), actor_label, name, hp_delta))
-        elif effect.get("effect") and _safe_int(effect.get("remaining_turns"), 0) > 0:
-            lines.append(f"[状態] {actor_label}は{name}の影響を受けている: {effect.get('effect')}")
-        remaining = _safe_int(effect.get("remaining_turns"), 0)
-        if remaining > 0:
-            remaining -= 1
-            if remaining <= 0:
+        elif effect.get("llm_effect") and _safe_int(effect.get("duration"), 0) > 0:
+            lines.append(f"[状態] {actor_label}は{name}の影響を受けている: {effect.get('llm_effect')}")
+        duration = _safe_int(effect.get("duration"), 0)
+        if duration > 0:
+            duration -= 1
+            if duration <= 0:
                 expire_text = _format_status_template(effect.get("expire_text"), actor_label, name, hp_delta)
                 lines.append(expire_text or f"[状態] {actor_label}の{name}は治まった。")
                 continue
-            effect["remaining_turns"] = remaining
+            effect["duration"] = duration
         updated.append(effect)
-    return updated, total_hp_delta, lines
+    return updated, total_hp_delta, total_sp_delta, lines
 
 
 def _status_effect_id(value: Any) -> str:
     if isinstance(value, dict):
-        text = str(
-            value.get("id")
-            or value.get("name")
-            or value.get("title")
-            or value.get("label")
-            or value.get("status")
-            or value.get("condition")
-            or value.get("effect")
-            or value.get("description")
-            or ""
-        )
+        direct = str(value.get("effect_id") or value.get("effect_type") or value.get("status_id") or "").strip()
+        canonical = canonical_status_effect_id(direct)
+        if canonical:
+            return canonical
+        raw_id = str(value.get("id") or "").strip()
+        if raw_id in {"dead", "defeated", SURRENDERED_STATUS_ID, FLED_STATUS_ID}:
+            return raw_id
+        text = str(value.get("name") or value.get("title") or value.get("label") or value.get("status") or value.get("condition") or value.get("effect") or value.get("description") or "")
     else:
         text = str(value)
     preset = _status_effect_preset(text)
-    return str(preset.get("id") or _slug_status(text))
+    preset_id = str(preset.get("effect_id") or preset.get("id") or "").strip()
+    canonical = canonical_status_effect_id(preset_id) or canonical_status_effect_id(text)
+    if canonical:
+        return canonical
+    if preset_id in {"dead", "defeated", SURRENDERED_STATUS_ID, FLED_STATUS_ID}:
+        return preset_id
+    return _slug_status(text)
 
 
 def _slug_status(text: str) -> str:
@@ -21504,12 +21777,70 @@ def _compact_item_for_ai(item: dict[str, Any]) -> dict[str, Any]:
         "quantity": normalised.get("quantity"),
         "rarity": normalised.get("rarity"),
         "value": normalised.get("value"),
+        "use_effect": normalised.get("use_effect"),
+        "power": normalised.get("power"),
+        "send_llm": normalised.get("send_llm"),
+        "element": normalised.get("element"),
         "effects": normalised.get("effects"),
         "llm_effects": normalised.get("llm_effects"),
         "attack": normalised.get("attack"),
         "defense": normalised.get("defense"),
     }
     return _drop_empty(data)
+
+
+def _normalise_craft_intent(value: Any) -> str:
+    intent = str(value or "").strip().lower()
+    aliases = {
+        "": "auto",
+        "auto": "auto",
+        "おまかせ": "auto",
+        "mix": "mix",
+        "mixing": "mix",
+        "混合": "mix",
+        "synthesis": "synthesis",
+        "synth": "synthesis",
+        "合成": "synthesis",
+        "smith": "smithing",
+        "smithing": "smithing",
+        "forge": "smithing",
+        "forging": "smithing",
+        "鍛冶": "smithing",
+        "alchemy": "alchemy",
+        "alchemist": "alchemy",
+        "錬金術": "alchemy",
+        "cooking": "cooking",
+        "cook": "cooking",
+        "料理": "cooking",
+    }
+    return aliases.get(intent, intent if intent in CRAFT_INTENT_DEFINITIONS else "auto")
+
+
+def _craft_intent_payload(value: Any) -> dict[str, str]:
+    intent = _normalise_craft_intent(value)
+    data = CRAFT_INTENT_DEFINITIONS.get(intent, CRAFT_INTENT_DEFINITIONS["auto"])
+    return {
+        "id": intent,
+        "label_ja": str(data.get("label_ja") or intent),
+        "label_en": str(data.get("label_en") or intent),
+        "instruction": str(data.get("instruction") or ""),
+    }
+
+
+def _craft_intent_from_action(action: str) -> str:
+    text = str(action or "")
+    lowered = text.lower()
+    if any(word in lowered or word in text for word in ("鍛冶", "鍛える", "打つ", "forge", "smith", "weapon", "armor")):
+        return "smithing"
+    if any(word in lowered or word in text for word in ("錬金", "調合", "薬", "ポーション", "alchemy", "brew", "potion", "medicine")):
+        return "alchemy"
+    if any(word in lowered or word in text for word in ("料理", "調理", "焼く", "煮る", "cook", "meal", "food", "drink")):
+        return "cooking"
+    if any(word in lowered or word in text for word in ("合成", "融合", "synthesis", "synth", "fuse")):
+        return "synthesis"
+    if any(word in lowered or word in text for word in ("混合", "混ぜ", "mix", "blend")):
+        return "mix"
+    return "auto"
 
 
 def _craft_fallback_category(ingredients: list[dict[str, Any]]) -> str:

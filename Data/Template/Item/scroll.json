@@ -1,0 +1,46 @@
+[
+  {
+    "name": "食料の巻物",
+    "category": "scroll",
+    "level": 0,
+    "value": 20,
+    "desc": "その場をしのぐことが出来る、保存食を召喚する巻物。",
+    "use_effect": "Send_LLM",
+    "power": 5,
+    "send_llm": "お腹を満たすことが出来る保存食を召喚する。",
+    "element": ""
+  },
+  {
+    "name": "火花の巻物",
+    "category": "scroll",
+    "level": 0,
+    "value": 10,
+    "desc": "小さな炎を呼ぶ使い捨ての巻物。",
+    "use_effect": "Send_LLM",
+    "power": 5,
+    "send_llm": "小さな炎を発生させる。",
+    "element": ""
+  },
+  {
+    "name": "解錠の巻物",
+    "category": "scroll",
+    "level": 0,
+    "value": 30,
+    "desc": "単純な鍵や封印に働きかける巻物。",
+    "use_effect": "Send_LLM",
+    "power": 5,
+    "send_llm": "単純な鍵や封印を解除する。",
+    "element": ""
+  },
+  {
+    "name": "防護の巻物",
+    "category": "scroll",
+    "level": 0,
+    "value": 50,
+    "desc": "一時的な守りを与える巻物。",
+    "use_effect": "Send_LLM",
+    "power": 5,
+    "send_llm": "一時的な守りを与える。",
+    "element": ""
+  }
+]

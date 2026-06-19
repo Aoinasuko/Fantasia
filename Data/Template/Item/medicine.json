@@ -1,0 +1,35 @@
+[
+  {
+    "name": "止血薬",
+    "category": "medicine",
+    "level": 0,
+    "value": 10,
+    "desc": "浅い傷の出血を止める薬。",
+    "use_effect": "HP_Heal",
+    "power": 5,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "解毒薬",
+    "category": "medicine",
+    "level": 0,
+    "value": 20,
+    "desc": "毒やしびれを和らげる薬。",
+    "use_effect": "Send_LLM",
+    "power": 5,
+    "send_llm": "毒や麻痺を治癒する。",
+    "element": ""
+  },
+  {
+    "name": "鎮静薬",
+    "category": "medicine",
+    "level": 0,
+    "value": 20,
+    "desc": "精神系の異常を抑え、しばらくの間精神耐性を得ることが出来る薬。",
+    "use_effect": "Send_LLM",
+    "power": 5,
+    "send_llm": "精神系の状態異常を回復して、しばらくの間精神耐性を得る。",
+    "element": ""
+  }
+]

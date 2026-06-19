@@ -26,6 +26,7 @@ $configPath = Join-Path $root "config.json"
 $playGuideSource = Join-Path $root "docs\PLAY_GUIDE.txt"
 $dllLicenseSource = Join-Path $root "docs\DLL_LICENSES.txt"
 $updateSource = Join-Path $root "docs\update.md"
+$dataSource = Join-Path $root "Data"
 $iconSource = Join-Path $root "docs\icon.png"
 $iconPath = Join-Path (Join-Path $root "build\icon") "Fantasia.ico"
 
@@ -159,6 +160,9 @@ try {
         "--include-data-files=$root\docs\update.md=docs/update.md",
         "--include-data-dir=$root\assets=assets"
     )
+    if (Test-Path $dataSource) {
+        $nuitkaArgs += "--include-data-dir=$dataSource=Data"
+    }
     if ($hasIcon) {
         $nuitkaArgs += "--windows-icon-from-ico=$iconPath"
     }
@@ -177,6 +181,13 @@ New-Item -ItemType Directory -Force -Path `
 New-Item -ItemType Directory -Force -Path `
     (Join-Path $publishRoot "model\text"), `
     (Join-Path $publishRoot "model\graphic") | Out-Null
+
+$dataTarget = Join-Path $publishRoot "Data"
+if (Test-Path $dataSource) {
+    Copy-Item -LiteralPath $dataSource -Destination $dataTarget -Recurse -Force
+} else {
+    New-Item -ItemType Directory -Force -Path (Join-Path $dataTarget "Template\Item") | Out-Null
+}
 
 if ($IncludeModels) {
     & (Join-Path $PSScriptRoot "sync_runtime_assets.ps1") -DistRoot $distRoot -ModelRoot (Join-Path $publishRoot "model") -IncludeModels -RuntimeProfile $RuntimeProfile -Force

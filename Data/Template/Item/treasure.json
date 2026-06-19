@@ -1,0 +1,68 @@
+[
+  {
+    "name": "古貨幣",
+    "category": "treasure",
+    "level": 0,
+    "value": 40,
+    "desc": "今では使われていない古い貨幣。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "銀の杯",
+    "category": "treasure",
+    "level": 0,
+    "value": 60,
+    "desc": "細工の入った価値ある杯。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "宝石細工の箱",
+    "category": "treasure",
+    "level": 0,
+    "value": 80,
+    "desc": "小粒の宝石で飾られた箱。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "豪華な装飾の冠",
+    "category": "treasure",
+    "level": 10,
+    "value": 500,
+    "desc": "宝石などで飾られた冠。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "純金の杖",
+    "category": "treasure",
+    "level": 20,
+    "value": 1000,
+    "desc": "純金と宝石で出来た杖。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "財宝の入った宝箱",
+    "category": "treasure",
+    "level": 30,
+    "value": 2000,
+    "desc": "様々な財宝が入った宝箱。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  }
+]

@@ -215,6 +215,7 @@ class GameStateData:
     current_location: str = "unknown"
     day: int = 1
     gold: int = 0
+    hunger: int = 50
     party: list[dict[str, Any]] = field(default_factory=list)
     inventory: list[dict[str, Any]] = field(default_factory=list)
     status_effects: list[dict[str, Any]] = field(default_factory=list)
@@ -278,6 +279,7 @@ class GameStateData:
         kwargs["flags"] = _as_dict(kwargs.get("flags"))
         kwargs["gold"] = int(kwargs.get("gold") or 0)
         kwargs["day"] = int(kwargs.get("day") or 1)
+        kwargs["hunger"] = max(0, min(50, _as_int(kwargs.get("hunger"), 50)))
         return cls(**kwargs)
 
     def append_turn(

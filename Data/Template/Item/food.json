@@ -1,0 +1,101 @@
+[
+  {
+    "name": "ナス",
+    "category": "food",
+    "level": 0,
+    "value": 3,
+    "desc": "紫色の水っぽい野菜。",
+    "use_effect": "Hunger_Heal",
+    "power": 3,
+    "send_llm": "",
+    "element": "野菜"
+  },
+  {
+    "name": "トマト",
+    "category": "food",
+    "level": 0,
+    "value": 2,
+    "desc": "赤色のみずみずしい野菜。",
+    "use_effect": "Hunger_Heal",
+    "power": 2,
+    "send_llm": "",
+    "element": "野菜"
+  },
+  {
+    "name": "レタス",
+    "category": "food",
+    "level": 0,
+    "value": 4,
+    "desc": "緑色の、大きな野菜。",
+    "use_effect": "Hunger_Heal",
+    "power": 4,
+    "send_llm": "",
+    "element": "野菜"
+  },
+  {
+    "name": "トウガラシ",
+    "category": "food",
+    "level": 0,
+    "value": 1,
+    "desc": "香辛料にも使われる、辛い野菜。",
+    "use_effect": "Hunger_Heal",
+    "power": 1,
+    "send_llm": "",
+    "element": "野菜、香辛料"
+  },
+  {
+    "name": "生の獣肉",
+    "category": "food",
+    "level": 0,
+    "value": 10,
+    "desc": "生の動物の肉。そのまま食べるのは賢明ではない。",
+    "use_effect": "Hunger_Heal",
+    "power": 10,
+    "send_llm": "食中毒になる可能性がある。",
+    "element": "肉"
+  },
+  {
+    "name": "焼いた獣肉",
+    "category": "food",
+    "level": 0,
+    "value": 15,
+    "desc": "焼いた獣肉。おそらくは安全に食べられる。",
+    "use_effect": "Hunger_Heal",
+    "power": 15,
+    "send_llm": "",
+    "element": "肉"
+  },
+  {
+    "name": "獣肉のジャーキー",
+    "category": "food",
+    "level": 0,
+    "value": 12,
+    "desc": "獣肉を保存食に加工した物。旅のお供に最適。",
+    "use_effect": "Hunger_Heal",
+    "power": 12,
+    "send_llm": "",
+    "element": "肉、保存食"
+  },
+  {
+    "name": "乾パン",
+    "category": "food",
+    "level": 0,
+    "value": 15,
+    "desc": "保存食向けに固く加工したパン。旅のお供に最適。",
+    "use_effect": "Hunger_Heal",
+    "power": 15,
+    "send_llm": "",
+    "element": "保存食"
+  },
+  {
+    "name": "豪華な保存食",
+    "category": "food",
+    "level": 0,
+    "value": 30,
+    "desc": "様々な高級保存食が詰め込まれた、豪華な食事。",
+    "use_effect": "Hunger_Heal",
+    "power": 30,
+    "send_llm": "",
+    "element": "保存食"
+  }
+]

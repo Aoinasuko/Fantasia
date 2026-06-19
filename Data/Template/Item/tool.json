@@ -1,0 +1,57 @@
+[
+  {
+    "name": "ロープ",
+    "category": "tool",
+    "level": 0,
+    "value": 10,
+    "desc": "登攀や固定に使える丈夫な縄。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "ランタン",
+    "category": "tool",
+    "level": 0,
+    "value": 20,
+    "desc": "暗所を照らす携帯灯。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "つるはし",
+    "category": "tool",
+    "level": 0,
+    "value": 20,
+    "desc": "鉱石を採掘するのに最適な道具。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "伐採用斧",
+    "category": "tool",
+    "level": 0,
+    "value": 20,
+    "desc": "木を切り倒すのに最適な道具。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "name": "探索用ナイフ",
+    "category": "tool",
+    "level": 0,
+    "value": 15,
+    "desc": "採取や簡単な作業に使える小刀。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  }
+]
