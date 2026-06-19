@@ -21,6 +21,7 @@ from .items import (
     can_add_item_stack,
     equipment_slot_for_category,
     extract_response_rewards,
+    generate_loot_items,
     generate_vendor_items,
     inventory_slot_count,
     is_equipment_item,
@@ -177,7 +178,7 @@ SUBNODE_EXTERNAL_PREFIX = "external:"
 REPEATED_INPUT_DEDUPE_SECONDS = 4.0
 DEFAULT_GUILD_NAME = "冒険者ギルド"
 QUEST_BOARD_NAME = "依頼掲示板"
-MAP_CHOICE_LABEL = "地図を見る"
+MOVE_CHOICE_LABEL = "移動する"
 QUEST_BOARD_CHOICE_LABEL = "依頼掲示板を見る"
 PLAYER_HOMES_KEY = "player_homes"
 PLAYER_HOME_CONSTRUCTION_KEY = "player_home_construction"
@@ -1111,14 +1112,14 @@ class GameEngine:
         settlement = self._current_settlement_location()
         if settlement is None:
             narration = "ここは街や村ではないため、施設の地図は使えない。"
-            self.state.append_turn(MAP_CHOICE_LABEL, narration, self.state.current_location, self.state.choices, input_type="choice")
+            self.state.append_turn(MOVE_CHOICE_LABEL, narration, self.state.current_location, self.state.choices, input_type="choice")
             self.save_game()
             return self.state.log_text(16)
 
         facility = self._find_or_create_facility_record(settlement, facility_name)
         if not facility:
             narration = f"{settlement.name}には「{facility_name}」という施設は見当たらない。"
-            self.state.append_turn(MAP_CHOICE_LABEL, narration, self.state.current_location, self._location_default_choices(settlement.name), input_type="choice")
+            self.state.append_turn(MOVE_CHOICE_LABEL, narration, self.state.current_location, self._location_default_choices(settlement.name), input_type="choice")
             self.save_game()
             return self.state.log_text(16)
 
@@ -1467,7 +1468,7 @@ class GameEngine:
         gold_event = self._apply_gold_delta(-cost, source="town_hall_home", reason="家の購入", append_log=False)
         self._create_player_home(settlement.name, level, source="town_hall", parent_subnode_id=DEFAULT_SUBNODE_ID, cost=cost)
         narration = f"役場で{cost}Goldを支払い、{settlement.name}にあなたの家を用意した。家具レベルは{level}。"
-        choices = [f"{PLAYER_HOME_NAME}へ移動", MAP_CHOICE_LABEL, "周囲を見る"]
+        choices = [MOVE_CHOICE_LABEL, f"{PLAYER_HOME_NAME}へ移動", "周囲を見る"]
         self.state.append_turn(action, narration, settlement.name, _exploration_choices(choices), input_type=input_type)
         if gold_event.get("line"):
             self.state.display_log.append(str(gold_event["line"]))
@@ -3711,6 +3712,17 @@ class GameEngine:
         if not npc_name:
             npc_name = _default_facility_npc_name(str(facility.get("name") or ""), str(facility.get("type") or ""))
             facility["npc_name"] = npc_name
+        npc_payload = facility.get("npc") if isinstance(facility.get("npc"), dict) else {}
+        npc_gender = str(facility.get("npc_gender") or npc_payload.get("gender") or "").strip()
+        npc_age = str(facility.get("npc_age") or npc_payload.get("age") or "").strip()
+        npc_look = str(
+            facility.get("npc_look")
+            or facility.get("npc_appearance")
+            or npc_payload.get("look")
+            or npc_payload.get("appearance")
+            or ""
+        ).strip()
+        npc_personality = str(facility.get("npc_personality") or npc_payload.get("personality") or "").strip()
         if _world_has_dead_npc_identity(self.state.world_data, name=npc_name):
             return None
         character = self.state.world_data.characters.get(npc_name)
@@ -3719,8 +3731,11 @@ class GameEngine:
                 name=_unique_character_name(self.state.world_data, npc_name),
                 role=str(facility.get("npc_role") or _default_facility_role(str(facility.get("type") or ""))),
                 category="facility_npc",
+                gender=npc_gender,
+                age=npc_age,
                 backstory=str(facility.get("description") or ""),
-                personality="仕事に慣れており、訪問者に必要な案内をする。",
+                personality=npc_personality or "仕事に慣れており、訪問者に必要な案内をする。",
+                look=npc_look,
             )
             facility["npc_name"] = character.name
             character.flags["source"] = "facility"
@@ -3736,6 +3751,14 @@ class GameEngine:
             character.extra["facility"] = str(facility.get("name") or character.extra.get("facility") or "")
             character.extra["facility_type"] = str(facility.get("type") or character.extra.get("facility_type") or _facility_type_from_name(str(facility.get("name") or "")))
             character.extra["parent_settlement"] = settlement.name
+            if npc_gender and not character.gender:
+                character.gender = npc_gender
+            if npc_age and not character.age:
+                character.age = npc_age
+            if npc_look and not character.look:
+                character.look = npc_look
+            if npc_personality and not character.personality:
+                character.personality = npc_personality
         subnode_id = self._stamp_character_facility_subnode(character, settlement, facility)
         self._set_character_presence(character, location_name, subnode_id=subnode_id)
         return character
@@ -4623,6 +4646,8 @@ class GameEngine:
                 "Make the dungeon graph branch like a small maze, not a single straight road.",
                 "Give varied room kinds such as ore vein, herb grove, treasure room, monster nest, altar, stream, collapsed path, or hidden chamber.",
                 "Do not create separate world locations for entrance/interior/depth. They are subnodes of this one dungeon.",
+                "Only when a node explicitly has a teleporter, portal, return gate, or similar device, include remote_travel_targets on that node. "
+                "Each remote target must be {location, subnode}. Otherwise omit remote_travel_targets.",
             ],
         }
         messages = [
@@ -4679,6 +4704,7 @@ class GameEngine:
                 resource_hint=str(raw.get("resource_hint") or ""),
                 encounter_hint=str(raw.get("encounter_hint") or ""),
                 loot_hint=str(raw.get("loot_hint") or ""),
+                remote_travel_targets=_as_list(raw.get("remote_travel_targets")),
             )
         for raw in layout.get("edges", []):
             if not isinstance(raw, dict):
@@ -4815,6 +4841,63 @@ class GameEngine:
                     queue.append([*path, neighbor])
         return []
 
+    def _subnode_adjacent_ids(self, graph: dict[str, Any], node_id: str) -> list[str]:
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        current = str(node_id or "").strip()
+        result: list[str] = []
+        if not current or current not in nodes:
+            return result
+        for edge in graph.get("edges", []):
+            if not isinstance(edge, dict) or edge.get("external"):
+                continue
+            source = str(edge.get("from") or "")
+            target = str(edge.get("to") or "")
+            if source == current and target in nodes:
+                result.append(target)
+            elif target == current and source in nodes:
+                result.append(source)
+        return _dedupe_strs(result)
+
+    def _remote_travel_targets_for_subnode(self, node: dict[str, Any]) -> list[dict[str, str]]:
+        raw_targets = node.get("remote_travel_targets")
+        targets: list[dict[str, str]] = []
+        for raw in _as_list(raw_targets):
+            if isinstance(raw, dict):
+                location = str(raw.get("location") or raw.get("target_location") or raw.get("destination") or "").strip()
+                subnode = str(raw.get("subnode") or raw.get("subnode_id") or raw.get("target_subnode") or "").strip()
+            else:
+                location = str(raw or "").strip()
+                subnode = ""
+            if location or subnode:
+                targets.append({"location": location, "subnode": subnode})
+        return targets
+
+    def _remote_subnode_travel_allowed(
+        self,
+        graph: dict[str, Any],
+        current_id: str,
+        target_location: str,
+        target_subnode: str,
+    ) -> bool:
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        current = nodes.get(str(current_id or ""))
+        if not isinstance(current, dict):
+            return False
+        target_location = str(target_location or "").strip()
+        target_subnode = str(target_subnode or "").strip()
+        for target in self._remote_travel_targets_for_subnode(current):
+            allowed_location = str(target.get("location") or "").strip()
+            allowed_subnode = str(target.get("subnode") or "").strip()
+            if allowed_location and target_location and allowed_location != target_location:
+                continue
+            if target_subnode and not allowed_subnode:
+                continue
+            if allowed_subnode and target_subnode and allowed_subnode != target_subnode:
+                continue
+            if allowed_location or allowed_subnode:
+                return True
+        return False
+
     def _subnode_anchor(self, graph: dict[str, Any], *, prefer_deep: bool = False, exclude: str = "") -> str:
         nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
         exclude = str(exclude or "").strip()
@@ -4930,8 +5013,213 @@ class GameEngine:
         node = graph.get("nodes", {}).get(current_id, {}) if isinstance(graph, dict) else {}
         return bool(current_id == DUNGEON_ENTRY_SUBNODE_ID or node.get("world_map_exit"))
 
+    def _dangerous_fast_travel_message(self) -> str:
+        return "ここは危険地帯なので、一気に移動することはできない。隣接する場所へ順番に進んでください。"
+
+    def world_map_travel_precheck_message(self, destination: str) -> str:
+        world = self.state.world_data
+        current = self.state.current_location or world.starting_location
+        target = str(destination or "").strip()
+        graph = self._ensure_world_location_graph(world, target_count=max(len(world.locations), DEFAULT_WORLD_LOCATION_COUNT))
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        if not target or target not in nodes or _world_graph_node_is_facility(world, nodes.get(target, {})):
+            return "その場所はまだ地図に記録されていません。"
+        if target == current:
+            return ""
+        block_reason = self._player_incapacitated_action_block(f"world map travel {target}", for_movement=True)
+        if block_reason:
+            return self._player_incapacitated_message(block_reason)
+        if not self._current_subnode_allows_world_map_departure(world, current):
+            return self._dangerous_fast_travel_message()
+        if target in self._world_neighbors(world, current):
+            return ""
+        if not bool(nodes.get(target, {}).get("visited")):
+            return "その場所はまだ地図に記録されていません。"
+        path = self._shortest_world_path(world, current, target, visited_only=True)
+        if not path:
+            return "現在地からその場所までの道が見つかりません。"
+        return ""
+
+    def subnode_travel_precheck_message(self, node_id: str) -> str:
+        data = self.subnode_map_data()
+        target_id = str(node_id or "").strip()
+        node_lookup = {str(node.get("id") or ""): node for node in data.get("nodes", []) if isinstance(node, dict)}
+        target = node_lookup.get(target_id)
+        graph = self._ensure_location_subnode_graph(self.state.world_data, str(data.get("current_location") or ""))
+        if not target:
+            nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+            node = nodes.get(target_id)
+            if isinstance(node, dict):
+                target = {**node, "id": target_id, "external": False}
+        if not target:
+            return "その場所は現在の内部マップにありません。"
+        current_id = str(data.get("current_subnode") or "")
+        if target_id == current_id:
+            return ""
+        block_reason = self._player_incapacitated_action_block(f"subnode travel {target_id}", for_movement=True)
+        if block_reason:
+            return self._player_incapacitated_message(block_reason)
+        movement = str(data.get("movement") or "adjacent")
+        if target.get("external"):
+            source_id = str(target.get("source_subnode") or "")
+            if movement != "free" and current_id != source_id:
+                return self._dangerous_fast_travel_message()
+            return ""
+        if movement != "free" and not self._subnode_has_edge(graph, current_id, target_id):
+            return self._dangerous_fast_travel_message()
+        return ""
+
     def has_current_subnode_map(self) -> bool:
         return bool(self.subnode_map_data().get("nodes"))
+
+    def has_movement_options(self) -> bool:
+        return bool(self.available_movement_options())
+
+    def available_movement_options(self) -> list[dict[str, Any]]:
+        return self._movement_options_for_location(self.state.current_location or self.state.world_data.starting_location)
+
+    def _location_has_movement_options(self, location_name: str) -> bool:
+        return bool(self._movement_options_for_location(location_name))
+
+    def _movement_options_for_location(self, location_name: str) -> list[dict[str, Any]]:
+        block_reason = self._player_incapacitated_action_block("move", for_movement=True)
+        if block_reason:
+            return []
+        world = self.state.world_data
+        location_name = str(location_name or self.state.current_location or world.starting_location).strip()
+        if not location_name:
+            return []
+        location = world.locations.get(location_name)
+        options: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+
+        graph = self._ensure_location_subnode_graph(world, location_name)
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        current_subnode = self._current_subnode_id(location_name) if nodes else ""
+        movement = str(graph.get("movement") or "adjacent")
+        external_targets: set[str] = set()
+        if nodes and current_subnode in nodes:
+            if movement == "free":
+                local_targets = [str(node_id) for node_id in nodes if str(node_id) != current_subnode]
+            else:
+                local_targets = self._subnode_adjacent_ids(graph, current_subnode)
+            for node_id in local_targets:
+                node = nodes.get(node_id)
+                if not isinstance(node, dict):
+                    continue
+                key = ("subnode", node_id)
+                if key in seen:
+                    continue
+                seen.add(key)
+                options.append(
+                    {
+                        "type": "subnode",
+                        "id": node_id,
+                        "title": str(node.get("name") or node_id),
+                        "description": str(node.get("description") or ""),
+                        "kind": str(node.get("kind") or ""),
+                        "location": location_name,
+                    }
+                )
+            for index, edge in enumerate(self._subnode_external_edges(world, location_name, graph)):
+                source_id = str(edge.get("from") or "")
+                if movement != "free" and source_id != current_subnode:
+                    continue
+                target_location = str(edge.get("target_location") or "").strip()
+                if not target_location:
+                    continue
+                external_targets.add(target_location)
+                node_id = f"{SUBNODE_EXTERNAL_PREFIX}{index}"
+                key = ("subnode", node_id)
+                if key in seen:
+                    continue
+                seen.add(key)
+                options.append(
+                    {
+                        "type": "subnode",
+                        "id": node_id,
+                        "title": target_location,
+                        "description": str(edge.get("description") or ""),
+                        "kind": "external",
+                        "location": location_name,
+                        "target_location": target_location,
+                        "external": True,
+                    }
+                )
+
+        if self._current_subnode_allows_world_map_departure(world, location_name):
+            world_graph = self._ensure_world_location_graph(world, target_count=max(len(world.locations), DEFAULT_WORLD_LOCATION_COUNT))
+            world_nodes = world_graph.get("nodes", {}) if isinstance(world_graph.get("nodes"), dict) else {}
+            for neighbor in self._world_neighbors(world, location_name):
+                if not neighbor or neighbor in external_targets:
+                    continue
+                node = world_nodes.get(neighbor, {}) if isinstance(world_nodes.get(neighbor), dict) else {}
+                if _world_graph_node_is_facility(world, node):
+                    continue
+                key = ("world", neighbor)
+                if key in seen:
+                    continue
+                seen.add(key)
+                target_location = world.locations.get(neighbor)
+                options.append(
+                    {
+                        "type": "world",
+                        "id": neighbor,
+                        "title": neighbor,
+                        "description": str((target_location.description if target_location else "") or node.get("description") or ""),
+                        "kind": str(node.get("kind") or (target_location.extra.get("location_kind") if target_location else "") or ""),
+                        "location": location_name,
+                        "visited": bool(node.get("visited")),
+                    }
+                )
+        return options
+
+    def current_loot_inventory(self) -> tuple[str, list[dict[str, Any]]]:
+        location_name = self.state.current_location or self.state.world_data.starting_location
+        location = self.state.world_data.ensure_location(location_name)
+        graph = self._ensure_location_subnode_graph(self.state.world_data, location_name)
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        subnode_id = self._current_subnode_id(location_name) if nodes else ""
+        if subnode_id and subnode_id in nodes:
+            node = nodes.get(subnode_id, {}) if isinstance(nodes.get(subnode_id), dict) else {}
+            loot_store = location.extra.setdefault("subnode_loot", {})
+            if not isinstance(loot_store, dict):
+                loot_store = {}
+                location.extra["subnode_loot"] = loot_store
+            slot = loot_store.setdefault(subnode_id, {})
+            if not isinstance(slot, dict):
+                slot = {}
+                loot_store[subnode_id] = slot
+            inventory = slot.setdefault("inventory", [])
+            if not isinstance(inventory, list):
+                inventory = []
+                slot["inventory"] = inventory
+            if not slot.get("seeded") and not inventory:
+                context = " ".join(
+                    str(part)
+                    for part in (
+                        location.area,
+                        location.description,
+                        node.get("name"),
+                        node.get("description"),
+                        node.get("loot_hint"),
+                        node.get("resource_hint"),
+                    )
+                    if str(part or "").strip()
+                )
+                inventory.extend(generate_loot_items(f"{location.name}:{subnode_id}", context))
+                slot["seeded"] = True
+            label = f"{location.name} / {node.get('name') or subnode_id}"
+            return label, inventory
+        inventory = location.extra.setdefault("inventory", [])
+        if not isinstance(inventory, list):
+            inventory = []
+            location.extra["inventory"] = inventory
+        if not location.flags.get("inventory_seeded") and not inventory:
+            context = " ".join(part for part in (location.area, location.description) if part)
+            inventory.extend(generate_loot_items(location.name, context))
+            location.flags["inventory_seeded"] = True
+        return location.name, inventory
 
     def subnode_map_data(self) -> dict[str, Any]:
         world = self.state.world_data
@@ -4970,6 +5258,7 @@ class GameEngine:
                 not hide_unvisited
                 or str(node_id) == current_id
                 or bool(node.get("visited"))
+                or bool(node.get("revealed"))
             )
         }
         local_nodes: list[dict[str, Any]] = []
@@ -5158,11 +5447,20 @@ class GameEngine:
             self._ensure_facility_npc(location, facility, location.name)
 
     def travel_subnode_to(self, node_id: str) -> str:
+        precheck_message = self.subnode_travel_precheck_message(node_id)
+        if precheck_message:
+            raise ValueError(precheck_message)
         data = self.subnode_map_data()
         location_name = str(data.get("current_location") or self.state.current_location or self.state.world_data.starting_location)
         target_id = str(node_id or "").strip()
         node_lookup = {str(node.get("id") or ""): node for node in data.get("nodes", []) if isinstance(node, dict)}
         target = node_lookup.get(target_id)
+        graph = self._ensure_location_subnode_graph(self.state.world_data, location_name)
+        if not target:
+            nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+            node = nodes.get(target_id)
+            if isinstance(node, dict):
+                target = {**node, "id": target_id, "external": False}
         if not target:
             raise ValueError("その場所は現在の内部マップにありません。")
         current_id = str(data.get("current_subnode") or "")
@@ -5181,7 +5479,6 @@ class GameEngine:
             return self._travel_external_subnode(location_name, target, source_id)
         if target_id == current_id:
             return self.state.log_text(16)
-        graph = self._ensure_location_subnode_graph(self.state.world_data, location_name)
         if movement != "free" and not self._subnode_has_edge(graph, current_id, target_id):
             raise ValueError("その場所へは隣接地点からしか移動できません。")
         name = str(target.get("name") or target_id)
@@ -5305,12 +5602,15 @@ class GameEngine:
         }
 
     def travel_world_map_to(self, destination: str) -> str:
+        precheck_message = self.world_map_travel_precheck_message(destination)
+        if precheck_message:
+            raise ValueError(precheck_message)
         world = self.state.world_data
         current = self.state.current_location or world.starting_location
         target = str(destination or "").strip()
         graph = self._ensure_world_location_graph(world, target_count=max(len(world.locations), DEFAULT_WORLD_LOCATION_COUNT))
         nodes = graph.get("nodes", {})
-        if not target or target not in nodes or _world_graph_node_is_facility(world, nodes.get(target, {})) or not bool(nodes.get(target, {}).get("visited")):
+        if not target or target not in nodes or _world_graph_node_is_facility(world, nodes.get(target, {})):
             raise ValueError("その場所はまだ地図に記録されていません。")
         if target == current:
             return self.state.log_text(16)
@@ -5319,7 +5619,12 @@ class GameEngine:
             raise ValueError(self._player_incapacitated_message(block_reason))
         if not self._current_subnode_allows_world_map_departure(world, current):
             raise ValueError("危険地帯の奥からはワールドマップ移動できません。入口や安全な退避地点まで戻ってください。")
-        path = self._shortest_world_path(world, current, target, visited_only=True)
+        if target in self._world_neighbors(world, current):
+            path = [current, target]
+        else:
+            if not bool(nodes.get(target, {}).get("visited")):
+                raise ValueError("その場所はまだ地図に記録されていません。")
+            path = self._shortest_world_path(world, current, target, visited_only=True)
         if not path:
             raise ValueError("現在地からその場所までの道が見つかりません。")
         hours = (len(path) - 1) * WORLD_MAP_EDGE_HOURS
@@ -5362,6 +5667,122 @@ class GameEngine:
         self.save_game()
         return self.state.log_text(16)
 
+    def _response_target_subnode_id(self, response: dict[str, Any], graph: dict[str, Any]) -> str:
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        candidates: list[Any] = []
+        for key in (
+            "target_subnode_id",
+            "target_subnode",
+            "destination_subnode_id",
+            "destination_subnode",
+            "subnode_id",
+            "subnode",
+            "node_id",
+        ):
+            candidates.append(response.get(key))
+        for key in ("movement", "travel", "move", "destination"):
+            value = response.get(key)
+            if isinstance(value, dict):
+                for subkey in ("target_subnode_id", "target_subnode", "subnode_id", "subnode", "node_id"):
+                    candidates.append(value.get(subkey))
+        for candidate in candidates:
+            if isinstance(candidate, dict):
+                candidate = candidate.get("id") or candidate.get("subnode_id") or candidate.get("name")
+            text = str(candidate or "").strip()
+            if not text:
+                continue
+            if text in nodes:
+                return text
+            normalized = _world_location_name_key(text)
+            for node_id, node in nodes.items():
+                if not isinstance(node, dict):
+                    continue
+                node_name = str(node.get("name") or node_id)
+                if normalized and normalized == _world_location_name_key(node_name):
+                    return str(node_id)
+        return ""
+
+    def _normalize_response_subnode_movement(
+        self,
+        response: dict[str, Any],
+        proposed_location: str,
+    ) -> dict[str, Any] | None:
+        if not isinstance(response, dict):
+            return None
+        world = self.state.world_data
+        current = self.state.current_location or world.starting_location
+        current_graph = self._ensure_location_subnode_graph(world, current)
+        current_nodes = current_graph.get("nodes", {}) if isinstance(current_graph.get("nodes"), dict) else {}
+        if not current_nodes:
+            return None
+        current_id = self._current_subnode_id(current)
+        teleport = _teleport_movement_requested(response)
+        target_location = str(
+            response.get("target_location")
+            or response.get("destination_location")
+            or proposed_location
+            or current
+        ).strip() or current
+        target_location = self._find_world_location_by_name(target_location) or target_location
+        target_graph = current_graph if target_location == current else self._ensure_location_subnode_graph(world, target_location)
+        target_subnode = self._response_target_subnode_id(response, target_graph if target_graph else current_graph)
+        if not target_subnode and target_location == current:
+            return None
+        if target_location != current and not teleport:
+            return None
+        target_nodes = target_graph.get("nodes", {}) if isinstance(target_graph.get("nodes"), dict) else {}
+        if target_location != current:
+            if not target_subnode:
+                target_subnode = self._default_subnode_for_location(world.locations.get(target_location))
+            if target_subnode not in target_nodes:
+                return {
+                    "location": current,
+                    "narration_lines": [self._dangerous_fast_travel_message()],
+                    "status_lines": [],
+                    "moved": False,
+                    "denied": True,
+                }
+            if not self._remote_subnode_travel_allowed(current_graph, current_id, target_location, target_subnode):
+                return {
+                    "location": current,
+                    "narration_lines": [self._dangerous_fast_travel_message()],
+                    "status_lines": [],
+                    "moved": False,
+                    "denied": True,
+                }
+            self._clear_active_facility(reset_subnode=False)
+            self._mark_location_visited(world, target_location)
+            self._set_current_subnode(target_location, target_subnode)
+            self._set_player_presence(target_location)
+            return {"location": target_location, "narration_lines": [], "status_lines": [], "moved": True, "denied": False}
+        if not target_subnode or target_subnode not in current_nodes:
+            return {
+                "location": current,
+                "narration_lines": ["指定された内部地点は現在のマップにありません。"],
+                "status_lines": [],
+                "moved": False,
+                "denied": True,
+            }
+        if target_subnode == current_id:
+            return {"location": current, "narration_lines": [], "status_lines": [], "moved": False, "denied": False}
+        movement = str(current_graph.get("movement") or "adjacent")
+        allowed = movement == "free" or self._subnode_has_edge(current_graph, current_id, target_subnode)
+        if not allowed and teleport:
+            allowed = self._remote_subnode_travel_allowed(current_graph, current_id, current, target_subnode)
+        if not allowed:
+            return {
+                "location": current,
+                "narration_lines": [self._dangerous_fast_travel_message()],
+                "status_lines": [],
+                "moved": False,
+                "denied": True,
+            }
+        self._set_current_subnode(current, target_subnode)
+        target_node = current_nodes.get(target_subnode, {}) if isinstance(current_nodes.get(target_subnode), dict) else {}
+        self._activate_facility_for_subnode(current, target_node)
+        self._set_player_presence(current)
+        return {"location": current, "narration_lines": [], "status_lines": [], "moved": True, "denied": False}
+
     def _normalize_world_response_location(
         self,
         action: str,
@@ -5378,6 +5799,9 @@ class GameEngine:
         if facility_result is not None:
             return facility_result
         proposed = _collapse_same_location_subarea(world, current, proposed)
+        subnode_result = self._normalize_response_subnode_movement(response, proposed)
+        if subnode_result is not None:
+            return subnode_result
         if proposed == current:
             if _facility_exit_requested(action, response):
                 self._clear_active_facility()
@@ -5400,17 +5824,33 @@ class GameEngine:
         narration_lines: list[str] = []
         teleport = _teleport_movement_requested(response)
 
-        if proposed in neighbors or teleport:
+        if teleport:
+            return {
+                "location": current,
+                "narration_lines": [self._dangerous_fast_travel_message()],
+                "status_lines": [],
+                "moved": False,
+                "denied": True,
+            }
+
+        if proposed in neighbors:
+            if not self._current_subnode_allows_world_map_departure(world, current):
+                return {
+                    "location": current,
+                    "narration_lines": [self._dangerous_fast_travel_message()],
+                    "status_lines": [],
+                    "moved": False,
+                    "denied": True,
+                }
             if proposed not in nodes:
                 location = world.ensure_location(proposed, _short_text(str(response.get("narration") or ""), 220))
                 kind = _infer_world_location_kind_for_request(action, response, proposed, location.description)
                 location.extra["location_kind"] = kind
                 self._set_location_graph_node(world, proposed, kind=kind, location=location)
-            if not teleport:
-                event = self._advance_world_time(WORLD_MAP_EDGE_HOURS, source="world_travel", reason="adjacent location travel", append_log=False)
-                if event.get("line"):
-                    status_lines.append(str(event["line"]))
-                status_lines.extend(str(item) for item in event.get("companion_lines", []) if item)
+            event = self._advance_world_time(WORLD_MAP_EDGE_HOURS, source="world_travel", reason="adjacent location travel", append_log=False)
+            if event.get("line"):
+                status_lines.append(str(event["line"]))
+            status_lines.extend(str(item) for item in event.get("companion_lines", []) if item)
             self._clear_active_facility(reset_subnode=False)
             self._mark_location_visited(world, proposed)
             target_graph = self._ensure_location_subnode_graph(world, proposed)
@@ -5431,6 +5871,14 @@ class GameEngine:
             (_nearby_dynamic_location_requested(action, proposed) and len(neighbors) <= WORLD_MAP_MAX_DYNAMIC_DEGREE)
             or explicit_generated_dungeon
         ):
+            if not self._current_subnode_allows_world_map_departure(world, current):
+                return {
+                    "location": current,
+                    "narration_lines": [self._dangerous_fast_travel_message()],
+                    "status_lines": [],
+                    "moved": False,
+                    "denied": True,
+                }
             kind = _infer_world_location_kind_for_request(action, response, proposed, description)
             current_node = nodes.get(current, {}) if isinstance(nodes, dict) else {}
             danger = _clamp_world_danger(_safe_int(current_node.get("danger"), 0) + (5 if kind in {"dungeon", "wilderness"} else 0))
@@ -5492,11 +5940,12 @@ class GameEngine:
     def _location_default_choices(self, location_name: str) -> list[str]:
         if location_name == self.state.current_location and self._current_player_home():
             return self._home_choices()
+        dangerous_choices = self._dangerous_subnode_default_choices(location_name)
+        if dangerous_choices:
+            return _exploration_choices(dangerous_choices)
         choices = ["周囲を見る"]
-        for neighbor in self._world_neighbors(self.state.world_data, location_name)[:3]:
-            choices.append(f"{neighbor}へ移動")
-        if _settlement_location_for_name(self.state.world_data, location_name):
-            choices.insert(0, MAP_CHOICE_LABEL)
+        if self._location_has_movement_options(location_name):
+            choices.append(MOVE_CHOICE_LABEL)
         active_facility = self._active_facility_record() if location_name == self.state.current_location else None
         active_is_guild = bool(active_facility and str(active_facility.get("type") or "").lower() == "guild")
         if (active_is_guild or _location_is_guild(self.state.world_data, location_name)) and not self.state.active_quest:
@@ -5508,13 +5957,60 @@ class GameEngine:
             choices.insert(0, f"{PLAYER_HOME_NAME}へ移動")
         return _exploration_choices(choices)
 
+    def _dangerous_subnode_default_choices(self, location_name: str) -> list[str]:
+        world = self.state.world_data
+        location = world.locations.get(str(location_name or "").strip())
+        if not location or not (_is_dungeon_location(location) or _world_location_blocks_world_map_departure(location)):
+            return []
+        choices = ["周囲を見る"]
+        if self._location_has_movement_options(location_name):
+            choices.append(MOVE_CHOICE_LABEL)
+        return choices
+
     def _augment_location_choices(self, choices: list[str], location_name: str) -> list[str]:
+        dangerous_choices = self._dangerous_subnode_default_choices(location_name)
+        if dangerous_choices:
+            filtered = self._filter_dangerous_nonadjacent_move_choices(choices, location_name)
+            if self._location_has_movement_options(location_name):
+                filtered.append(MOVE_CHOICE_LABEL)
+            return _exploration_choices([*filtered, *dangerous_choices])
         return _augment_location_choices_for_world(
             self.state.world_data,
             location_name,
             choices,
             active_quest=bool(self.state.active_quest),
+            can_move=self._location_has_movement_options(location_name),
         )
+
+    def _filter_dangerous_nonadjacent_move_choices(self, choices: list[str], location_name: str) -> list[str]:
+        graph = self._ensure_location_subnode_graph(self.state.world_data, location_name)
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        current_id = self._current_subnode_id(location_name)
+        allowed_names: set[str] = set()
+        for node_id in [current_id, *self._subnode_adjacent_ids(graph, current_id)]:
+            node = nodes.get(node_id, {}) if isinstance(nodes.get(node_id), dict) else {}
+            allowed_names.add(str(node.get("name") or node_id))
+        for edge in self._subnode_external_edges(self.state.world_data, location_name, graph):
+            if str(edge.get("from") or "") == current_id:
+                allowed_names.add(str(edge.get("target_location") or ""))
+        known_locations = [name for name in self.state.world_data.locations if name != location_name]
+        result: list[str] = []
+        for choice in choices:
+            text = str(choice or "").strip()
+            if not text:
+                continue
+            if not _choice_looks_like_movement(text):
+                result.append(text)
+                continue
+            if any(allowed and allowed in text for allowed in allowed_names):
+                result.append(text)
+                continue
+            if any(name and name in text for name in known_locations):
+                continue
+            if any(word in text for word in ("街", "町", "村", "外へ", "入口へ戻らず", "戻る", "ワールドマップ")):
+                continue
+            result.append(text)
+        return result
 
     def _set_character_presence(self, character: CharacterData, location: str, state: str = "present", subnode_id: str = "") -> None:
         self._ensure_character_runtime_data(character)
@@ -6174,6 +6670,7 @@ class GameEngine:
         lines.extend(self._apply_response_relationship_effects(response, source, default_character=default_character))
         lines.extend(self._apply_response_npc_movements(response, source, default_character=default_character, default_location=default_location))
         lines.extend(self._apply_response_map_reveals(response, source, default_location=default_location))
+        lines.extend(self._apply_response_subnode_map_reveals(response, source, default_location=default_location))
         lines.extend(
             self._apply_response_capture_relocation_effects(
                 response,
@@ -6429,6 +6926,227 @@ class GameEngine:
             if values:
                 return values
         return []
+
+    def _apply_response_subnode_map_reveals(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        default_location: str = "",
+    ) -> list[str]:
+        if not isinstance(response, dict):
+            return []
+        entries: list[Any] = []
+        for key in (
+            "subnode_map_reveal",
+            "subnode_map_reveals",
+            "reveal_subnode_map",
+            "reveal_subnode_maps",
+            "unlock_subnode_route",
+            "unlock_subnode_routes",
+        ):
+            entries.extend(_as_list(response.get(key)))
+        lines: list[str] = []
+        for entry in entries:
+            result = self._reveal_subnode_map_route(entry, source=source, default_location=default_location)
+            if result.get("line"):
+                lines.append(str(result["line"]))
+        return lines
+
+    def _reveal_subnode_map_route(self, entry: Any, *, source: str, default_location: str = "") -> dict[str, Any]:
+        world = self.state.world_data
+        location_name = self._subnode_map_reveal_location(entry, default_location)
+        location_name = self._find_world_location_by_name(location_name) or location_name
+        location = world.locations.get(location_name) if location_name else None
+        if location is None:
+            return {"changed": False, "reason": "missing_location"}
+        graph = self._ensure_location_subnode_graph(world, location.name)
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        if not nodes:
+            return {"changed": False, "reason": "missing_subnodes", "location": location.name}
+
+        start = self._subnode_map_reveal_start(entry, location.name, graph)
+        target = self._subnode_map_reveal_target(entry, graph)
+        route = self._subnode_map_reveal_route(entry, graph)
+        reveal_surroundings = self._subnode_map_reveal_is_surroundings(entry)
+        if not target and route:
+            target = route[-1]
+        if not start:
+            start = self._default_subnode_for_location(location)
+        if start not in nodes:
+            start = next(iter(nodes), "")
+        if not target and not route and reveal_surroundings:
+            path = [start, *self._subnode_adjacent_ids(graph, start)]
+            target = path[-1] if path else start
+        elif not target:
+            return {"changed": False, "reason": "missing_target", "location": location.name}
+        if target and target not in nodes:
+            return {"changed": False, "reason": "missing_target_node", "location": location.name, "target": target}
+
+        if reveal_surroundings and not route:
+            path = _dedupe_strs([node_id for node_id in path if node_id in nodes])
+        elif route:
+            path = route
+            if start and path[0] != start:
+                path.insert(0, start)
+            if path[-1] != target:
+                path.append(target)
+        else:
+            path = self._subnode_path(graph, start, target)
+            if not path and target in nodes:
+                path = [target]
+
+        changed = False
+        for node_id in path:
+            node = nodes.get(node_id)
+            if not isinstance(node, dict):
+                continue
+            if not node.get("revealed") and not node.get("visited"):
+                changed = True
+            node["revealed"] = True
+        named_path = [str(nodes.get(node_id, {}).get("name") or node_id) for node_id in path if node_id in nodes]
+        event = {
+            "source": source,
+            "location": location.name,
+            "start": start,
+            "target": target,
+            "path": path,
+            "reason": _map_reveal_reason(entry),
+            "changed": changed,
+        }
+        world.extra.setdefault("subnode_map_reveal_events", []).append(event)
+        if not named_path:
+            return {**event, "line": ""}
+        line = f"> [Map] サブノードマップに経路を記録: {location.name}: {' -> '.join(named_path)}"
+        return {**event, "line": line}
+
+    def _subnode_map_reveal_location(self, entry: Any, default_location: str = "") -> str:
+        if entry is True:
+            return self._active_quest_destination_location() or default_location or self.state.current_location or self.state.world_data.starting_location
+        if isinstance(entry, dict):
+            quest_name = str(entry.get("quest") or entry.get("quest_name") or "").strip()
+            if _map_reveal_value_means_active_quest(quest_name):
+                quest_name = self.state.active_quest
+            if quest_name:
+                quest = self._find_quest_by_name(quest_name)
+                if quest:
+                    destination = quest.extra.get("destination") if isinstance(quest.extra, dict) else {}
+                    if isinstance(destination, dict):
+                        location = str(destination.get("location") or "").strip()
+                        if location:
+                            return location
+            for key in ("location", "target_location", "destination_location", "dungeon", "area_location"):
+                value = str(entry.get(key) or "").strip()
+                if not value:
+                    continue
+                if _map_reveal_value_means_active_quest(value):
+                    return self._active_quest_destination_location()
+                return value
+            if _as_bool(entry.get("active_quest") or entry.get("quest_destination")):
+                active = self._active_quest_destination_location()
+                if active:
+                    return active
+        value = str(entry or "").strip()
+        if _map_reveal_value_means_active_quest(value):
+            return self._active_quest_destination_location()
+        return default_location or self.state.current_location or self.state.world_data.starting_location
+
+    def _subnode_map_reveal_start(self, entry: Any, location_name: str, graph: dict[str, Any]) -> str:
+        if isinstance(entry, dict):
+            for key in ("from_subnode", "start_subnode", "source_subnode", "from", "start", "source"):
+                node_id = self._resolve_subnode_ref(graph, entry.get(key))
+                if node_id:
+                    return node_id
+        if location_name == (self.state.current_location or self.state.world_data.starting_location):
+            return self._current_subnode_id(location_name)
+        location = self.state.world_data.locations.get(location_name)
+        return self._default_subnode_for_location(location)
+
+    def _subnode_map_reveal_target(self, entry: Any, graph: dict[str, Any]) -> str:
+        if entry is True:
+            return self._active_quest_destination_subnode()
+        if isinstance(entry, dict):
+            quest_name = str(entry.get("quest") or entry.get("quest_name") or "").strip()
+            if _map_reveal_value_means_active_quest(quest_name):
+                quest_name = self.state.active_quest
+            if quest_name:
+                quest = self._find_quest_by_name(quest_name)
+                if quest:
+                    destination = quest.extra.get("destination") if isinstance(quest.extra, dict) else {}
+                    if isinstance(destination, dict):
+                        node_id = self._resolve_subnode_ref(graph, destination.get("objective_subnode_id") or destination.get("objective_subnode_name"))
+                        if node_id:
+                            return node_id
+            for key in (
+                "target_subnode",
+                "target_subnode_id",
+                "destination_subnode",
+                "destination_subnode_id",
+                "to_subnode",
+                "to",
+                "target",
+                "destination",
+                "subnode",
+                "subnode_id",
+            ):
+                raw = entry.get(key)
+                if isinstance(raw, str) and _map_reveal_value_means_active_quest(raw):
+                    return self._active_quest_destination_subnode()
+                node_id = self._resolve_subnode_ref(graph, raw)
+                if node_id:
+                    return node_id
+            if _as_bool(entry.get("active_quest") or entry.get("quest_destination")):
+                return self._active_quest_destination_subnode()
+        return self._resolve_subnode_ref(graph, entry)
+
+    def _subnode_map_reveal_route(self, entry: Any, graph: dict[str, Any]) -> list[str]:
+        if not isinstance(entry, dict):
+            return []
+        for key in ("route_subnodes", "subnode_route", "route", "path", "nodes", "subnodes"):
+            values = _as_list(entry.get(key))
+            route: list[str] = []
+            for value in values:
+                node_id = self._resolve_subnode_ref(graph, value)
+                if node_id:
+                    route.append(node_id)
+            if route:
+                return _dedupe_strs(route)
+        return []
+
+    def _subnode_map_reveal_is_surroundings(self, entry: Any) -> bool:
+        if not isinstance(entry, dict):
+            return False
+        scope = str(entry.get("scope") or entry.get("mode") or entry.get("type") or "").strip().casefold()
+        if scope in {"surroundings", "around", "nearby", "adjacent", "look_around", "current_area"}:
+            return True
+        return _as_bool(entry.get("surroundings") or entry.get("nearby") or entry.get("adjacent"))
+
+    def _resolve_subnode_ref(self, graph: dict[str, Any], value: Any) -> str:
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        if isinstance(value, dict):
+            value = value.get("id") or value.get("subnode_id") or value.get("node_id") or value.get("name")
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        if text in nodes:
+            return text
+        normalized = _world_location_name_key(text)
+        for node_id, node in nodes.items():
+            if not isinstance(node, dict):
+                continue
+            node_name = str(node.get("name") or node_id)
+            if normalized and normalized == _world_location_name_key(node_name):
+                return str(node_id)
+        return ""
+
+    def _active_quest_destination_subnode(self) -> str:
+        quest = self._find_quest_by_name(self.state.active_quest) if self.state.active_quest else None
+        if not quest or not isinstance(quest.extra, dict):
+            return ""
+        destination = quest.extra.get("destination")
+        if isinstance(destination, dict):
+            return str(destination.get("objective_subnode_id") or "").strip()
+        return str(quest.extra.get("objective_subnode_id") or "").strip()
 
     def _apply_response_relationship_effects(
         self,
@@ -6731,6 +7449,21 @@ class GameEngine:
                     "set that same person as the facility npc_name/npc_role or include facility/facility_type on "
                     "the person object so the game can place them in that facility subnode. Do not place an innkeeper "
                     "or shopkeeper in the central plaza unless they are explicitly visiting the plaza."
+                ),
+            }
+        )
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "NPC completeness rule: every person-like object in facilities, residents, and adventurers must "
+                    "include age, gender, look, and personality. For facilities, put the facility keeper fields on the "
+                    "facility object as npc_gender, npc_age, npc_look, and npc_personality. For residents/adventurers, "
+                    "use gender, age, look, and personality. gender must be female, male, none, or a matching localized "
+                    "label. age should be a visible age range such as early 20s, late 30s, elderly, unknown, or adult. "
+                    "look must describe visible appearance, clothes, body type/species traits, and atmosphere enough "
+                    "for character image generation. For monsters or non-humans, use gender=none and a life-stage age "
+                    "such as adult or unknown when a human age is not meaningful."
                 ),
             }
         )
@@ -8214,6 +8947,17 @@ class GameEngine:
                 ),
             },
         ]
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "NPC completeness rule: every generated NPC in npcs must include gender, age, look, and personality. "
+                    "Do not leave these blank. gender must be female, male, none, or a localized equivalent. age must be "
+                    "a visible age or age range; for monsters/non-humans use adult, young, ancient, or unknown if exact "
+                    "age is not meaningful. look must be concrete enough for character image generation."
+                ),
+            }
+        )
         return self._chat_json(
             "master_ai_npc_generater",
             messages,
@@ -8258,6 +9002,17 @@ class GameEngine:
                 ),
             },
         ]
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "Base profile repair rule: if the target character is missing gender, age, look, personality, or "
+                    "image_generation_prompt, fill those fields in this response. Preserve already established facts. "
+                    "look must describe visible appearance and clothing/species traits; image_generation_prompt should "
+                    "be usable by a character image generator."
+                ),
+            }
+        )
         return self._chat_json(
             "npc_detail_generater",
             messages,
@@ -8301,6 +9056,20 @@ class GameEngine:
             character.extra["talk_style"] = str(response.get("talk_style") or "")
         if response.get("archetype") is not None:
             character.extra["archetype"] = str(response.get("archetype") or "")
+        if response.get("gender") is not None and not character.gender:
+            character.gender = str(response.get("gender") or "").strip()
+        if response.get("age") is not None and not character.age:
+            character.age = str(response.get("age") or "").strip()
+        if response.get("personality") is not None and not character.personality:
+            character.personality = str(response.get("personality") or "").strip()
+        detail_look = str(response.get("look") or response.get("appearance") or "").strip()
+        if detail_look and not character.look:
+            character.look = detail_look
+        if response.get("image_generation_prompt") is not None:
+            prompt_parts = _as_str_list(response.get("image_generation_prompt"))
+            if prompt_parts and not character.image_generation_prompt:
+                character.image_generation_prompt = prompt_parts
+                character.prompts["image_generation_prompt"] = prompt_parts
         if response.get("behavior_policy") is not None:
             character.extra["behavior_policy"] = str(response.get("behavior_policy") or "")
         if response.get("conversation_topics") is not None:
@@ -8761,6 +9530,23 @@ class GameEngine:
             encounter["opponent_status"] = status
             encounter["opponent_hp"] = max(0, _safe_int(character.current_hp, encounter.get("opponent_hp") or 0))
             encounter["opponent_max_hp"] = max(1, _safe_int(character.max_hp, encounter.get("opponent_max_hp") or 1))
+
+    def _encounter_opponent_combat_status(self, encounter: dict[str, Any], character: CharacterData) -> str:
+        entry = self._sync_encounter_opponent_entry(encounter, character)
+        status = str(
+            entry.get("opponent_status")
+            or entry.get("status")
+            or character.extra.get("combat_status")
+            or character.flags.get("combat_status")
+            or character.state
+            or ""
+        ).strip()
+        if not status:
+            status = "defeated" if _character_state_is_dead(character) or _safe_int(character.current_hp, 1) <= 0 else "active"
+        entry["opponent_status"] = status
+        if str(encounter.get("active_opponent_uuid") or encounter.get("opponent_uuid") or "") == str(character.uuid or ""):
+            encounter["opponent_status"] = status
+        return status
 
     def _apply_npc_action_tool(
         self,
@@ -10181,8 +10967,11 @@ class GameEngine:
                 name=_unique_character_name(self.state.world_data, target_name),
                 role=profile["category"] or "敵対者",
                 category="enemy_npc",
+                gender=profile["gender"],
+                age=profile["age"],
                 backstory=profile["description"],
-                look=profile["description"],
+                personality=profile["personality"],
+                look=profile["look"],
                 traits=profile["traits"],
                 image_generation_prompt=profile["image_generation_prompt"],
                 flags={
@@ -10257,6 +11046,16 @@ class GameEngine:
                 ),
             },
         ]
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "New opponent profile rule: when the target is not an already-present character, include gender, "
+                    "age, look, personality, and image_generation_prompt. Use gender=none and age=adult/ancient/unknown "
+                    "for monsters or non-human entities when exact human-style values are not meaningful."
+                ),
+            }
+        )
         try:
             response = self._chat_json(
                 "encounter_target_resolver",
@@ -10366,10 +11165,18 @@ class GameEngine:
         resolved = resolved if isinstance(resolved, dict) else {}
         category = str(resolved.get("category") or resolved.get("monster_category") or "").strip()
         description = str(resolved.get("description") or resolved.get("summary") or "").strip()
+        gender = str(resolved.get("gender") or "none").strip()
+        age = str(resolved.get("age") or "unknown").strip()
+        look = str(resolved.get("look") or resolved.get("appearance") or "").strip()
+        personality = str(resolved.get("personality") or "").strip()
         if not category:
             category = "wild_encounter"
         if not description:
             description = f"{location}でプレイヤーの行動に反応して姿を現した魔物。"
+        if not look:
+            look = description
+        if not personality:
+            personality = "Acts according to its instincts, territory, and the current situation."
         traits = resolved.get("traits")
         normalised_traits = [
             trait for trait in (_normalise_trait(item) for item in _as_list(traits)) if trait.get("name")
@@ -10385,6 +11192,10 @@ class GameEngine:
         return {
             "category": category,
             "description": description,
+            "gender": gender,
+            "age": age,
+            "look": look,
+            "personality": personality,
             "traits": normalised_traits,
             "image_generation_prompt": _dedupe_strs(prompt_parts),
         }
@@ -12654,6 +13465,17 @@ class GameEngine:
                 ),
             },
         ]
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "Generated actor completeness rule: if you return npcs, enemies, opponents, or boss_npc, every "
+                    "generated character object must include gender, age, look, personality, description, and "
+                    "image_generation_prompt. For monsters/non-humans, use gender=none and age=adult/ancient/unknown "
+                    "if exact human-style values are not meaningful."
+                ),
+            }
+        )
         return self._chat_json(
             "field_event_evaluator",
             messages,
@@ -13133,6 +13955,11 @@ class GameEngine:
                 adjacent_subnodes.append(target)
             elif target == subnode_id and source:
                 adjacent_subnodes.append(source)
+        subnode_movement = str(graph.get("movement") or "adjacent")
+        remote_targets = self._remote_travel_targets_for_subnode(subnode) if isinstance(subnode, dict) else []
+        movement_rule = "free"
+        if location and (_subnode_map_hides_unvisited(location) or subnode_movement != "free"):
+            movement_rule = "adjacent_only"
 
         nearby_npcs: list[dict[str, Any]] = []
         for character in world.characters.values():
@@ -13180,6 +14007,11 @@ class GameEngine:
                     "area": getattr(location, "area", "") if location else "",
                     "kind": location_extra.get("location_kind") or location_extra.get("kind"),
                     "danger_level": self._current_location_danger(location_name),
+                    "dangerous_movement_rule": (
+                        "dangerous areas allow only adjacent subnode movement unless the current subnode lists remote_travel_targets"
+                        if movement_rule == "adjacent_only"
+                        else ""
+                    ),
                     "facilities": _compact_value(location_extra.get("facilities", []), max_chars=480),
                 }
             ),
@@ -13190,6 +14022,8 @@ class GameEngine:
                     "kind": str(subnode.get("kind") or ""),
                     "description": _short_text(str(subnode.get("description") or ""), 340),
                     "adjacent_subnodes": adjacent_subnodes[:8],
+                    "movement_rule": movement_rule,
+                    "remote_travel_targets": remote_targets[:4],
                 }
             ),
             "active_facility": self._active_facility_record() or {},
@@ -13460,10 +14294,12 @@ class GameEngine:
                 "content": (
                     "You design one concrete quest objective NPC for Fantasia. Return JSON only. "
                     "Use the world tone, quest request, destination, and objective role to decide a player-facing name, "
-                    "epithet, role label, description, personality, appearance, and whether the NPC is hostile. "
+                    "epithet, role label, description, personality, age, gender, appearance, and whether the NPC is hostile. "
                     "For a rescue blocker/captor/obstacle, make it match the request: if the quest implies tentacles, beasts, "
                     "spirits, bandits, curses, or another non-human threat, do not default to a generic human. "
-                    "Do not output UUIDs or internal ids such as rescue_target, blocker, defeat_target, or delivery_target."
+                    "Do not output UUIDs or internal ids such as rescue_target, blocker, defeat_target, or delivery_target. "
+                    "Always include gender and age. Use gender=none and age=adult/ancient/unknown for non-human entities "
+                    "when a human age or binary gender is not meaningful."
                 ),
             },
             {
@@ -13499,7 +14335,7 @@ class GameEngine:
             return fallback
 
         design = dict(fallback)
-        for key in ("name", "display_alias", "role_label", "description", "personality", "look", "species", "category"):
+        for key in ("name", "display_alias", "role_label", "description", "personality", "gender", "age", "look", "species", "category"):
             value = str(generated.get(key) or "").strip()
             if value:
                 design[key] = value
@@ -13544,6 +14380,8 @@ class GameEngine:
             name=name,
             role=role_label,
             category=str(design.get("category") or "quest_objective"),
+            gender=str(design.get("gender") or ""),
+            age=str(design.get("age") or ""),
             backstory=description,
             personality=personality,
             look=look,
@@ -14420,14 +15258,18 @@ class GameEngine:
                 existing["name"] = node_name
             if _subnode_display_needs_fill(existing.get("description")):
                 existing["description"] = description
-            self._ensure_subnode_connected_to_anchor(graph, node_id, kind="quest_path", prefer_deep=True)
+            if _is_dungeon_location(location) or _world_location_blocks_world_map_departure(location):
+                self._ensure_quest_branch_connection(location, graph, quest, node_id)
+            else:
+                self._ensure_subnode_connected_to_anchor(graph, node_id, kind="quest_path", prefer_deep=True)
             return existing
         x = 560
         y = 360 + (len(nodes) % 3) * 90
-        if DUNGEON_DEEPEST_SUBNODE_ID in nodes:
-            parent = DUNGEON_DEEPEST_SUBNODE_ID
-            x = _safe_int(nodes[parent].get("x"), 720) + 170
-            y = _safe_int(nodes[parent].get("y"), 180)
+        if _is_dungeon_location(location) or _world_location_blocks_world_map_departure(location):
+            parent = self._ensure_quest_branch_node(location, graph, quest)
+            parent_node = nodes.get(parent, {}) if isinstance(nodes.get(parent), dict) else {}
+            x = _safe_int(parent_node.get("x"), 560) + 140
+            y = _safe_int(parent_node.get("y"), 260) + 70
         elif "depths" in nodes:
             parent = "depths"
             x = _safe_int(nodes[parent].get("x"), 560) + 170
@@ -14449,8 +15291,68 @@ class GameEngine:
         )
         if parent:
             self._connect_subnodes(graph, str(parent), node_id, kind="quest_path")
-        self._ensure_subnode_connected_to_anchor(graph, node_id, kind="quest_path", prefer_deep=True)
+        if _is_dungeon_location(location) or _world_location_blocks_world_map_departure(location):
+            self._ensure_quest_branch_connection(location, graph, quest, node_id)
+        else:
+            self._ensure_subnode_connected_to_anchor(graph, node_id, kind="quest_path", prefer_deep=True)
         return node
+
+    def _ensure_quest_branch_node(self, location: LocationData, graph: dict[str, Any], quest: QuestData) -> str:
+        nodes = graph.setdefault("nodes", {})
+        branch_id = f"quest_branch:{_world_location_name_key(quest.name) or 'objective'}"
+        if branch_id in nodes:
+            return branch_id
+        parent = self._quest_branch_parent(graph)
+        parent_node = nodes.get(parent, {}) if isinstance(nodes.get(parent), dict) else {}
+        x = _safe_int(parent_node.get("x"), 360) + 80
+        y = _safe_int(parent_node.get("y"), 220) + 110
+        self._upsert_subnode_node(
+            graph,
+            branch_id,
+            f"{quest.name}への分岐",
+            "本道から外れた、依頼の目的地へ続く分岐点。",
+            "quest_branch",
+            x,
+            y,
+            quest_name=quest.name,
+            revealed=False,
+            world_map_exit=False,
+        )
+        if parent:
+            self._connect_subnodes(graph, parent, branch_id, kind="quest_branch")
+        self._ensure_subnode_connected_to_anchor(graph, branch_id, kind="quest_branch", prefer_deep=False)
+        return branch_id
+
+    def _quest_branch_parent(self, graph: dict[str, Any]) -> str:
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        if not nodes:
+            return ""
+        start = DUNGEON_ENTRY_SUBNODE_ID if DUNGEON_ENTRY_SUBNODE_ID in nodes else self._subnode_anchor(graph, prefer_deep=False)
+        deepest = DUNGEON_DEEPEST_SUBNODE_ID if DUNGEON_DEEPEST_SUBNODE_ID in nodes else ""
+        path = self._subnode_path(graph, start, deepest) if start and deepest else []
+        candidates = [node_id for node_id in path[1:-1] if node_id in nodes]
+        if candidates:
+            return candidates[max(0, len(candidates) // 2)]
+        for node_id in self._subnode_adjacent_ids(graph, start):
+            if node_id != deepest:
+                return node_id
+        return start
+
+    def _ensure_quest_branch_connection(
+        self,
+        location: LocationData,
+        graph: dict[str, Any],
+        quest: QuestData,
+        objective_node_id: str,
+    ) -> None:
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        objective_node_id = str(objective_node_id or "").strip()
+        if objective_node_id not in nodes:
+            return
+        branch_id = self._ensure_quest_branch_node(location, graph, quest)
+        if branch_id:
+            self._connect_subnodes(graph, branch_id, objective_node_id, kind="quest_path")
+        _ensure_dungeon_graph_connected(graph)
 
     def _quest_objective_subnode_display(self, quest: QuestData, hint: dict[str, Any]) -> tuple[str, str]:
         text_parts = [
@@ -14654,11 +15556,6 @@ class GameEngine:
                 location_data = self.state.world_data.locations.get(location)
                 if location_data:
                     self._ensure_quest_objective_subnode(location_data, quest, quest_destination)
-                    graph = self._ensure_location_subnode_graph(self.state.world_data, location)
-                    if graph:
-                        start_node = DUNGEON_ENTRY_SUBNODE_ID if DUNGEON_ENTRY_SUBNODE_ID in graph.get("nodes", {}) else self._current_subnode_id(location)
-                        self._mark_subnode_route_visited(graph, start_node, objective_subnode_id)
-                self._set_current_subnode(location, objective_subnode_id)
         self._set_player_presence(location)
         objective_lines = self._apply_quest_objective_action(quest, action, location)
         movement_narration = [str(line) for line in movement_result.get("narration_lines", []) if str(line).strip()]
@@ -15296,6 +16193,27 @@ def _is_invalid_runtime_control_choice(text: str) -> bool:
 
 def _exploration_choices(values: list[str]) -> list[str]:
     return _dedupe_strs(values)[:MAX_EXPLORATION_CHOICES]
+
+
+def _choice_looks_like_movement(text: str) -> bool:
+    lowered = str(text or "").casefold()
+    movement_words = (
+        "へ移動",
+        "へ進む",
+        "に移動",
+        "に進む",
+        "戻る",
+        "向かう",
+        "出る",
+        "入る",
+        "go",
+        "move",
+        "travel",
+        "return",
+        "enter",
+        "leave",
+    )
+    return any(word in text or word in lowered for word in movement_words)
 
 
 def _character_prompt_parts(character: CharacterData) -> list[str]:
@@ -18924,6 +19842,8 @@ def _fallback_generated_dungeon_boss_payload(
         "name": name,
         "role": "ダンジョンボス",
         "category": "boss",
+        "gender": "none",
+        "age": "unknown",
         "description": description,
         "personality": "侵入者の力と意志を試すように振る舞う。",
         "look": description,
@@ -19999,10 +20919,11 @@ def _augment_location_choices_for_world(
     choices: list[str],
     *,
     active_quest: bool,
+    can_move: bool = False,
 ) -> list[str]:
     result = list(choices)
-    if _settlement_location_for_name(world, location_name):
-        result.insert(0, MAP_CHOICE_LABEL)
+    if can_move:
+        result.insert(0, MOVE_CHOICE_LABEL)
     if _location_is_guild(world, location_name) and not active_quest:
         result = [choice for choice in result if not _is_direct_quest_accept_choice(choice)]
         result.insert(0, QUEST_BOARD_CHOICE_LABEL)
@@ -20608,7 +21529,7 @@ def _should_use_action_roll(action: str, input_type: str, purpose: str) -> bool:
     if not text:
         return False
     lowered = text.lower()
-    if text in {MAP_CHOICE_LABEL, QUEST_BOARD_CHOICE_LABEL}:
+    if text in {MOVE_CHOICE_LABEL, QUEST_BOARD_CHOICE_LABEL}:
         return False
     if _is_quest_abandon_action(text) or _is_conversation_end_action(text):
         return False
@@ -21864,6 +22785,10 @@ def _character_from_raw(item: Any, index: int, category: str) -> CharacterData:
         character.category = category
         if description and not character.backstory:
             character.backstory = description
+        if data.get("appearance") and not character.look:
+            character.look = str(data.get("appearance"))
+        if description and not character.look:
+            character.look = description
         character.extra.setdefault("raw_create_settlement_detail_entry", data)
         return character
     return CharacterData(
@@ -21897,6 +22822,8 @@ def _npc_from_raw(item: Any, index: int) -> CharacterData:
             character.look = str(data.get("look"))
         if data.get("appearance") and not character.look:
             character.look = str(data.get("appearance"))
+        if description and not character.look:
+            character.look = description
         if data.get("image_generation_prompt") and not character.image_generation_prompt:
             character.image_generation_prompt = _as_str_list(data.get("image_generation_prompt"))
         if data.get("skills"):
@@ -21937,6 +22864,12 @@ def _enemy_npc_from_raw(item: Any, index: int) -> CharacterData:
         character.category = "enemy_npc"
         if description and not character.backstory:
             character.backstory = description
+        if not character.gender:
+            character.gender = str(data.get("gender") or "none")
+        if not character.age:
+            character.age = str(data.get("age") or "unknown")
+        if data.get("personality") and not character.personality:
+            character.personality = str(data.get("personality"))
         if description and not character.look:
             character.look = description
         if data.get("image_generation_prompt"):

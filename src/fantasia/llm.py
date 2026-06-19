@@ -317,7 +317,7 @@ class FixtureLlmBackend(BaseLlmBackend):
                     "role": "鍛冶職人",
                     "personality": "口数は少ないが、仕事には誠実。",
                 },
-                "choices": ["炉番のレナに話しかける", "品物を見る", "街の地図を見る"],
+                "choices": ["炉番のレナに話しかける", "品物を見る", "移動する"],
             }
         elif manager_name == "home_construction_evaluator":
             unusable = any(word in user_text for word in ("食料", "飲料", "紙切れ", "花"))
@@ -921,7 +921,7 @@ class FixtureLlmBackend(BaseLlmBackend):
             content = {
                 "narration": "雨音の奥で、宿の主人があなたに古びた地図を差し出した。地図の端には、まだインクの乾いていない赤い印がある。",
                 "location": "灯守りの宿",
-                "choices": ["地図を見る", "宿の主人に話しかける", "宿の外へ出る"],
+                "choices": ["移動する", "宿の主人に話しかける", "宿の外へ出る"],
             }
         elif manager_name == "character_image_creator":
             name = _extract_character_name(user_text) or "ミラ"

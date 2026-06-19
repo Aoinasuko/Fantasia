@@ -3120,10 +3120,107 @@ class FantasiaApp(tk.Tk):
         if normalized in {_ui_text(self.config_data, "choice_quest_board"), "依頼掲示板を見る", "Open quest board"}:
             self._open_quest_board_window()
             return True
-        if normalized in {_ui_text(self.config_data, "choice_open_map"), "地図を見る", "Open map"}:
-            self._open_map_window()
+        if normalized in {_ui_text(self.config_data, "choice_move"), "移動する", "Move"}:
+            self._open_movement_window()
             return True
         return False
+
+    def _open_movement_window(self) -> None:
+        options = [option for option in self.engine.available_movement_options() if isinstance(option, dict)]
+        if not options:
+            self._append_log("\n" + _ui_text(self.config_data, "move_window_empty") + "\n")
+            return
+        dialog = self._create_modal_dialog(_ui_text(self.config_data, "move_window_title"), 720, 520)
+        dialog.title(_ui_text(self.config_data, "move_window_title"))
+        dialog.configure(bg=APP_DEEP_BG)
+        dialog.columnconfigure(0, weight=1)
+        dialog.rowconfigure(1, weight=1)
+
+        header = tk.Frame(dialog, bg=APP_DEEP_BG)
+        header.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 8))
+        header.columnconfigure(0, weight=1)
+        tk.Label(header, text=_ui_text(self.config_data, "move_window_title"), bg=APP_DEEP_BG, fg="#f2f2f2", font=self.ui_fonts.bold(2)).grid(row=0, column=0, sticky="w")
+        self._instant_button(header, _ui_text(self.config_data, "character_close"), dialog.destroy).grid(row=0, column=1, sticky="e")
+
+        body = tk.Frame(dialog, bg=APP_PANEL_BG, highlightbackground=APP_BUTTON_BORDER, highlightthickness=2)
+        body.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 8))
+        body.columnconfigure(0, weight=1)
+        body.columnconfigure(1, weight=1)
+        body.rowconfigure(0, weight=1)
+
+        list_frame = tk.Frame(body, bg=APP_PANEL_BG)
+        list_frame.grid(row=0, column=0, sticky="nsew", padx=(12, 8), pady=12)
+        list_frame.columnconfigure(0, weight=1)
+        detail_var = tk.StringVar(value=_ui_text(self.config_data, "move_window_hint"))
+        selected_index = tk.IntVar(value=-1)
+
+        detail_box = tk.Label(
+            body,
+            textvariable=detail_var,
+            bg=APP_DEEP_BG,
+            fg="#f2f2f2",
+            anchor="nw",
+            justify="left",
+            wraplength=300,
+            font=self.ui_fonts.normal(-1),
+            padx=12,
+            pady=12,
+        )
+        detail_box.grid(row=0, column=1, sticky="nsew", padx=(8, 12), pady=12)
+
+        def option_label(option: dict[str, object]) -> str:
+            prefix_key = "move_window_world" if str(option.get("type") or "") == "world" else "move_window_subnode"
+            return f"{_ui_text(self.config_data, prefix_key)}: {option.get('title') or option.get('id')}"
+
+        def option_detail(option: dict[str, object]) -> str:
+            parts = [option_label(option)]
+            kind = str(option.get("kind") or "").strip()
+            if kind:
+                parts.append(kind)
+            description = str(option.get("description") or "").strip()
+            if description:
+                parts.append(description)
+            if option.get("external"):
+                parts.append(_ui_text(self.config_data, "move_window_external"))
+            if str(option.get("type") or "") == "world" and not option.get("visited"):
+                parts.append(_ui_text(self.config_data, "move_window_unvisited"))
+            return "\n".join(parts)
+
+        def select(index: int) -> None:
+            selected_index.set(index)
+            detail_var.set(option_detail(options[index]))
+
+        for index, option in enumerate(options[:16]):
+            self._instant_button(list_frame, option_label(option), lambda i=index: select(i)).grid(row=index, column=0, sticky="ew", pady=(0, 8))
+
+        footer = tk.Frame(dialog, bg=APP_DEEP_BG)
+        footer.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 14))
+        footer.columnconfigure(0, weight=1)
+
+        def travel() -> None:
+            index = selected_index.get()
+            if index < 0 or index >= len(options):
+                return
+            option = options[index]
+            destination = str(option.get("id") or "")
+            if not destination:
+                return
+            if str(option.get("type") or "") == "world":
+                block_message = self.engine.world_map_travel_precheck_message(destination)
+                task_name = _ui_text(self.config_data, "task_world_map_travel")
+                callback = lambda dest=destination: self.engine.travel_world_map_to(dest)
+            else:
+                block_message = self.engine.subnode_travel_precheck_message(destination)
+                task_name = _ui_text(self.config_data, "task_subnode_map_travel")
+                callback = lambda dest=destination: self.engine.travel_subnode_to(dest)
+            if block_message:
+                dialog.destroy()
+                self._append_log("\n" + block_message + "\n")
+                return
+            dialog.destroy()
+            self._run_task(task_name, callback, self._set_log)
+
+        self._instant_button(footer, _ui_text(self.config_data, "move_window_confirm"), travel).grid(row=0, column=1, sticky="e")
 
     def _open_world_map_window(self) -> None:
         data = self.engine.world_map_data()
@@ -3217,6 +3314,11 @@ class FantasiaApp(tk.Tk):
         def travel() -> None:
             destination = selected_name.get()
             if not destination:
+                return
+            block_message = self.engine.world_map_travel_precheck_message(destination)
+            if block_message:
+                dialog.destroy()
+                self._append_log("\n" + block_message + "\n")
                 return
             dialog.destroy()
             self._run_task(
@@ -3328,6 +3430,11 @@ class FantasiaApp(tk.Tk):
             destination = selected_id.get()
             if not destination:
                 return
+            block_message = self.engine.subnode_travel_precheck_message(destination)
+            if block_message:
+                dialog.destroy()
+                self._append_log("\n" + block_message + "\n")
+                return
             dialog.destroy()
             self._run_task(
                 _ui_text(self.config_data, "task_subnode_map_travel"),
@@ -3336,75 +3443,6 @@ class FantasiaApp(tk.Tk):
             )
 
         self._instant_button(footer, _ui_text(self.config_data, "subnode_map_move"), travel).grid(row=0, column=1, sticky="e", padx=(12, 0))
-
-    def _open_map_window(self) -> None:
-        facilities = self.engine.current_location_facilities()
-        if not facilities:
-            self._show_error(ValueError(_ui_text(self.config_data, "map_no_facilities")))
-            return
-        dialog = self._create_modal_dialog(_ui_text(self.config_data, "map_title"), 760, 520)
-        dialog.title(_ui_text(self.config_data, "map_title"))
-        dialog.configure(bg=APP_DEEP_BG)
-        dialog.geometry("760x520")
-        dialog.transient(self)
-        dialog.columnconfigure(0, weight=1)
-        dialog.columnconfigure(1, weight=2)
-        dialog.rowconfigure(1, weight=1)
-
-        tk.Label(dialog, text=_ui_text(self.config_data, "map_title"), bg=APP_DEEP_BG, fg="#f2f2f2", font=self.ui_fonts.bold(0)).grid(row=0, column=0, columnspan=2, sticky="ew", padx=16, pady=(14, 8))
-        listbox = tk.Listbox(dialog, bg=APP_PANEL_BG, fg="#f2f2f2", selectbackground="#263654", relief="solid", bd=1, font=self.ui_fonts.normal(-2))
-        listbox.grid(row=1, column=0, sticky="nsew", padx=(16, 8), pady=(0, 10))
-        detail = tk.Text(dialog, bg=APP_PANEL_BG, fg="#f2f2f2", relief="solid", bd=1, wrap="word", height=12, font=self.ui_fonts.normal(-2))
-        detail.grid(row=1, column=1, sticky="nsew", padx=(8, 16), pady=(0, 10))
-
-        for facility in facilities:
-            listbox.insert("end", str(facility.get("name") or ""))
-
-        def selected_facility() -> dict | None:
-            selection = listbox.curselection()
-            if not selection:
-                return None
-            index = int(selection[0])
-            if index < 0 or index >= len(facilities):
-                return None
-            return facilities[index]
-
-        def update_detail(_event=None) -> None:
-            facility = selected_facility()
-            detail.configure(state="normal")
-            detail.delete("1.0", "end")
-            if facility:
-                lines = [
-                    str(facility.get("name") or ""),
-                    f"{_ui_text(self.config_data, 'map_type')}: {facility.get('type') or '-'}",
-                    f"{_ui_text(self.config_data, 'map_npc')}: {facility.get('npc_name') or '-'}",
-                    "",
-                    str(facility.get("description") or ""),
-                ]
-                detail.insert("1.0", "\n".join(lines))
-            detail.configure(state="disabled")
-
-        def travel() -> None:
-            facility = selected_facility()
-            if not facility:
-                return
-            dialog.destroy()
-            self._run_task(
-                _ui_text(self.config_data, "task_moving_facility"),
-                lambda name=str(facility.get("name") or ""): self.engine.travel_to_facility(name),
-                self._set_log,
-            )
-
-        listbox.bind("<<ListboxSelect>>", update_detail)
-        if facilities:
-            listbox.selection_set(0)
-            update_detail()
-
-        actions = tk.Frame(dialog, bg=APP_DEEP_BG)
-        actions.grid(row=2, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 14))
-        actions.columnconfigure(0, weight=1)
-        self._instant_button(actions, _ui_text(self.config_data, "map_move"), travel).grid(row=0, column=1, sticky="e", padx=(0, 8))
-        self._instant_button(actions, _ui_text(self.config_data, "character_close"), dialog.destroy).grid(row=0, column=2, sticky="e")
 
     def _open_quest_board_window(self) -> None:
         if not self.engine.is_current_location_guild():
@@ -3515,16 +3553,8 @@ class FantasiaApp(tk.Tk):
         self._open_inventory_window(_ui_text(self.config_data, "inventory_title"), _ui_text(self.config_data, "inventory_details"), [], mode="inventory")
 
     def _open_loot_inventory(self) -> None:
-        location = self.engine.state.world_data.ensure_location(self.engine.state.current_location)
-        inventory = location.extra.setdefault("inventory", [])
-        if not isinstance(inventory, list):
-            inventory = []
-            location.extra["inventory"] = inventory
-        if not location.flags.get("inventory_seeded") and not inventory:
-            context = " ".join(part for part in (location.area, location.description) if part)
-            inventory.extend(generate_loot_items(location.name, context))
-            location.flags["inventory_seeded"] = True
-        self._open_inventory_window(_ui_text(self.config_data, "loot_title"), location.name, inventory, mode="loot")
+        label, inventory = self.engine.current_loot_inventory()
+        self._open_inventory_window(_ui_text(self.config_data, "loot_title"), label, inventory, mode="loot")
 
     def _open_trade_inventory(self, action: str = "") -> None:
         character = self._trade_target_character(action)
@@ -6279,8 +6309,10 @@ class FantasiaApp(tk.Tk):
                     choices = [choice for choice in choices if not _is_direct_quest_accept_choice_text(choice)]
                 if self.engine.is_current_location_guild() and not self.engine.state.active_quest:
                     choices.insert(0, _ui_text(self.config_data, "choice_quest_board"))
-                if self.engine.is_current_location_settlement():
-                    choices.insert(0, _ui_text(self.config_data, "choice_open_map"))
+                if self.engine.has_movement_options():
+                    move_choice = _ui_text(self.config_data, "choice_move")
+                    if move_choice not in choices:
+                        choices.insert(0, move_choice)
             if mode in {"exploration", "conversation"} and self._trade_target_character() is not None:
                 trade_choice = _ui_text(self.config_data, "game_trade")
                 if trade_choice not in choices:
@@ -6453,7 +6485,7 @@ def run_save_smoke_test() -> None:
         print(engine.resolve_action("硝子森の影を攻撃する"))
         print(engine.resolve_action("降伏する"))
         quest_choice = next((choice for choice in engine.state.choices if choice.startswith("クエスト")), None)
-        first_choice = quest_choice or (engine.state.choices[0] if engine.state.choices else "地図を見る")
+        first_choice = quest_choice or (engine.state.choices[0] if engine.state.choices else "移動する")
         print(engine.resolve_choice(first_choice))
         print(engine.resolve_action("馬丁に話を聞く"))
         save_path = engine.save_game()
@@ -7512,13 +7544,16 @@ UI_TEXT["en"].update(
         "game_send": "send",
         "game_generating": "Generating",
         "task_generation_failed_log": "Generation failed.",
-        "choice_open_map": "Open map",
+        "choice_move": "Move",
         "choice_quest_board": "Open quest board",
-        "map_title": "Town Map",
-        "map_move": "Move",
-        "map_type": "Type",
-        "map_npc": "NPC",
-        "map_no_facilities": "No settlement map is available here.",
+        "move_window_title": "Move",
+        "move_window_hint": "Select a destination.",
+        "move_window_confirm": "Move",
+        "move_window_empty": "There is nowhere you can move right now.",
+        "move_window_world": "World",
+        "move_window_subnode": "Area",
+        "move_window_external": "This route leaves the current area.",
+        "move_window_unvisited": "Unvisited adjacent location.",
         "world_map_title": "World Map",
         "world_map_move": "Move to Selected Location",
         "world_map_no_locations": "No visited locations are recorded yet.",
@@ -7534,7 +7569,6 @@ UI_TEXT["en"].update(
         "quest_board_reward": "Reward",
         "quest_board_status": "Status",
         "quest_board_objective": "Objective",
-        "task_moving_facility": "Moving...",
         "task_world_map_travel": "Traveling...",
         "task_subnode_map_travel": "Moving...",
         "task_accepting_quest": "Accepting quest...",
@@ -7762,13 +7796,16 @@ UI_TEXT["ja"].update(
         "game_send": "送信",
         "game_generating": "生成中",
         "task_generation_failed_log": "生成に失敗した",
-        "choice_open_map": "地図を見る",
+        "choice_move": "移動する",
         "choice_quest_board": "依頼掲示板を見る",
-        "map_title": "街の地図",
-        "map_move": "移動",
-        "map_type": "種類",
-        "map_npc": "NPC",
-        "map_no_facilities": "ここでは街の地図を開けません。",
+        "move_window_title": "移動",
+        "move_window_hint": "移動先を選択してください。",
+        "move_window_confirm": "移動する",
+        "move_window_empty": "現在移動できる場所はありません。",
+        "move_window_world": "ワールド",
+        "move_window_subnode": "内部",
+        "move_window_external": "現在のエリアから外へ出る経路です。",
+        "move_window_unvisited": "未訪問の隣接地点です。",
         "world_map_title": "世界地図",
         "world_map_move": "選択した場所へ移動",
         "world_map_no_locations": "訪問済みの場所がまだ記録されていません。",
@@ -7784,7 +7821,6 @@ UI_TEXT["ja"].update(
         "quest_board_reward": "報酬",
         "quest_board_status": "状態",
         "quest_board_objective": "目的",
-        "task_moving_facility": "施設へ移動中...",
         "task_world_map_travel": "移動中...",
         "task_subnode_map_travel": "\u79fb\u52d5\u4e2d...",
         "task_accepting_quest": "依頼を受注中...",
@@ -8808,7 +8844,7 @@ def _empty_choices_text(mode: str, language: str = "ja") -> str:
 def _initial_world_choices(world: WorldData, language: str = "ja") -> list[str]:
     choices = [
         tr_enum("initial_choice", "look_around", language),
-        tr_enum("initial_choice", "open_map", language),
+        tr_enum("initial_choice", "move", language),
     ]
     return _limit_exploration_choices(choices)
 

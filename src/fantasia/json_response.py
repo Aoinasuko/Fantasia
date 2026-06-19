@@ -258,6 +258,12 @@ STATUS_EFFECT_FIELDS = (
     FieldRule("unlock_world_map_routes", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
     FieldRule("map_route_reveal", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
     FieldRule("map_route_reveals", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("subnode_map_reveal", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("subnode_map_reveals", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("reveal_subnode_map", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("reveal_subnode_maps", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("unlock_subnode_route", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
+    FieldRule("unlock_subnode_routes", (dict, list, str, bool), required=False, non_empty=False, string_items=False),
     FieldRule("home_construction", (dict, list, str), required=False, non_empty=False, string_items=False),
     FieldRule("player_home_construction", (dict, list, str), required=False, non_empty=False, string_items=False),
     FieldRule("home_building", (dict, list, str), required=False, non_empty=False, string_items=False),
@@ -534,12 +540,20 @@ SCHEMAS: dict[str, ManagerSchema] = {
                     "description": "依頼掲示板と受付がある小さなギルド。",
                     "npc_name": "ミラ",
                     "npc_role": "ギルド受付",
+                    "npc_gender": "female",
+                    "npc_age": "late 20s",
+                    "npc_look": "short brown hair, practical guild uniform, calm eyes",
+                    "npc_personality": "calm, organized, helpful to adventurers",
                 }
             ],
             "residents": [
                 {
                     "name": "ミラ",
                     "role": "宿の主人",
+                    "gender": "female",
+                    "age": "middle-aged",
+                    "look": "warm smile, apron over a plain dress, tidy tied hair",
+                    "personality": "kind but careful with strangers",
                     "description": "古い道の噂を知る寡黙な主人。",
                 }
             ],
@@ -547,6 +561,10 @@ SCHEMAS: dict[str, ManagerSchema] = {
                 {
                     "name": "セオ",
                     "role": "斥候",
+                    "gender": "male",
+                    "age": "early 30s",
+                    "look": "lean scout, hooded cloak, light leather armor",
+                    "personality": "observant and dryly humorous",
                     "description": "硝子森から戻ったばかりの旅人。",
                 }
             ],
@@ -647,6 +665,8 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("role_label", (str,), required=False, non_empty=False),
             FieldRule("description", (str,)),
             FieldRule("personality", (str,), required=False, non_empty=False),
+            FieldRule("gender", (str,), required=False, non_empty=False),
+            FieldRule("age", (str,), required=False, non_empty=False),
             FieldRule("look", (str,), required=False, non_empty=False),
             FieldRule("species", (str,), required=False, non_empty=False),
             FieldRule("category", (str,), required=False, non_empty=False),
@@ -660,6 +680,8 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "role_label": "妨害者",
             "description": "依頼の舞台と噂に合う、救出対象を妨げる存在。",
             "personality": "警戒心が強く、獲物を逃がさない。",
+            "gender": "none",
+            "age": "adult",
             "look": "暗い森に溶け込む影と絡みつく蔦のような腕を持つ。",
             "species": "魔物",
             "category": "quest_objective",
@@ -766,6 +788,8 @@ SCHEMAS: dict[str, ManagerSchema] = {
                 "role": "地下門のボス",
                 "description": "地下門の最奥で声の主を守るように待ち構える魔物。",
                 "personality": "侵入者を試すように威圧する。",
+                "gender": "none",
+                "age": "ancient",
                 "look": "霧をまとった巨大な影。",
                 "image_generation_prompt": ["fantasy dungeon boss", "mist guardian"],
                 "hostile": True,
@@ -857,6 +881,8 @@ SCHEMAS: dict[str, ManagerSchema] = {
                     "category": "traveler",
                     "description": "雨の中で宿場に立ち寄った巡回薬師。",
                     "personality": "警戒心が強いが、困っている相手には助言を惜しまない。",
+                    "gender": "female",
+                    "age": "late 20s",
                     "look": "濡れた旅外套、薬草袋、小さな銀の鈴を身につけている。",
                     "occupation": "巡回薬師",
                     "archetype": "cautious_helper",
@@ -883,6 +909,11 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("name", (str,)),
             FieldRule("talk_style", (str,)),
             FieldRule("archetype", (str,)),
+            FieldRule("gender", (str,), required=False, non_empty=False),
+            FieldRule("age", (str,), required=False, non_empty=False),
+            FieldRule("personality", (str,), required=False, non_empty=False),
+            FieldRule("look", (str,), required=False, non_empty=False, aliases=("appearance",)),
+            FieldRule("image_generation_prompt", (list, str), required=False, non_empty=False, string_items=False),
             FieldRule("skills", (list,), string_items=False),
             FieldRule("behavior_policy", (str,), required=False, non_empty=False),
             FieldRule("conversation_topics", (list,), required=False, non_empty=False),
@@ -892,6 +923,11 @@ SCHEMAS: dict[str, ManagerSchema] = {
         ),
         example={
             "name": "レナ",
+            "gender": "female",
+            "age": "late 20s",
+            "personality": "警戒心が強いが、困っている相手には助言を惜しまない。",
+            "look": "濡れた旅外套、薬草袋、小さな銀の鈴を身につけている。",
+            "image_generation_prompt": ["female traveling herbalist", "rain cloak", "herb pouch"],
             "talk_style": "短く慎重に話し、危険を感じると質問で相手を試す。",
             "archetype": "cautious_helper",
             "behavior_policy": "困っている相手には助言するが、無謀な戦闘には加担しない。",
@@ -997,6 +1033,10 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("opponent_type", (str,), required=False),
             FieldRule("category", (str,), required=False),
             FieldRule("description", (str,), required=False),
+            FieldRule("gender", (str,), required=False, non_empty=False),
+            FieldRule("age", (str,), required=False, non_empty=False),
+            FieldRule("look", (str,), required=False, non_empty=False, aliases=("appearance",)),
+            FieldRule("personality", (str,), required=False, non_empty=False),
             FieldRule("traits", (list,), required=False, non_empty=False, string_items=False),
             FieldRule("image_generation_prompt", (list, str), required=False, non_empty=False),
             FieldRule("confidence", (int, str), required=False, non_empty=False),
@@ -1007,6 +1047,10 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "opponent_type": "character",
             "category": "tentacle_monster",
             "description": "水辺に潜む粘液をまとった触手状の魔物。",
+            "gender": "none",
+            "age": "adult",
+            "look": "dark wet tendrils, many flexible limbs, non-human silhouette",
+            "personality": "predatory, cautious, reacts to weak prey",
             "traits": [{"name": "絡みつく触手", "description": "多数の触手で相手の動きを封じる。"}],
             "image_generation_prompt": ["tentacle monster", "slimy tendrils", "fantasy RPG monster"],
             "confidence": 90,
@@ -1340,7 +1384,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
         example={
             "narration": "宿の主人が古びた地図を差し出した。",
             "location": "灯守りの宿",
-            "choices": ["地図を見る", "宿の主人に話しかける", "外へ出る"],
+            "choices": ["移動する", "宿の主人に話しかける", "外へ出る"],
         },
     ),
     "narrator": ManagerSchema(
@@ -1485,6 +1529,15 @@ def schema_instruction(manager_name: str) -> str:
             "- Use varied node kinds and descriptions, such as ore_vein, herb_grove, treasure_room, monster_nest, underground_stream, ancient_altar, hidden_chamber, trap_hall, collapsed_passage, or crystal_cavity.\n"
             "- edges must reference existing node ids only.\n"
             "- Do not create separate world locations. These are subnodes inside the current dungeon.\n"
+            "- Only nodes that explicitly contain a teleporter, portal, return gate, or similar device may include remote_travel_targets. Each remote_travel_targets item must be {location, subnode}. Omit it for normal rooms.\n"
+        )
+    if manager_name in {"master_ai_facilitator", "field_event_evaluator", "quest_referee_with_free_action", "quest_referee_event_resolve"}:
+        instruction += (
+            "\nDangerous-area movement rules:\n"
+            "- In dungeons or dangerous areas, movement is limited to current_subnode.adjacent_subnodes unless current_subnode.remote_travel_targets explicitly allows remote movement.\n"
+            "- Do not narrate jumping from a dungeon entrance to the objective, from the deepest area back to town, or to a non-adjacent subnode unless the response uses an allowed remote target.\n"
+            "- If the player receives a map, route note, or clue for a dungeon interior, reveal it with subnode_map_reveal/unlock_subnode_route instead of marking the nodes visited.\n"
+            "- To reveal nearby dungeon rooms after looking around, use subnode_map_reveal={\"scope\":\"surroundings\"}. To reveal a route to the active quest objective, use subnode_map_reveal={\"quest\":\"active\"}.\n"
         )
     if manager_name == "field_event_evaluator":
         instruction += (

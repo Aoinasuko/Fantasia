@@ -57,7 +57,7 @@ ENUM_TEXT: dict[str, dict[str, dict[str, str]]] = {
         },
         "initial_choice": {
             "look_around": "Look around",
-            "open_map": "Open map",
+            "move": "Move",
             "start_quest": "Start quest: {name}",
         },
         "status_field": {
@@ -230,7 +230,7 @@ ENUM_TEXT: dict[str, dict[str, dict[str, str]]] = {
         },
         "initial_choice": {
             "look_around": "周囲を見回す",
-            "open_map": "地図を開く",
+            "move": "移動する",
             "start_quest": "クエスト「{name}」を始める",
         },
         "status_field": {
