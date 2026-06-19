@@ -94,6 +94,13 @@ class ManagerSchema:
                 "name, target, effect, duration, permanent, long_term, stage, remove_condition を持つオブジェクトを返してください。"
                 "長期・永続状態は permanent=true または long_term=true にしてください。"
             )
+        if any(field.name == "npc_action" for field in self.fields):
+            lines.append(
+                "- NPC action tools: return npc_action='flee' when the NPC escapes to an adjacent node/location, "
+                "npc_action='surrender' when the NPC yields and stops acting. Surrender does not remove the NPC from combat; "
+                "the player decides whether to accept the surrender or keep fighting. For flee/surrender, set combat_judgement.offensive=false "
+                "and do not include HP damage."
+            )
         lines.append("例:")
         if any(field.name == "display_cg" for field in self.fields):
             lines.append(
@@ -715,6 +722,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("npcs", (list,), required=False, non_empty=False, string_items=False),
             FieldRule("enemies", (list,), required=False, non_empty=False, string_items=False),
             FieldRule("opponents", (list,), required=False, non_empty=False, string_items=False),
+            FieldRule("boss_npc", (dict, list), required=False, non_empty=False, string_items=False),
             *STATUS_EFFECT_FIELDS,
             *REWARD_FIELDS,
             *VISUAL_FIELDS,
@@ -730,8 +738,18 @@ SCHEMAS: dict[str, ManagerSchema] = {
             },
             "discovered_location": {
                 "name": "雨裂きの地下門",
+                "kind": "dungeon",
                 "description": "硝子森の斜面に隠れていた古い地下入口。",
                 "area": "硝子森",
+            },
+            "boss_npc": {
+                "name": "霧底の守護者",
+                "role": "地下門のボス",
+                "description": "地下門の最奥で声の主を守るように待ち構える魔物。",
+                "personality": "侵入者を試すように威圧する。",
+                "look": "霧をまとった巨大な影。",
+                "image_generation_prompt": ["fantasy dungeon boss", "mist guardian"],
+                "hostile": True,
             },
             "quest": {
                 "name": "霧中の救難声",
@@ -1405,7 +1423,9 @@ def schema_instruction(manager_name: str) -> str:
             "- locations はロケーション配列、connections は {from, to, hours} の配列にしてください。\n"
             "- locations の各要素は name, kind, danger, description を持たせてください。\n"
             "- kind は settlement/wilderness/dungeon/landmark/road/crossroad/coast/mountain/river/plain のいずれかを優先してください。街の施設は location にせず、settlement の facilities として扱います。\n"
+            "- danger は0〜50で表し、開始地点は0付近、旅の最終地点・最終神殿・ラスボス地点は40〜45にしてください。\n"
             "- 宿屋、鍛冶屋、ギルド、店、寺院などの街施設を独立したロケーションにしないでください。\n"
+            "- ただし、ユーザーが明示した神殿・寺院がダンジョン、最終地点、ボスが待つ場所である場合は facility ではなく kind=dungeon にしてください。\n"
             "- 洞窟やダンジョンの入口、内部、奥、深部などは同じ dungeon ロケーション内のサブ地点として扱い、別ロケーションにしないでください。\n"
             "- ロケーション名は世界観、地形、文化、危険度、役割から新しく命名してください。白石街道、緑瓦の宿場、アルテミスなどの固定プリセットや同じモチーフの反復は避けてください。\n"
             "- structure には世界全体の地理ルール、危険度ルール、文化圏、主要テーマなどを入れてください。\n"
@@ -1425,7 +1445,8 @@ def schema_instruction(manager_name: str) -> str:
             "- Do not create town facilities as world-map locations. Inns, guilds, blacksmiths, shops, temples, and similar places belong inside a settlement's facilities data.\n"
             "- Do not split a dungeon/cave into separate entrance/interior/depth locations. Keep those as subareas of one dungeon location.\n"
             "- Invent location names from the world tone, terrain, local culture, role, and danger. Do not use fixed preset-like names such as 白石街道, 緑瓦の宿場, or repeated motifs such as アルテミス unless explicitly specified.\n"
-            "- danger is 0-9 and should generally rise with distance from the starting location, while allowing occasional world-appropriate exceptions.\n"
+            "- danger is 0-50 and should generally rise with distance from the starting location, while allowing occasional world-appropriate exceptions.\n"
+            "- Locations that can be the final destination, final temple, or final boss area should use danger 40-45.\n"
             "- connections must connect each new location to an existing location or another location from this same batch. Use hours=2 unless the prompt explicitly asks otherwise.\n"
             "- Return compact JSON only. Do not add Markdown or commentary.\n"
         )
@@ -1438,6 +1459,15 @@ def schema_instruction(manager_name: str) -> str:
             "- Use varied node kinds and descriptions, such as ore_vein, herb_grove, treasure_room, monster_nest, underground_stream, ancient_altar, hidden_chamber, trap_hall, collapsed_passage, or crystal_cavity.\n"
             "- edges must reference existing node ids only.\n"
             "- Do not create separate world locations. These are subnodes inside the current dungeon.\n"
+        )
+    if manager_name == "field_event_evaluator":
+        instruction += (
+            "\nfield_event_evaluator rules:\n"
+            "- If the player explicitly asks to discover, create, or move to a dungeon, discovered_location.kind must be dungeon.\n"
+            "- Do not split a dungeon, temple, cave, entrance, interior, depth, or boss room into separate world locations. Put them into one dungeon location and let the game generate subnodes.\n"
+            "- If the dungeon premise says a boss, guardian, god, goddess, ruler, lord, or named entity waits there, return boss_npc.\n"
+            "- boss_npc must be an NPC object with name, role, description, personality, look, image_generation_prompt, and hostile.\n"
+            "- Return compact JSON only. Do not add Markdown or commentary.\n"
         )
     if manager_name == "settlement_quest_generator":
         instruction += (

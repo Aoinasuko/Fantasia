@@ -113,9 +113,9 @@ class FixtureLlmBackend(BaseLlmBackend):
             content = {
                 "batch_summary": f"Fixture batch {batch_index}.",
                 "locations": [
-                    {"name": names[0], "kind": "landmark", "danger": min(9, batch_index), "description": "街道沿いの目印になる場所。"},
-                    {"name": names[1], "kind": "wilderness", "danger": min(9, batch_index + 1), "description": "周辺地形に合わせて広がる森。"},
-                    {"name": names[2], "kind": "dungeon", "danger": min(9, batch_index + 2), "description": "探索対象になる小さな洞窟。"},
+                    {"name": names[0], "kind": "landmark", "danger": min(50, batch_index * 5), "description": "街道沿いの目印になる場所。"},
+                    {"name": names[1], "kind": "wilderness", "danger": min(50, batch_index * 5 + 4), "description": "周辺地形に合わせて広がる森。"},
+                    {"name": names[2], "kind": "dungeon", "danger": min(50, batch_index * 5 + 8), "description": "探索対象になる小さな洞窟。"},
                 ],
                 "connections": [
                     {"from": anchor, "to": names[0], "hours": 2},
@@ -340,28 +340,52 @@ class FixtureLlmBackend(BaseLlmBackend):
                 }
         elif manager_name == "field_event_evaluator":
             action = _extract_action(user_text) or "周辺を探索する"
-            content = {
-                "event_occurred": True,
-                "narration": f"あなたが「{action}」と動いた瞬間、霧の向こうから助けを求める声が聞こえた。足元の苔が崩れ、隠されていた地下門が姿を現す。",
-                "location": "灯守りの宿の外れ",
-                "event": {
-                    "name": "霧中の救難声",
-                    "kind": "wild_quest",
-                    "summary": "探索中に発生した未登録の突発クエスト。",
-                },
-                "discovered_location": {
-                    "name": "雨裂きの地下門",
-                    "description": "硝子森の斜面に隠れていた古い地下入口。奥から弱い声が響いている。",
-                    "area": "硝子森",
-                },
-                "quest": {
-                    "name": "霧中の救難声",
-                    "overview": "地下門の奥から聞こえる声の主を探す。",
-                    "neighboring_settlement": "灯守りの宿",
-                    "choices": ["地下門へ入る", "声に返事をする", "宿へ戻って助けを呼ぶ"],
-                },
-                "choices": ["地下門へ近づく", "声に返事をする", "宿へ戻る"],
-            }
+            if "神殿" in action and ("女神" in action or "ボス" in action or "守護者" in action or "ダンジョン" in action):
+                content = {
+                    "event_occurred": True,
+                    "narration": f"あなたが「{action}」と願うように進むと、霧の奥に快楽の神殿が輪郭を現した。内部からは強い気配が漂い、奥へ続く通路が闇に沈んでいる。",
+                    "location": "快楽の神殿",
+                    "discovered_location": {
+                        "name": "快楽の神殿",
+                        "kind": "dungeon",
+                        "description": "快楽の女神が最奥で待つと噂される、甘い香の漂う神殿型ダンジョン。",
+                        "danger": 5,
+                    },
+                    "boss_npc": {
+                        "name": "快楽の女神",
+                        "role": "神殿のボス",
+                        "description": "快楽の神殿の最奥で侵入者を待ち受ける女神。",
+                        "personality": "微笑みながら試練を与え、退く者には興味を失う。",
+                        "look": "幻想的な神殿の光をまとった女神。",
+                        "image_generation_prompt": ["fantasy dungeon boss", "goddess in pleasure temple", "final chamber"],
+                        "hostile": True,
+                    },
+                    "choices": ["神殿へ入る", "周囲を調べる", "いったん離れる"],
+                }
+            else:
+                content = {
+                    "event_occurred": True,
+                    "narration": f"あなたが「{action}」と動いた瞬間、霧の向こうから助けを求める声が聞こえた。足元の苔が崩れ、隠されていた地下門が姿を現す。",
+                    "location": "灯守りの宿の外れ",
+                    "event": {
+                        "name": "霧中の救難声",
+                        "kind": "wild_quest",
+                        "summary": "探索中に発生した未登録の突発クエスト。",
+                    },
+                    "discovered_location": {
+                        "name": "雨裂きの地下門",
+                        "kind": "dungeon",
+                        "description": "硝子森の斜面に隠れていた古い地下入口。奥から弱い声が響いている。",
+                        "area": "硝子森",
+                    },
+                    "quest": {
+                        "name": "霧中の救難声",
+                        "overview": "地下門の奥から聞こえる声の主を探す。",
+                        "neighboring_settlement": "灯守りの宿",
+                        "choices": ["地下門へ入る", "声に返事をする", "宿へ戻って助けを呼ぶ"],
+                    },
+                    "choices": ["地下門へ近づく", "声に返事をする", "宿へ戻る"],
+                }
         elif manager_name == "quest_objective_npc_designer":
             role_match = re.search(r'"objective_role"\s*:\s*"([^"]+)"', user_text)
             objective_role = role_match.group(1) if role_match else ""

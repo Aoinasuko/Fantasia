@@ -2485,6 +2485,24 @@ class FantasiaApp(tk.Tk):
         for index, canvas in enumerate(player_canvases):
             self._draw_roster_canvas(canvas, player_items[index:index + 1], "PLAYER" if index == 0 else "ALLY")
 
+    def _ellipsize_canvas_text(self, text: str, font_spec: object, max_width: int) -> str:
+        value = " ".join(str(text or "").split())
+        if not value:
+            return ""
+        try:
+            if isinstance(font_spec, str):
+                font_obj = tkfont.nametofont(font_spec)
+            else:
+                font_obj = tkfont.Font(root=self, font=font_spec)
+            if font_obj.measure(value) <= max_width:
+                return value
+            ellipsis = "..."
+            while value and font_obj.measure(value + ellipsis) > max_width:
+                value = value[:-1]
+            return (value + ellipsis) if value else ellipsis
+        except tk.TclError:
+            return _short_display(value, 24)
+
     def _draw_roster_canvas(self, canvas: tk.Canvas, items: list[dict[str, object]], title: str) -> None:
         canvas.delete("all")
         self.roster_hitboxes[id(canvas)] = []
@@ -2542,12 +2560,21 @@ class FantasiaApp(tk.Tk):
             sp_y = top + (27 if compact_party else 34)
             name_y = top + (44 if compact_party else (58 if sp else 38))
             subtitle_y = top + (62 if compact_party else name_y + 24)
-            canvas.create_text(width - 8, hp_y, text=hp, fill="#f2f2f2", anchor="ne", font=self.ui_fonts.bold(-5 if compact_party else -4))
+            name_y = min(name_y, max(top + 12, bottom - 28))
+            subtitle_y = min(subtitle_y, max(top + 24, bottom - 12))
+            text_width = max(80, width - text_x - 12)
+            hp_font = self.ui_fonts.bold(-5 if compact_party else -4)
+            sp_font = self.ui_fonts.bold(-5 if compact_party else -4)
+            name_font = self.ui_fonts.bold(-3 if compact_party else -2)
+            subtitle_font = self.ui_fonts.normal(-6 if compact_party else -5)
+            name_text = self._ellipsize_canvas_text(name, name_font, text_width)
+            subtitle_text = self._ellipsize_canvas_text(subtitle, subtitle_font, text_width)
+            canvas.create_text(width - 8, hp_y, text=hp, fill="#f2f2f2", anchor="ne", font=hp_font)
             if sp:
-                canvas.create_text(width - 8, sp_y, text=sp, fill="#a8d8ff", anchor="ne", font=self.ui_fonts.bold(-5 if compact_party else -4))
-            canvas.create_text(width - 8, name_y, text=name, fill="#f2f2f2", anchor="ne", font=self.ui_fonts.bold(-3 if compact_party else -2), width=max(80, width - text_x - 12))
-            if subtitle:
-                canvas.create_text(width - 8, subtitle_y, text=subtitle, fill="#d8d4cf", anchor="ne", font=self.ui_fonts.normal(-6 if compact_party else -5), width=max(80, width - text_x - 12))
+                canvas.create_text(width - 8, sp_y, text=sp, fill="#a8d8ff", anchor="ne", font=sp_font)
+            canvas.create_text(width - 8, name_y, text=name_text, fill="#f2f2f2", anchor="ne", font=name_font)
+            if subtitle_text:
+                canvas.create_text(width - 8, subtitle_y, text=subtitle_text, fill="#d8d4cf", anchor="ne", font=subtitle_font)
 
     def _on_roster_click(self, event) -> None:
         canvas = event.widget
@@ -2639,24 +2666,41 @@ class FantasiaApp(tk.Tk):
         }
         active_encounter = state.flags.get("active_encounter")
         if isinstance(active_encounter, dict) and active_encounter.get("status") != "ended":
-            name = str(active_encounter.get("opponent_name") or tr_enum("roster", "unknown", language))
-            opponent_type = str(active_encounter.get("opponent_type") or "")
-            hp = active_encounter.get("opponent_hp")
-            image: Image.Image | None = None
-            character = state.world_data.characters.get(name)
-            if character:
-                image = self._actor_image_from_paths(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image"))
-                opponent_type = self._character_roster_subtitle(character, fallback=opponent_type or "enemy")
-            items.append(
-                {
-                    "name": name,
-                    "subtitle": opponent_type or "enemy",
-                    "hp": f"HP:{hp}" if hp is not None else "",
-                    "image": image,
-                    "kind": "character",
-                    "encounter": active_encounter,
-                }
-            )
+            raw_opponents = active_encounter.get("opponents")
+            opponents = [entry for entry in raw_opponents if isinstance(entry, dict)] if isinstance(raw_opponents, list) else []
+            if not opponents:
+                opponents = [
+                    {
+                        "name": active_encounter.get("opponent_name"),
+                        "uuid": active_encounter.get("opponent_uuid"),
+                        "opponent_type": active_encounter.get("opponent_type"),
+                        "opponent_hp": active_encounter.get("opponent_hp"),
+                        "opponent_max_hp": active_encounter.get("opponent_max_hp"),
+                    }
+                ]
+            for entry in opponents[:3]:
+                name = str(entry.get("name") or tr_enum("roster", "unknown", language))
+                opponent_type = str(entry.get("opponent_type") or active_encounter.get("opponent_type") or "")
+                hp = entry.get("opponent_hp")
+                max_hp = entry.get("opponent_max_hp")
+                image: Image.Image | None = None
+                character = state.world_data.characters.get(name)
+                if character:
+                    image = self._actor_image_from_paths(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image"))
+                    opponent_type = self._character_roster_subtitle(character, fallback=opponent_type or "enemy")
+                    hp = character.current_hp if character.current_hp is not None else hp
+                    max_hp = character.max_hp if character.max_hp else max_hp
+                hp_text = f"HP:{hp}/{max_hp}" if hp is not None and max_hp else (f"HP:{hp}" if hp is not None else "")
+                items.append(
+                    {
+                        "name": name,
+                        "subtitle": opponent_type or "enemy",
+                        "hp": hp_text,
+                        "image": image,
+                        "kind": "character",
+                        "encounter": active_encounter,
+                    }
+                )
             return items
 
         current_location = self._current_location_name()
@@ -2851,26 +2895,17 @@ class FantasiaApp(tk.Tk):
             return True
         return bool(facility_type and active_type and facility_type == active_type and not facility_name)
 
-    def _maybe_open_map_or_board_for_action(self, action: str) -> bool:
-        normalized = str(action or "").strip()
-        text = normalized.lower()
-        if not text:
+    def _maybe_open_explicit_subscreen_choice(self, choice: str) -> bool:
+        normalized = str(choice or "").strip()
+        if not normalized:
             return False
-        if normalized == _ui_text(self.config_data, "game_trade") or text == "trade":
+        if normalized in {_ui_text(self.config_data, "game_trade"), "取引", "Trade"} or normalized.casefold() == "trade":
             self._open_trade_inventory(normalized)
             return True
-        if _is_direct_craft_action_text(action):
-            return False
-        if any(word in text for word in ("依頼掲示板", "掲示板", "quest board", "request board")):
+        if normalized in {_ui_text(self.config_data, "choice_quest_board"), "依頼掲示板を見る", "Open quest board"}:
             self._open_quest_board_window()
             return True
-        if any(word in text for word in ("ワールドマップ", "世界地図", "world map", "worldmap")):
-            self._open_world_map_window()
-            return True
-        if any(word in text for word in ("sub map", "subnode", "area map", "サブマップ", "内部マップ")):
-            self._open_subnode_map_window()
-            return True
-        if any(word in text for word in ("地図", "マップ", "map")):
+        if normalized in {_ui_text(self.config_data, "choice_open_map"), "地図を見る", "Open map"}:
             self._open_map_window()
             return True
         return False
@@ -3907,31 +3942,6 @@ class FantasiaApp(tk.Tk):
         storage = self.engine.current_home_storage_inventory()
         self._open_inventory_window("家の保存箱", "家の保存箱", storage, mode="container")
 
-    def _maybe_open_inventory_for_action(self, action: str) -> bool:
-        text = action.strip().lower()
-        if not text:
-            return False
-        if _is_trade_negotiation_text(action):
-            return False
-        if _is_direct_craft_action_text(action):
-            return False
-        if any(keyword in text for keyword in ("保存箱", "倉庫", "storage", "stash")):
-            self._open_home_storage_window()
-            return True
-        if any(keyword in text for keyword in ("inventory", "item", "所持品", "インベントリ", "持ち物")):
-            self._open_player_inventory()
-            return True
-        if any(keyword in text for keyword in ("loot", "search", "漁", "探す", "拾う")):
-            self._open_loot_inventory()
-            return True
-        if any(keyword in text for keyword in ("shop", "trade", "buy", "sell", "買", "売", "取引", "買い物")):
-            self._open_trade_inventory(action)
-            return True
-        if any(keyword in text for keyword in ("craft", "combine", "upgrade", "クラフト", "合成", "強化")):
-            self._open_craft_window()
-            return True
-        return False
-
     def _screen_heading(self, parent: tk.Widget, title: str, subtitle: str, row: int) -> None:
         tk.Label(parent, text=title, bg="#111722", fg="#f4d27a", anchor="w", font=self.ui_fonts.bold(8)).grid(row=row, column=0, sticky="ew")
         tk.Label(parent, text=subtitle, bg="#111722", fg="#b8c0d5", anchor="w", font=self.ui_fonts.normal(-3)).grid(row=row + 1, column=0, sticky="ew", pady=(2, 0))
@@ -4920,12 +4930,6 @@ class FantasiaApp(tk.Tk):
         if self.current_task_id:
             return
         action = self.action_var.get()
-        if self._maybe_open_map_or_board_for_action(action):
-            self.action_var.set("")
-            return
-        if self._maybe_open_inventory_for_action(action):
-            self.action_var.set("")
-            return
         self.action_var.set("")
         self._run_task(
             _ui_text(self.config_data, "task_resolving_free_action"),
@@ -4938,9 +4942,7 @@ class FantasiaApp(tk.Tk):
             return
         if self._screen_mode() == "battle" and self._handle_battle_menu_choice(choice):
             return
-        if self._maybe_open_map_or_board_for_action(choice):
-            return
-        if self._maybe_open_inventory_for_action(choice):
+        if self._maybe_open_explicit_subscreen_choice(choice):
             return
         self._run_task(
             _ui_text(self.config_data, "task_resolving_choice"),
@@ -5199,15 +5201,22 @@ class FantasiaApp(tk.Tk):
         encounter = self.engine.state.flags.get("active_encounter")
         if not isinstance(encounter, dict):
             return label("no_active_encounter")
-        opponent_name = str(encounter.get("opponent_name") or tr_enum("roster", "unknown", language))
-        opponent_type = str(encounter.get("opponent_type") or label("opponent"))
         player_hp = encounter.get("player_hp", "?")
         player_sp = encounter.get("player_sp", "?")
-        opponent_hp = encounter.get("opponent_hp", "?")
+        opponent_lines: list[str] = []
+        for entry in self._battle_target_entries(encounter):
+            name = str(entry.get("name") or tr_enum("roster", "unknown", language))
+            hp = entry.get("hp", "?")
+            max_hp = entry.get("max_hp")
+            hp_text = f"{hp}/{max_hp}" if max_hp else str(hp)
+            opponent_lines.append(f"{name} HP {hp_text}")
+        if not opponent_lines:
+            opponent_name = str(encounter.get("opponent_name") or tr_enum("roster", "unknown", language))
+            opponent_lines.append(f"{opponent_name} HP {encounter.get('opponent_hp', '?')}")
         lines = [
             f"{label('state')}: {label('battle')}",
-            f"{label('opponent')}: {opponent_name} ({opponent_type})",
-            f"HP: {label('player')} {player_hp} / {label('opponent_hp')} {opponent_hp}",
+            f"{label('opponent')}: " + " / ".join(opponent_lines),
+            f"HP: {label('player')} {player_hp}",
             f"SP: {label('player')} {player_sp}",
             f"{label('turn')}: {encounter.get('turn', 0)}",
         ]
@@ -5398,8 +5407,8 @@ class FantasiaApp(tk.Tk):
         if isinstance(active_conversation, dict):
             names.append(str(active_conversation.get("character") or ""))
         active_encounter = state.flags.get("active_encounter")
-        if isinstance(active_encounter, dict) and active_encounter.get("opponent_type") == "character":
-            names.append(str(active_encounter.get("opponent_name") or ""))
+        if isinstance(active_encounter, dict):
+            names.extend(str(entry.get("name") or "") for entry in self._battle_target_entries(active_encounter))
         current_location = self._current_location_name()
         names.extend(
             character.name
@@ -5427,7 +5436,7 @@ class FantasiaApp(tk.Tk):
         names: list[str] = []
         active_encounter = state.flags.get("active_encounter")
         if isinstance(active_encounter, dict):
-            names.append(str(active_encounter.get("opponent_name") or ""))
+            names.extend(str(entry.get("name") or "") for entry in self._battle_target_entries(active_encounter))
         current_location = self._current_location_name()
         names.extend(
             character.name
@@ -5870,12 +5879,16 @@ class FantasiaApp(tk.Tk):
 
         encounter = state.flags.get("active_encounter")
         if isinstance(encounter, dict) and encounter.get("status") != "ended":
-            opponent_name = str(encounter.get("opponent_name") or "")
-            character = state.world_data.characters.get(opponent_name)
-            if character and not _subject_image_path(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image")):
+            missing_character: CharacterData | None = None
+            for entry in self._battle_target_entries(encounter):
+                character = entry.get("character")
+                if isinstance(character, CharacterData) and not _subject_image_path(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image")):
+                    missing_character = character
+                    break
+            if missing_character is not None:
                 self._run_task(
                     _ui_text(self.config_data, "task_generating_character_image"),
-                    lambda name=opponent_name: self.engine.generate_character_image(name),
+                    lambda name=missing_character.name: self.engine.generate_character_image(name),
                     lambda result: self._on_layer_image_generated(result.path),
                 )
                 return
@@ -5900,8 +5913,58 @@ class FantasiaApp(tk.Tk):
                 lambda result: self._on_layer_image_generated(result.path),
             )
 
+    def _battle_target_entries(self, encounter: dict[str, object]) -> list[dict[str, object]]:
+        raw_opponents = encounter.get("opponents")
+        entries = [entry for entry in raw_opponents if isinstance(entry, dict)] if isinstance(raw_opponents, list) else []
+        if not entries:
+            entries = [
+                {
+                    "name": encounter.get("opponent_name"),
+                    "uuid": encounter.get("opponent_uuid"),
+                    "status": encounter.get("opponent_status"),
+                    "opponent_hp": encounter.get("opponent_hp"),
+                    "opponent_max_hp": encounter.get("opponent_max_hp"),
+                }
+            ]
+        result: list[dict[str, object]] = []
+        state = self.engine.state
+        for entry in entries[:3]:
+            name = str(entry.get("name") or "").strip()
+            uuid = str(entry.get("uuid") or "").strip()
+            character = state.world_data.characters.get(name) if name else None
+            if character is None and uuid:
+                for candidate in state.world_data.characters.values():
+                    if str(candidate.uuid) == uuid:
+                        character = candidate
+                        break
+            hp = entry.get("opponent_hp")
+            max_hp = entry.get("opponent_max_hp")
+            status = str(entry.get("status") or "").strip().lower()
+            if character is not None:
+                name = character.name
+                hp = character.current_hp
+                max_hp = character.max_hp
+                if str(character.state or "").strip().lower() in {"dead", "corpse", "killed"}:
+                    status = "defeated"
+            if not name:
+                continue
+            if status in {"defeated", "dead", "corpse", "gone"}:
+                continue
+            if hp is not None and _safe_int(hp, 0) <= 0:
+                continue
+            result.append({"name": name, "uuid": uuid, "hp": hp, "max_hp": max_hp, "character": character})
+        return result
+
+    def _battle_target_names(self, encounter: dict[str, object]) -> list[str]:
+        names = [str(entry.get("name") or "").strip() for entry in self._battle_target_entries(encounter)]
+        names = [name for name in names if name]
+        if names:
+            return names[:3]
+        fallback = str(encounter.get("opponent_name") or "敵").strip()
+        return [fallback or "敵"]
+
     def _handle_battle_menu_choice(self, choice: str) -> bool:
-        if choice == "戻る":
+        if choice in {"戻る", "Back"}:
             self.battle_choice_menu = ""
             self._refresh_choices()
             return True
@@ -5920,12 +5983,18 @@ class FantasiaApp(tk.Tk):
         if not menu:
             return ["攻撃", "スキル", "行動", "逃走"]
         if menu == "攻撃":
-            target = str(encounter.get("opponent_name") or "敵")
-            return [f"{target}を攻撃する", "戻る"]
+            return [f"{target}を攻撃する" for target in self._battle_target_names(encounter)] + ["戻る"]
         if menu == "スキル":
-            target = str(encounter.get("opponent_name") or "敵")
             skills = self._player_battle_skills()
-            choices = [f"スキル: {skill['name']} -> {target} (SP {skill['sp_cost']})" for skill in skills[:4]]
+            targets = self._battle_target_names(encounter)
+            choices: list[str] = []
+            for skill in skills:
+                for target in targets:
+                    choices.append(f"skill: {skill['name']} -> {target} (SP {skill['sp_cost']})")
+                    if len(choices) >= 4:
+                        break
+                if len(choices) >= 4:
+                    break
             return choices + ["戻る"]
         if menu == "行動":
             actions = self._battle_free_actions(encounter)
@@ -6708,9 +6777,25 @@ def _format_character_status_detail(data: dict[str, object], encounter: dict[str
             lines.append(f"{field('battle_hp')}: {encounter.get('player_hp', '-')}")
             lines.append(f"{field('battle_sp')}: {encounter.get('player_sp', '-')}")
             lines.append(f"{field('battle_status')}: {encounter.get('player_status') or '-'}")
-        elif encounter.get("opponent_name") == data.get("name"):
-            lines.append(f"{field('battle_hp')}: {encounter.get('opponent_hp', '-')}")
-            lines.append(f"{field('battle_status')}: {encounter.get('opponent_status') or '-'}")
+        else:
+            data_name = str(data.get("name") or "")
+            data_uuid = str(data.get("uuid") or extra.get("uuid") or "")
+            matched_entry: dict[str, object] | None = None
+            raw_opponents = encounter.get("opponents")
+            for entry in raw_opponents if isinstance(raw_opponents, list) else []:
+                if not isinstance(entry, dict):
+                    continue
+                if str(entry.get("name") or "") == data_name or (data_uuid and str(entry.get("uuid") or "") == data_uuid):
+                    matched_entry = entry
+                    break
+            if matched_entry is None and encounter.get("opponent_name") == data.get("name"):
+                matched_entry = encounter
+            if matched_entry is not None:
+                hp_value = matched_entry.get("opponent_hp", data.get("current_hp", extra.get("current_hp", "-")))
+                max_hp_value = matched_entry.get("opponent_max_hp", data.get("max_hp", extra.get("max_hp", "")))
+                hp_display = f"{hp_value}/{max_hp_value}" if max_hp_value else str(hp_value)
+                lines.append(f"{field('battle_hp')}: {hp_display}")
+                lines.append(f"{field('battle_status')}: {matched_entry.get('opponent_status') or matched_entry.get('status') or '-'}")
     lines.extend(
         [
             "",

@@ -88,10 +88,18 @@ WORLD_CRIME_RISK_OPTIONS = {"none", "normal", "strict"}
 DEFAULT_WORLD_CRIME_RISK = "none"
 WORLD_ENEMY_STRENGTH_OPTIONS = {"weak", "normal", "strong"}
 DEFAULT_WORLD_ENEMY_STRENGTH = "normal"
+COMBAT_MAX_OPPONENTS = 3
+INCAPACITATED_STATUS_ID = "incapacitated"
+INCAPACITATED_STATUS_NAME = "行動不能"
+SURRENDERED_STATUS_ID = "surrendered"
+FLED_STATUS_ID = "fled"
 WORLD_LOCATION_BATCH_MIN = 3
 WORLD_LOCATION_BATCH_MAX = 5
 WORLD_MAP_EDGE_HOURS = 2
 WORLD_MAP_MAX_DYNAMIC_DEGREE = 3
+WORLD_DANGER_MAX = 50
+WORLD_FINAL_DANGER_MIN = 40
+WORLD_FINAL_DANGER_MAX = 45
 WORLD_LOCATION_KIND_OPTIONS = (
     "settlement",
     "wilderness",
@@ -402,8 +410,10 @@ class GameEngine:
                     "world_name, overview, structure_description, structure, locations, connections を持つJSONだけを返してください。"
                     "locationsは世界地図の地点一覧、connectionsは地点間を2時間で結ぶ線です。"
                     "開始地点が自然に決まる場合は starting_location も追加してください。"
-                    "基本的に開始地点から遠いほど危険度を高くしてください。ただし物語上の例外は許可します。"
+                    "危険度 danger は0〜50で表し、基本的に開始地点から遠いほど高くしてください。ただし物語上の例外は許可します。"
+                    "旅の最終地点・最終神殿・ラスボス地点になりえる場所は danger=40〜45 にしてください。"
                     "街の施設（宿屋、鍛冶屋、ギルド、店など）はロケーションにせず、街の内部施設として扱ってください。"
+                    "ただし、ユーザーが明示した神殿・寺院がダンジョン、最終地点、ボスが待つ場所なら kind=dungeon として扱ってください。"
                     "洞窟やダンジョンの入口・内部・奥は同じダンジョンロケーション内のサブ地点として扱い、別ロケーションにしないでください。"
                 ),
             },
@@ -450,7 +460,7 @@ class GameEngine:
                     "settlement locations should describe public order and may set extra.crime_risk_multiplier from 0.0 to 2.0. "
                     "0.0 means crime is effectively ignored there, 1.0 is ordinary, and 2.0 is severe enforcement. "
                     "Enemy strength is handled by the game rules, but danger_level should still represent how threatening "
-                    "each location is."
+                    "each location is on a 0-50 scale."
                 ),
             }
         )
@@ -3091,7 +3101,7 @@ class GameEngine:
         node = nodes.get(name) if isinstance(nodes, dict) else None
         if isinstance(node, dict):
             danger = max(danger, _safe_int(node.get("danger"), danger))
-        return max(0, min(9, danger))
+        return _clamp_world_danger(danger)
 
     def _opponent_combat_profile(self, opponent_type: str, opponent_name: str, *, location: str = "") -> dict[str, Any]:
         danger = self._current_location_danger(location)
@@ -3101,7 +3111,7 @@ class GameEngine:
         setting = self._enemy_strength_setting()
         base_attack = max(0, 1 + danger * 2)
         base_defense = max(0, danger)
-        base_hp = max(8, 10 + danger * 4)
+        base_hp = 1
         hp = base_hp
         if setting == "weak":
             attack = max(0, min(base_attack, max(0, player_defense - 1)))
@@ -3114,16 +3124,23 @@ class GameEngine:
             defense = base_defense
         opponent = self.state.world_data.characters.get(opponent_name)
         if isinstance(opponent, CharacterData):
-            self._ensure_character_runtime_data(opponent)
+            has_normal_hp = _safe_int(opponent.max_hp, 0) > 0
+            if not has_normal_hp:
+                _scale_character_for_danger(opponent, danger)
+                self._ensure_character_runtime_data(opponent)
+            elif _safe_int(opponent.current_hp, 0) > 0:
+                self._ensure_character_runtime_data(opponent)
             if opponent.attack <= 0:
-                opponent.attack = attack
+                opponent.attack = max(attack, _character_calculated_attack(opponent))
             if opponent.defense <= 0:
-                opponent.defense = defense
+                opponent.defense = max(defense, _character_calculated_defense(opponent))
             opponent.extra["attack"] = opponent.attack
             opponent.extra["defense"] = opponent.defense
             hp = max(1, _safe_int(opponent.max_hp, hp))
             attack = max(0, _safe_int(opponent.attack, attack))
             defense = max(0, _safe_int(opponent.defense, defense))
+        else:
+            hp = _character_calculated_max_hp(_danger_scaled_placeholder_enemy(opponent_name, danger))
         return {
             "enemy_strength": setting,
             "danger_level": danger,
@@ -3132,6 +3149,186 @@ class GameEngine:
             "opponent_hp": max(1, int(hp)),
             "opponent_max_hp": max(1, int(hp)),
         }
+
+    def _encounter_opponent_names_for_start(self, primary: CharacterData | None, location: str) -> list[str]:
+        names: list[str] = []
+        if isinstance(primary, CharacterData) and primary.name:
+            names.append(primary.name)
+        if isinstance(primary, CharacterData) and not _character_is_hostile_actor(primary):
+            return names[:1]
+        for character in self._hostile_characters_at(location, limit=COMBAT_MAX_OPPONENTS + 2):
+            if len(names) >= COMBAT_MAX_OPPONENTS:
+                break
+            if not character.name or character.name in names:
+                continue
+            if not _character_is_hostile_actor(character):
+                continue
+            names.append(character.name)
+        return names[:COMBAT_MAX_OPPONENTS]
+
+    def _encounter_opponent_entry(self, character: CharacterData, *, location: str) -> dict[str, Any]:
+        profile = self._opponent_combat_profile("character", character.name, location=location)
+        if _safe_int(character.max_hp, 0) <= 0 or _safe_int(character.current_hp, 0) > 0:
+            self._ensure_character_runtime_data(character)
+        current_hp = max(0, min(character.max_hp, _safe_int(character.current_hp, character.max_hp)))
+        character.current_hp = current_hp
+        character.extra["current_hp"] = current_hp
+        return {
+            "opponent_type": "character",
+            "name": character.name,
+            "uuid": str(character.uuid or ""),
+            "status": "active" if current_hp > 0 and not _character_state_is_dead(character) else "defeated",
+            "opponent_status": str(character.extra.get("combat_status") or character.state or "hostile"),
+            "opponent_attack": max(0, _safe_int(profile.get("opponent_attack"), character.attack)),
+            "opponent_defense": max(0, _safe_int(profile.get("opponent_defense"), character.defense)),
+            "opponent_hp": current_hp,
+            "opponent_max_hp": max(1, _safe_int(character.max_hp, 1)),
+            "danger_level": profile.get("danger_level"),
+            "enemy_strength": profile.get("enemy_strength"),
+        }
+
+    def _sync_encounter_opponent_entry(self, encounter: dict[str, Any], character: CharacterData) -> dict[str, Any]:
+        opponents = encounter.setdefault("opponents", [])
+        if not isinstance(opponents, list):
+            opponents = []
+            encounter["opponents"] = opponents
+        entry: dict[str, Any] | None = None
+        for item in opponents:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("uuid") or "") == str(character.uuid or "") or str(item.get("name") or "") == character.name:
+                entry = item
+                break
+        if entry is None:
+            entry = {"opponent_type": "character", "name": character.name, "uuid": str(character.uuid or "")}
+            opponents.append(entry)
+        keep_zero_hp = _safe_int(character.max_hp, 0) > 0 and _safe_int(character.current_hp, 0) <= 0
+        if not keep_zero_hp:
+            self._ensure_character_runtime_data(character)
+        entry["name"] = character.name
+        entry["uuid"] = str(character.uuid or "")
+        entry["opponent_hp"] = max(0, min(character.max_hp, _safe_int(character.current_hp, character.max_hp)))
+        entry["opponent_max_hp"] = max(1, _safe_int(character.max_hp, 1))
+        entry["opponent_attack"] = max(0, _safe_int(character.attack, entry.get("opponent_attack") or 0))
+        entry["opponent_defense"] = max(0, _safe_int(character.defense, entry.get("opponent_defense") or 0))
+        if entry["opponent_hp"] <= 0 or _character_state_is_dead(character):
+            entry["status"] = "defeated"
+        else:
+            entry["status"] = str(entry.get("status") or "active")
+        return entry
+
+    def _set_encounter_active_opponent(self, encounter: dict[str, Any], character: CharacterData | None) -> None:
+        if not isinstance(character, CharacterData):
+            return
+        entry = self._sync_encounter_opponent_entry(encounter, character)
+        encounter["opponent_type"] = "character"
+        encounter["opponent_name"] = character.name
+        encounter["opponent_uuid"] = str(character.uuid or "")
+        encounter["opponent_status"] = str(entry.get("opponent_status") or encounter.get("opponent_status") or "hostile")
+        encounter["opponent_attack"] = max(0, _safe_int(entry.get("opponent_attack"), character.attack))
+        encounter["opponent_defense"] = max(0, _safe_int(entry.get("opponent_defense"), character.defense))
+        encounter["opponent_hp"] = max(0, _safe_int(entry.get("opponent_hp"), character.current_hp))
+        encounter["opponent_max_hp"] = max(1, _safe_int(entry.get("opponent_max_hp"), character.max_hp or 1))
+        encounter["active_opponent_uuid"] = str(character.uuid or "")
+        encounter["active_opponent_name"] = character.name
+
+    def _encounter_opponents(self, encounter: dict[str, Any]) -> list[CharacterData]:
+        opponents: list[CharacterData] = []
+        raw = encounter.get("opponents")
+        entries = raw if isinstance(raw, list) else []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            character = self._character_from_reference(str(entry.get("name") or ""), str(entry.get("uuid") or ""))
+            if character and character not in opponents:
+                opponents.append(character)
+        primary = self._character_from_reference(str(encounter.get("opponent_name") or ""), str(encounter.get("opponent_uuid") or ""))
+        if primary and primary not in opponents:
+            opponents.insert(0, primary)
+        return opponents[:COMBAT_MAX_OPPONENTS]
+
+    def _living_encounter_opponents(self, encounter: dict[str, Any]) -> list[CharacterData]:
+        living: list[CharacterData] = []
+        for character in self._encounter_opponents(encounter):
+            entry = self._sync_encounter_opponent_entry(encounter, character)
+            combat_status = str(entry.get("status") or entry.get("opponent_status") or character.extra.get("combat_status") or "").strip().lower()
+            if combat_status in {FLED_STATUS_ID, "escaped", "retreated", "surrender_accepted"}:
+                continue
+            if any(_status_effect_id(_normalise_status_effect(effect)) == FLED_STATUS_ID for effect in character.status_effects):
+                continue
+            if _character_state_is_dead(character):
+                continue
+            if max(0, _safe_int(character.current_hp, 0)) <= 0:
+                continue
+            living.append(character)
+        return living
+
+    def _acting_encounter_opponents(self, encounter: dict[str, Any]) -> list[CharacterData]:
+        return [character for character in self._living_encounter_opponents(encounter) if not self._character_has_surrendered(character, encounter)]
+
+    def _character_has_surrendered(self, character: CharacterData, encounter: dict[str, Any] | None = None) -> bool:
+        if not isinstance(character, CharacterData):
+            return False
+        flags = character.flags if isinstance(character.flags, dict) else {}
+        extra = character.extra if isinstance(character.extra, dict) else {}
+        if _as_bool(flags.get("surrendered")) or _as_bool(extra.get("surrendered")):
+            return True
+        status = str(extra.get("combat_status") or flags.get("combat_status") or "").strip().lower()
+        if status == SURRENDERED_STATUS_ID:
+            return True
+        if encounter is not None:
+            for item in encounter.get("opponents", []):
+                if not isinstance(item, dict):
+                    continue
+                if str(item.get("uuid") or "") != str(character.uuid or "") and str(item.get("name") or "") != character.name:
+                    continue
+                entry_status = str(item.get("status") or item.get("opponent_status") or "").strip().lower()
+                if entry_status == SURRENDERED_STATUS_ID:
+                    return True
+        return any(_status_effect_id(_normalise_status_effect(effect)) == SURRENDERED_STATUS_ID for effect in character.status_effects)
+
+    def _encounter_has_surrendered_opponents(self, encounter: dict[str, Any]) -> bool:
+        return any(self._character_has_surrendered(character, encounter) for character in self._living_encounter_opponents(encounter))
+
+    def _select_encounter_target_from_action(self, encounter: dict[str, Any], action: str) -> CharacterData | None:
+        living = self._living_encounter_opponents(encounter)
+        if not living:
+            return None
+        target = _clean_generated_name(_extract_attack_target(action), "", kind="monster")
+        if not target:
+            target = str(action or "").strip()
+        folded = target.casefold()
+        if folded:
+            for character in living:
+                terms = _character_reference_terms(character)
+                terms.extend(_as_str_list(character.flags.get("aliases")))
+                terms.extend(_as_str_list(character.extra.get("aliases")))
+                for term in _dedupe_strs([str(item or "").strip() for item in terms]):
+                    if not term:
+                        continue
+                    term_folded = term.casefold()
+                    if term == target or target in term or term in target or folded in term_folded or term_folded in folded:
+                        self._set_encounter_active_opponent(encounter, character)
+                        return character
+        active_uuid = str(encounter.get("active_opponent_uuid") or encounter.get("opponent_uuid") or "")
+        active_name = str(encounter.get("active_opponent_name") or encounter.get("opponent_name") or "")
+        for character in living:
+            if (active_uuid and str(character.uuid) == active_uuid) or (active_name and character.name == active_name):
+                self._set_encounter_active_opponent(encounter, character)
+                return character
+        self._set_encounter_active_opponent(encounter, living[0])
+        return living[0]
+
+    def _character_from_reference(self, name: str = "", uuid: str = "") -> CharacterData | None:
+        uuid = str(uuid or "").strip()
+        if uuid:
+            for character in self.state.world_data.characters.values():
+                if str(character.uuid or "") == uuid:
+                    return character
+        name = str(name or "").strip()
+        if name:
+            return self.state.world_data.characters.get(name)
+        return None
 
     def _build_encounter(self, opponent_type: str, opponent_name: str, *, location: str = "") -> dict[str, Any]:
         location_name = location or self.state.current_location
@@ -3143,6 +3340,12 @@ class GameEngine:
         equipment_summary = self.player_equipment_summary()
         opponent_profile = self._opponent_combat_profile(opponent_type, opponent_name, location=location_name)
         opponent = self.state.world_data.characters.get(opponent_name)
+        opponent_names = self._encounter_opponent_names_for_start(opponent if isinstance(opponent, CharacterData) else None, location_name)
+        opponent_entries: list[dict[str, Any]] = []
+        for name in opponent_names:
+            character = self.state.world_data.characters.get(name)
+            if isinstance(character, CharacterData):
+                opponent_entries.append(self._encounter_opponent_entry(character, location=location_name))
         encounter = {
             "status": "active",
             "turn": 0,
@@ -3161,9 +3364,13 @@ class GameEngine:
             "player_defense_bonus": combat_stats["defense_bonus"],
             "player_equipment": _compact_value(equipment_summary, max_chars=900),
             "location": location_name,
+            "opponents": opponent_entries,
+            "turn_order": ["player"] + [entry.get("uuid") or entry.get("name") for entry in opponent_entries],
             "log": [],
         }
         encounter.update(opponent_profile)
+        if isinstance(opponent, CharacterData):
+            self._set_encounter_active_opponent(encounter, opponent)
         self._sync_encounter_status_effects(encounter)
         self._update_encounter_presence(encounter, "present")
         return encounter
@@ -3281,6 +3488,12 @@ class GameEngine:
         previous_location = self.state.current_location
         facility_name = str(facility.get("name") or "facility")
         location_name = settlement.name
+        block_reason = self._player_incapacitated_action_block(action, for_movement=True)
+        if block_reason:
+            narration = self._player_incapacitated_message(block_reason)
+            self.state.append_turn(action, narration, location_name, self._location_default_choices(location_name), input_type=input_type)
+            self.save_game()
+            return self.state.log_text(16)
         narrator_response = self._direct_travel_narrator(
             action=action,
             input_type=input_type,
@@ -3590,8 +3803,8 @@ class GameEngine:
             if not name:
                 continue
             description = _world_location_description_from_payload(payload)
-            kind = _infer_world_location_kind(payload, name, description)
-            danger = _world_location_danger_from_payload(payload)
+            kind = _infer_world_location_kind_for_world_generation(premise, payload, name, description)
+            danger = _world_generation_location_danger(payload, name, description, premise, len(nodes), target_count, rng)
             if kind == "facility" and _add_facility_payload_to_settlement(world, name, description, str(payload.get("type") or payload.get("facility_type") or "")):
                 continue
             if kind == "facility":
@@ -3604,9 +3817,12 @@ class GameEngine:
             location = world.ensure_location(name, description)
             location.extra["location_kind"] = kind
             location.extra["danger_level"] = danger
+            location.extra["world_generation_payload"] = dict(payload)
             location.flags["discovered"] = bool(name == world.starting_location)
             if _world_kind_is_settlement(kind):
                 location.flags["settlement"] = True
+            if kind == "dungeon":
+                location.flags["dungeon"] = True
             self._set_location_graph_node(world, name, kind=kind, danger=danger, location=location)
             completed = min(len(nodes), target_count)
             percent = progress_start + int((progress_end - progress_start) * completed / max(1, target_count))
@@ -3659,13 +3875,15 @@ class GameEngine:
             kind = _fallback_world_location_kind(rng, len(nodes))
             name = _unique_world_location_name(world, _fallback_world_location_name(kind, fallback_index))
             fallback_index += 1
-            danger = max(0, min(9, (len(nodes) // 8) + rng.randint(0, 1)))
+            danger = _world_default_danger_for_index(len(nodes), target_count, rng)
             description = _fallback_world_location_description(kind, danger)
             location = world.ensure_location(name, description)
             location.extra["location_kind"] = kind
             location.extra["danger_level"] = danger
             if _world_kind_is_settlement(kind):
                 location.flags["settlement"] = True
+            if kind == "dungeon":
+                location.flags["dungeon"] = True
             self._set_location_graph_node(world, name, kind=kind, danger=danger, location=location)
             graph = self._location_graph_for_update(world)
             nodes = graph.get("nodes")
@@ -3715,8 +3933,122 @@ class GameEngine:
             parent = min(candidates, key=lambda item: (len(self._world_neighbors(world, item)), rng.random()))
             self._connect_world_locations(world, parent, name, hours=WORLD_MAP_EDGE_HOURS)
             connected.add(name)
+        self._ensure_world_generation_dungeon_content(world, premise, progress_callback=progress_callback, progress_value=progress_end)
         self._recalculate_world_graph_layout(world)
         return world.extra["location_graph"]
+
+    def _ensure_world_generation_dungeon_content(
+        self,
+        world: WorldData,
+        premise: str,
+        *,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        progress_value: int = 45,
+    ) -> None:
+        dungeon_names: list[str] = []
+        for name, location in list(world.locations.items()):
+            payload = location.extra.get("world_generation_payload") if isinstance(location.extra, dict) else {}
+            payload_dict = payload if isinstance(payload, dict) else {}
+            kind = _infer_world_location_kind_for_world_generation(premise, payload_dict, name, location.description)
+            if kind == "dungeon":
+                location.extra["location_kind"] = "dungeon"
+                location.flags["dungeon"] = True
+                self._set_location_graph_node(world, name, kind="dungeon", location=location)
+            if _is_dungeon_location(location):
+                dungeon_names.append(name)
+        for index, name in enumerate(dungeon_names, start=1):
+            location = world.locations.get(name)
+            if not location:
+                continue
+            self._emit_world_generation_progress(
+                progress_callback,
+                "dungeon_subnodes",
+                f"ダンジョン仕上げ中({index}/{len(dungeon_names)})",
+                progress_value,
+                100,
+                item_current=index,
+                item_total=len(dungeon_names),
+            )
+            graph = self._ensure_location_subnode_graph(world, name)
+            if graph:
+                graph.setdefault("created_for_world_generation", True)
+            boss_event = self._ensure_world_generation_dungeon_boss(world, name, premise)
+            if boss_event:
+                world.history.append(
+                    {
+                        "manager": "world_generation_dungeon_boss",
+                        "location": name,
+                        "boss": boss_event,
+                    }
+                )
+
+    def _ensure_world_generation_dungeon_boss(
+        self,
+        world: WorldData,
+        location_name: str,
+        premise: str,
+    ) -> dict[str, str] | None:
+        location = world.locations.get(str(location_name or "").strip())
+        if not location or not _is_dungeon_location(location):
+            return None
+        if _world_generation_dungeon_has_boss(world, location.name):
+            return None
+        raw_payload = location.extra.get("world_generation_payload") if isinstance(location.extra, dict) else {}
+        response = dict(raw_payload) if isinstance(raw_payload, dict) else {}
+        response.setdefault("narration", location.description)
+        response.setdefault("location", location.name)
+        premise_context = premise if _world_generation_premise_refers_to_location(premise, location.name) else ""
+        if not _generated_dungeon_boss_payload(response) and not _generated_dungeon_boss_required(premise_context, response, location):
+            return None
+        graph = self._ensure_location_subnode_graph(world, location.name)
+        nodes = graph.get("nodes", {}) if isinstance(graph, dict) else {}
+        target_subnode = DUNGEON_DEEPEST_SUBNODE_ID if DUNGEON_DEEPEST_SUBNODE_ID in nodes else self._default_subnode_for_location(location)
+        if not target_subnode:
+            return None
+        boss_payload = _generated_dungeon_boss_payload(response) or _fallback_generated_dungeon_boss_payload(location, premise_context, response)
+        character = _enemy_npc_from_raw(boss_payload, len(world.characters))
+        character.name = _unique_character_name(world, character.name)
+        character.role = str(character.role or "ダンジョンボス")
+        character.category = "enemy_npc"
+        danger = max(1, _safe_int(location.extra.get("danger_level", location.extra.get("danger")), 0))
+        character.flags["enemy_npc"] = True
+        character.flags["hostile"] = _as_bool(character.flags.get("hostile") if "hostile" in character.flags else True)
+        character.flags["generated_dungeon_boss"] = True
+        character.flags["world_generation_boss"] = True
+        character.flags["danger_level"] = danger
+        character.extra["generated_dungeon_boss"] = True
+        character.extra["world_generation_boss"] = True
+        character.extra["boss_location"] = location.name
+        character.extra["danger_level"] = danger
+        character.extra["spawn_subnode_id"] = target_subnode
+        character.extra["origin_subnode_id"] = target_subnode
+        character.extra["display_alias"] = str(character.extra.get("display_alias") or "ボス")
+        character.extra["aliases"] = _dedupe_strs([character.name, "ボス", "守護者", *[str(value) for value in _as_list(character.extra.get("aliases"))]])
+        character.level = max(_safe_int(character.level, 1), _generated_dungeon_boss_level(location))
+        _scale_character_for_danger(character, danger, boss=True)
+        self._ensure_character_runtime_data(character)
+        character.location = location.name
+        character.state = "present"
+        character.flags["state"] = character.state
+        character.flags["alive"] = True
+        character.flags["current_location"] = location.name
+        character.flags.setdefault("first_seen_location", location.name)
+        character.extra.setdefault("origin_location", location.name)
+        self._set_character_subnode_fields(character, location.name, target_subnode)
+        world.characters[character.name] = character
+        generated_bosses = location.extra.get("generated_bosses")
+        if not isinstance(generated_bosses, list):
+            generated_bosses = []
+            location.extra["generated_bosses"] = generated_bosses
+        generated_bosses.append(
+            {
+                "uuid": character.uuid,
+                "name": character.name,
+                "subnode_id": target_subnode,
+                "source": "world_generation_dungeon_boss",
+            }
+        )
+        return {"type": "character", "name": character.name, "role": "boss", "location": location.name, "subnode": target_subnode}
 
     def _generate_world_location_batches(
         self,
@@ -3764,14 +4096,16 @@ class GameEngine:
             messages = [
                 {
                     "role": "system",
-                    "content": (
-                        "You expand Fantasia's world map in small batches. Generate only the requested nearby "
-                        "locations and connections. Preserve the existing world tone, terrain, danger curve, and "
-                        "unique important locations. Town facilities are not world locations; keep inns, guilds, "
-                        "shops, and blacksmiths inside settlement facility data. Dungeon entrances/interiors/depths "
-                        "are subareas of one dungeon location. Return JSON only."
-                    ),
-                },
+                "content": (
+                    "You expand Fantasia's world map in small batches. Generate only the requested nearby "
+                    "locations and connections. Preserve the existing world tone, terrain, danger curve, and "
+                    "unique important locations. Town facilities are not world locations; keep inns, guilds, "
+                    "shops, and blacksmiths inside settlement facility data. Dungeon entrances/interiors/depths "
+                    "are subareas of one dungeon location. Use danger 0-50; final destinations/final temples/final "
+                    "boss areas should be danger 40-45. If an explicit temple/shrine is a dungeon or boss location, "
+                    "return kind=dungeon, not facility. Return JSON only."
+                ),
+            },
                 {
                     "role": "user",
                     "content": _ai_json(context),
@@ -3798,6 +4132,7 @@ class GameEngine:
             added_names = self._apply_world_location_batch(
                 world,
                 response,
+                premise=premise,
                 target_count=target_count,
                 anchor_names=[str(item) for item in context.get("anchor_names", [])],
             )
@@ -3848,7 +4183,7 @@ class GameEngine:
             if isinstance(node, dict)
             and (
                 name == world.starting_location
-                or _safe_int(node.get("danger"), 0) >= 6
+                or _safe_int(node.get("danger"), 0) >= 30
                 or str(node.get("kind") or "").strip().lower() in {"settlement", "dungeon", "landmark"}
             )
         ][:18]
@@ -3887,7 +4222,8 @@ class GameEngine:
                 "Generate only new locations. Never reuse existing_location_names.",
                 "Avoid creating multiple versions of unique one-off locations such as the capital, final temple, main shrine, or central dungeon.",
                 "Use nearby_locations as the local terrain and route context.",
-                "Danger should usually increase as generated_count grows, with occasional world-appropriate exceptions.",
+                "Danger is 0-50 and should usually increase as generated_count grows, with occasional world-appropriate exceptions.",
+                "Locations that can be the final destination, final temple, or final boss area should use danger 40-45.",
                 "Every generated location must be connected by a 2-hour edge to an existing or same-batch location.",
                 "Do not generate town facilities as world-map locations.",
                 "Do not split dungeon entrances, interiors, or depths into separate locations.",
@@ -3907,7 +4243,7 @@ class GameEngine:
                 continue
             kind = str(node.get("kind") or "unknown")
             kind_counts[kind] = kind_counts.get(kind, 0) + 1
-            if _safe_int(node.get("danger"), 0) >= 6:
+            if _safe_int(node.get("danger"), 0) >= 30:
                 high_danger.append(str(name))
         parts = [
             f"generated={len(nodes)}",
@@ -3950,6 +4286,7 @@ class GameEngine:
         world: WorldData,
         response: dict[str, Any],
         *,
+        premise: str = "",
         target_count: int,
         anchor_names: list[str],
     ) -> list[str]:
@@ -3968,8 +4305,8 @@ class GameEngine:
             if not name_key or name_key in existing_keys:
                 continue
             description = _world_location_description_from_payload(payload)
-            kind = _infer_world_location_kind(payload, name, description)
-            danger = _world_location_danger_from_payload(payload)
+            kind = _infer_world_location_kind_for_world_generation(premise, payload, name, description)
+            danger = _world_generation_location_danger(payload, name, description, premise, len(nodes), target_count)
             if kind == "facility" and _add_facility_payload_to_settlement(world, name, description, str(payload.get("type") or payload.get("facility_type") or "")):
                 continue
             dungeon_parent = _existing_dungeon_location_for_subarea(world, name)
@@ -3977,12 +4314,15 @@ class GameEngine:
                 _record_location_subarea(world, dungeon_parent, name, description)
                 continue
             if not any(key in payload for key in ("danger", "danger_level", "threat", "threat_level", "difficulty", "rank")):
-                danger = max(0, min(9, len(nodes) // 8))
+                danger = _world_default_danger_for_index(len(nodes), target_count)
             location = world.ensure_location(name, description)
             location.extra["location_kind"] = kind
             location.extra["danger_level"] = danger
+            location.extra["world_generation_payload"] = dict(payload)
             if _world_kind_is_settlement(kind):
                 location.flags["settlement"] = True
+            if kind == "dungeon":
+                location.flags["dungeon"] = True
             self._set_location_graph_node(world, name, kind=kind, danger=danger, location=location)
             existing_keys.add(name_key)
             added_names.append(name)
@@ -4030,7 +4370,7 @@ class GameEngine:
                 "name": key,
                 "description": _short_text(location.description or str(node.get("description") or ""), 220),
                 "kind": resolved_kind,
-                "danger": max(0, resolved_danger),
+                "danger": _clamp_world_danger(resolved_danger),
                 "visited": bool(location.flags.get("visited") or node.get("visited")),
                 "discovered": bool(location.flags.get("discovered") or node.get("discovered")),
             }
@@ -4721,6 +5061,10 @@ class GameEngine:
         if not target:
             raise ValueError("その場所は現在の内部マップにありません。")
         current_id = str(data.get("current_subnode") or "")
+        if target_id != current_id:
+            block_reason = self._player_incapacitated_action_block(f"subnode travel {target_id}", for_movement=True)
+            if block_reason:
+                raise ValueError(self._player_incapacitated_message(block_reason))
         movement = str(data.get("movement") or "adjacent")
         if target.get("external"):
             source_id = str(target.get("source_subnode") or "")
@@ -4865,6 +5209,9 @@ class GameEngine:
             raise ValueError("その場所はまだ地図に記録されていません。")
         if target == current:
             return self.state.log_text(16)
+        block_reason = self._player_incapacitated_action_block(f"world map travel {target}", for_movement=True)
+        if block_reason:
+            raise ValueError(self._player_incapacitated_message(block_reason))
         if not self._current_subnode_allows_world_map_departure(world, current):
             raise ValueError("危険地帯の奥からはワールドマップ移動できません。入口や安全な退避地点まで戻ってください。")
         path = self._shortest_world_path(world, current, target, visited_only=True)
@@ -4931,6 +5278,16 @@ class GameEngine:
                 self._clear_active_facility()
             return {"location": current, "narration_lines": [], "status_lines": [], "moved": False, "denied": False}
 
+        block_reason = self._player_incapacitated_action_block(action, for_movement=True)
+        if block_reason:
+            return {
+                "location": current,
+                "narration_lines": [self._player_incapacitated_message(block_reason)],
+                "status_lines": [],
+                "moved": False,
+                "denied": True,
+            }
+
         graph = world.extra.get("location_graph", {})
         nodes = graph.get("nodes", {}) if isinstance(graph, dict) else {}
         neighbors = self._world_neighbors(world, current)
@@ -4941,7 +5298,7 @@ class GameEngine:
         if proposed in neighbors or teleport:
             if proposed not in nodes:
                 location = world.ensure_location(proposed, _short_text(str(response.get("narration") or ""), 220))
-                kind = _infer_world_location_kind({}, proposed, location.description)
+                kind = _infer_world_location_kind_for_request(action, response, proposed, location.description)
                 location.extra["location_kind"] = kind
                 self._set_location_graph_node(world, proposed, kind=kind, location=location)
             if not teleport:
@@ -4954,17 +5311,24 @@ class GameEngine:
             target_graph = self._ensure_location_subnode_graph(world, proposed)
             if target_graph:
                 self._set_current_subnode(proposed, self._default_subnode_for_location(world.locations.get(proposed)))
+            boss_event = self._ensure_generated_dungeon_boss(proposed, action, response)
+            if boss_event:
+                status_lines.append(f"> [NPC] {boss_event.get('name')} が {proposed} の奥に配置されました。")
             return {"location": proposed, "narration_lines": narration_lines, "status_lines": status_lines, "moved": True, "denied": False}
 
         if proposed in nodes:
             narration_lines.append(f"この場所から「{proposed}」へ直接向かう道は見つからない。隣接している場所から順に移動する必要がある。")
             return {"location": current, "narration_lines": narration_lines, "status_lines": [], "moved": False, "denied": True}
 
-        if _nearby_dynamic_location_requested(action, proposed) and len(neighbors) <= WORLD_MAP_MAX_DYNAMIC_DEGREE:
-            description = _short_text(str(response.get("narration") or response.get("description") or ""), 220)
-            kind = _infer_world_location_kind({}, proposed, description)
+        description = _short_text(str(response.get("narration") or response.get("description") or ""), 220)
+        explicit_generated_dungeon = _explicit_generated_dungeon_location_request(action, response, proposed, description)
+        if (
+            (_nearby_dynamic_location_requested(action, proposed) and len(neighbors) <= WORLD_MAP_MAX_DYNAMIC_DEGREE)
+            or explicit_generated_dungeon
+        ):
+            kind = _infer_world_location_kind_for_request(action, response, proposed, description)
             current_node = nodes.get(current, {}) if isinstance(nodes, dict) else {}
-            danger = max(0, _safe_int(current_node.get("danger"), 0) + (1 if kind in {"dungeon", "wilderness"} else 0))
+            danger = _clamp_world_danger(_safe_int(current_node.get("danger"), 0) + (5 if kind in {"dungeon", "wilderness"} else 0))
             location = world.ensure_location(proposed, description)
             location.extra["location_kind"] = kind
             location.extra["danger_level"] = danger
@@ -4981,6 +5345,9 @@ class GameEngine:
             target_graph = self._ensure_location_subnode_graph(world, proposed)
             if target_graph:
                 self._set_current_subnode(proposed, self._default_subnode_for_location(world.locations.get(proposed)))
+            boss_event = self._ensure_generated_dungeon_boss(proposed, action, response)
+            if boss_event:
+                status_lines.append(f"> [NPC] {boss_event.get('name')} が {proposed} の奥に配置されました。")
             status_lines.append(f"> [Map] 新しい地点を発見: {proposed}")
             return {"location": proposed, "narration_lines": [], "status_lines": status_lines, "moved": True, "denied": False}
 
@@ -7341,6 +7708,10 @@ class GameEngine:
                 self.save_game()
                 return self.state.log_text(16)
 
+        block_reason = self._player_incapacitated_action_block(action_text)
+        if block_reason:
+            return finish(self._resolve_blocked_player_action(action_text, input_type, block_reason))
+
         guard_result = self._maybe_start_guard_encounter(action_text, input_type)
         if guard_result:
             return finish(guard_result)
@@ -7871,6 +8242,11 @@ class GameEngine:
         return response
 
     def _resolve_encounter_input(self, action: str, input_type: str, encounter: dict[str, Any]) -> str:
+        if self._encounter_has_surrendered_opponents(encounter) and _is_accept_surrender_action(action):
+            return self._accept_opponent_surrender(action, input_type, encounter)
+        block_reason = self._player_incapacitated_action_block(action, encounter=encounter, for_movement=False)
+        if block_reason:
+            return self._resolve_blocked_player_action(action, input_type, block_reason, encounter=encounter)
         if _is_skill_action(action):
             return self._resolve_player_skill(action, input_type, encounter)
         if _is_escape_action(action):
@@ -7923,6 +8299,7 @@ class GameEngine:
             event = self._apply_player_sp_delta(-cost, source="skill", reason=str(skill.get("name") or ""), encounter=encounter)
             if event.get("line"):
                 encounter.setdefault("pending_resource_lines", []).append(str(event["line"]))
+        self._select_encounter_target_from_action(encounter, action)
         player_response = self._referee_player_any_input_new_new(action, input_type, encounter)
         self._strip_game_controlled_hp_updates(player_response, target="opponent")
         self._strip_game_controlled_hp_updates(player_response, target="player")
@@ -8123,14 +8500,27 @@ class GameEngine:
         reason: str = "",
         message: str = "",
     ) -> dict[str, Any]:
-        old_hp = max(0, _safe_int(encounter.get("opponent_hp"), 0))
-        max_hp = max(1, _safe_int(encounter.get("opponent_max_hp"), old_hp or 1))
+        opponent = self._encounter_opponent(encounter)
+        if isinstance(opponent, CharacterData):
+            if _safe_int(opponent.max_hp, 0) <= 0:
+                self._ensure_character_runtime_data(opponent)
+            old_hp = max(0, min(opponent.max_hp, _safe_int(opponent.current_hp, opponent.max_hp)))
+            max_hp = max(1, _safe_int(opponent.max_hp, old_hp or 1))
+        else:
+            old_hp = max(0, _safe_int(encounter.get("opponent_hp"), 0))
+            max_hp = max(1, _safe_int(encounter.get("opponent_max_hp"), old_hp or 1))
         new_hp = max(0, min(max_hp, old_hp + int(delta)))
         actual_delta = new_hp - old_hp
         encounter["opponent_hp"] = new_hp
         encounter["opponent_max_hp"] = max_hp
+        if isinstance(opponent, CharacterData):
+            opponent.current_hp = new_hp
+            opponent.max_hp = max_hp
+            opponent.extra["current_hp"] = new_hp
+            opponent.extra["max_hp"] = max_hp
+            self._sync_encounter_opponent_entry(encounter, opponent)
         sign = f"+{actual_delta}" if actual_delta > 0 else str(actual_delta)
-        name = str(encounter.get("opponent_name") or "相手")
+        name = str((opponent.name if isinstance(opponent, CharacterData) else "") or encounter.get("opponent_name") or "相手")
         lines: list[str] = []
         if message:
             lines.append(f"> [戦闘] {message}")
@@ -8149,6 +8539,166 @@ class GameEngine:
         self.state.world_data.extra.setdefault("hp_events", []).append(dict(event))
         return event
 
+    def _set_encounter_opponent_combat_status(
+        self,
+        encounter: dict[str, Any],
+        character: CharacterData,
+        status: str,
+    ) -> None:
+        entry = self._sync_encounter_opponent_entry(encounter, character)
+        entry["status"] = status
+        entry["opponent_status"] = status
+        character.extra["combat_status"] = status
+        if str(encounter.get("active_opponent_uuid") or "") == str(character.uuid or "") or str(encounter.get("opponent_uuid") or "") == str(character.uuid or ""):
+            encounter["opponent_status"] = status
+            encounter["opponent_hp"] = max(0, _safe_int(character.current_hp, encounter.get("opponent_hp") or 0))
+            encounter["opponent_max_hp"] = max(1, _safe_int(character.max_hp, encounter.get("opponent_max_hp") or 1))
+
+    def _apply_npc_action_tool(
+        self,
+        encounter: dict[str, Any],
+        npc_response: dict[str, Any],
+        rewrite_response: dict[str, Any],
+    ) -> dict[str, Any]:
+        action = _npc_action_tool_kind(npc_response, rewrite_response)
+        if action == "surrender":
+            return self._npc_surrender_from_encounter(encounter)
+        if action == "flee":
+            return self._npc_flee_from_encounter(encounter)
+        return {"acted": False, "lines": []}
+
+    def _npc_surrender_from_encounter(self, encounter: dict[str, Any]) -> dict[str, Any]:
+        opponent = self._encounter_opponent(encounter)
+        if not isinstance(opponent, CharacterData):
+            encounter["opponent_status"] = SURRENDERED_STATUS_ID
+            return {"acted": True, "kind": "surrender", "lines": ["> [戦闘] 相手は降伏し、行動を止めた。"]}
+        effect = _normalise_status_effect(
+            {
+                "id": SURRENDERED_STATUS_ID,
+                "name": "降伏",
+                "description": "戦闘で降伏し、敵対行動を止めている。",
+                "duration": 0,
+                "combat_state": SURRENDERED_STATUS_ID,
+            },
+            source="npc_surrender",
+        )
+        _merge_status_effect(opponent.status_effects, effect)
+        opponent.flags["surrendered"] = True
+        opponent.flags["hostile"] = False
+        opponent.extra["surrendered"] = True
+        opponent.extra["hostile"] = False
+        self._set_encounter_opponent_combat_status(encounter, opponent, SURRENDERED_STATUS_ID)
+        return {"acted": True, "kind": "surrender", "lines": [f"> [戦闘] {opponent.name}は降伏し、行動を止めた。"]}
+
+    def _npc_flee_from_encounter(self, encounter: dict[str, Any]) -> dict[str, Any]:
+        opponent = self._encounter_opponent(encounter)
+        if not isinstance(opponent, CharacterData):
+            encounter["opponent_status"] = FLED_STATUS_ID
+            encounter["status"] = "ended"
+            return {"acted": True, "kind": "flee", "lines": ["> [戦闘] 相手は逃亡し、戦闘から外れた。"]}
+        location = str(encounter.get("location") or opponent.location or self.state.current_location)
+        destination = self._npc_flee_destination(opponent, location)
+        opponent.flags["fled_from_combat"] = True
+        opponent.extra["fled_from_combat"] = True
+        self._set_encounter_opponent_combat_status(encounter, opponent, FLED_STATUS_ID)
+        if destination.get("location"):
+            self._set_character_presence(
+                opponent,
+                str(destination["location"]),
+                "present",
+                subnode_id=str(destination.get("subnode") or ""),
+            )
+            label = str(destination.get("label") or destination.get("location") or "")
+            line = f"> [戦闘] {opponent.name}は{label}へ逃亡し、戦闘から外れた。"
+        else:
+            opponent.state = FLED_STATUS_ID
+            opponent.flags["state"] = FLED_STATUS_ID
+            opponent.extra["state"] = FLED_STATUS_ID
+            line = f"> [戦闘] {opponent.name}はその場から逃げ去り、戦闘から外れた。"
+        return {"acted": True, "kind": "flee", "lines": [line]}
+
+    def _npc_flee_destination(self, character: CharacterData, location: str) -> dict[str, str]:
+        world = self.state.world_data
+        location = str(location or self.state.current_location or world.starting_location).strip()
+        assigned_location, assigned_subnode = self._character_subnode_assignment(character)
+        if assigned_location and assigned_location != location:
+            assigned_subnode = ""
+        current_subnode = assigned_subnode or self._current_subnode_id(location)
+        graph = self._ensure_location_subnode_graph(world, location)
+        nodes = graph.get("nodes", {}) if isinstance(graph, dict) else {}
+        if current_subnode and current_subnode in nodes:
+            for edge in graph.get("edges", []):
+                if not isinstance(edge, dict):
+                    continue
+                source = str(edge.get("from") or "")
+                target = str(edge.get("to") or "")
+                if source != current_subnode and target != current_subnode:
+                    continue
+                if edge.get("external"):
+                    target_location = str(edge.get("target_location") or "").strip()
+                    if target_location and target_location in world.locations:
+                        target_subnode = str(edge.get("target_subnode") or "")
+                        return {"location": target_location, "subnode": target_subnode, "label": target_location}
+                    continue
+                next_subnode = target if source == current_subnode else source
+                if next_subnode and next_subnode in nodes:
+                    node_name = str(nodes.get(next_subnode, {}).get("name") or next_subnode)
+                    return {"location": location, "subnode": next_subnode, "label": node_name}
+        for neighbor in self._world_neighbors_no_ensure(world, location):
+            if neighbor in world.locations:
+                return {"location": neighbor, "subnode": "", "label": neighbor}
+        return {}
+
+    def _accept_opponent_surrender(self, action: str, input_type: str, encounter: dict[str, Any]) -> str:
+        location = str(encounter.get("location") or self.state.current_location)
+        accepted: list[str] = []
+        for opponent in self._living_encounter_opponents(encounter):
+            if not self._character_has_surrendered(opponent, encounter):
+                continue
+            self._set_encounter_opponent_combat_status(encounter, opponent, "surrender_accepted")
+            opponent.flags["surrender_accepted"] = True
+            opponent.extra["surrender_accepted"] = True
+            opponent.flags["hostile"] = False
+            opponent.extra["hostile"] = False
+            accepted.append(opponent.name)
+        acting = self._acting_encounter_opponents(encounter)
+        if acting:
+            encounter["status"] = "active"
+            self._set_encounter_active_opponent(encounter, acting[0])
+            self.state.flags["active_encounter"] = encounter
+            self.state.flags["screen_mode"] = "battle"
+            choices = self._encounter_choices(encounter)
+        else:
+            encounter["status"] = "ended"
+            self.state.flags.pop("active_encounter", None)
+            self.state.flags["screen_mode"] = "exploration"
+            choices = self._location_default_choices(location)
+        names = "、".join(accepted) if accepted else "相手"
+        narration = f"{names}の降伏を受け入れた。"
+        if acting:
+            narration += " まだ戦意を失っていない相手が残っている。"
+        else:
+            narration += " 戦闘は終了した。"
+        self._record_encounter_turn(
+            action,
+            input_type,
+            encounter,
+            [{"manager": "accept_opponent_surrender", "response": {"accepted": accepted, "remaining": [item.name for item in acting]}}],
+        )
+        self.state.world_data.history.append(
+            {
+                "manager": "accept_opponent_surrender",
+                "action": action,
+                "input_type": input_type,
+                "encounter": _strip_encounter_log(encounter),
+                "accepted": accepted,
+                "remaining": [item.name for item in acting],
+            }
+        )
+        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self.save_game()
+        return self.state.log_text(16)
+
     def _apply_npc_combat_damage(
         self,
         encounter: dict[str, Any],
@@ -8156,6 +8706,9 @@ class GameEngine:
         rewrite_response: dict[str, Any],
     ) -> list[str]:
         if int(encounter.get("opponent_hp") or 0) <= 0:
+            return []
+        opponent = self._encounter_opponent(encounter)
+        if isinstance(opponent, CharacterData) and self._character_has_surrendered(opponent, encounter):
             return []
         if _surrender_control_prevents_npc_damage(encounter, npc_response, rewrite_response):
             return []
@@ -8210,6 +8763,7 @@ class GameEngine:
         encounter: dict[str, Any] | None = None,
     ) -> str:
         encounter = encounter or self._ensure_encounter(action)
+        self._select_encounter_target_from_action(encounter, action)
         player_response = self._referee_player_attack_new_new(action, input_type, encounter)
         self._strip_game_controlled_hp_updates(player_response, target="opponent")
         self._apply_encounter_update(encounter, player_response.get("encounter_update"))
@@ -8218,6 +8772,7 @@ class GameEngine:
         return self._resolve_npc_turn(action, input_type, encounter, player_response, "referee_player_attack_new_new")
 
     def _resolve_player_any_input(self, action: str, input_type: str, encounter: dict[str, Any]) -> str:
+        self._select_encounter_target_from_action(encounter, action)
         player_response = self._referee_player_any_input_new_new(action, input_type, encounter)
         self._apply_encounter_update(encounter, player_response.get("encounter_update"))
         self._apply_response_implied_statuses(encounter, player_response, "opponent")
@@ -8273,6 +8828,173 @@ class GameEngine:
         self.save_game()
         return self.state.log_text(16)
 
+    def _resolve_group_npc_turn(
+        self,
+        action: str,
+        input_type: str,
+        encounter: dict[str, Any],
+        player_response: dict[str, Any],
+        player_manager: str,
+        status_lines: list[str],
+    ) -> str:
+        location = str(encounter.get("location") or self.state.current_location)
+        previous_location = self.state.current_location
+        manager_records: list[dict[str, Any]] = [
+            {"manager": player_manager, "response": _strip_response_metadata(player_response)}
+        ]
+        narration_parts: list[str] = [str(player_response.get("narration") or player_response.get("text") or "")]
+        terminal_outcome = self._apply_encounter_outcome(encounter)
+        status_lines.extend(self._apply_quest_encounter_outcome(encounter, terminal_outcome))
+        if terminal_outcome.get("narration"):
+            narration_parts.append(str(terminal_outcome.get("narration") or ""))
+
+        finished = _as_bool(player_response.get("finished")) or _as_bool(terminal_outcome.get("ended"))
+        if not finished and not self._is_game_over():
+            for opponent in list(self._acting_encounter_opponents(encounter))[:COMBAT_MAX_OPPONENTS]:
+                self._set_encounter_active_opponent(encounter, opponent)
+                if max(0, _safe_int(opponent.current_hp, 0)) <= 0:
+                    continue
+                npc_response = self._referee_npc(action, input_type, encounter, player_response)
+                self._strip_game_controlled_hp_updates(npc_response, target="player")
+                self._apply_encounter_update(encounter, npc_response.get("encounter_update"))
+                self._apply_response_implied_statuses(encounter, npc_response, "player")
+                status_lines.extend(self._apply_response_hp_effects(npc_response, "referee_npc", encounter=encounter))
+                status_lines.extend(self._apply_response_sp_effects(npc_response, "referee_npc", encounter=encounter))
+                status_lines.extend(self._apply_response_progress_effects(npc_response, "referee_npc", encounter=encounter))
+                status_lines.extend(
+                    self._apply_response_world_state_effects(
+                        npc_response,
+                        "referee_npc",
+                        default_character=opponent,
+                        default_location=location,
+                    )
+                )
+
+                if max(0, _safe_int(opponent.current_hp, 0)) <= 0:
+                    rewrite_response: dict[str, Any] = {}
+                else:
+                    rewrite_response = self._referee_npc_rewrite(action, input_type, encounter, player_response, npc_response)
+                self._strip_game_controlled_hp_updates(rewrite_response, target="player")
+                self._apply_encounter_update(encounter, rewrite_response.get("encounter_update"))
+                self._apply_response_implied_statuses(encounter, rewrite_response, "player")
+                status_lines.extend(self._apply_response_hp_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
+                status_lines.extend(self._apply_response_sp_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
+                status_lines.extend(self._apply_response_progress_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
+                status_lines.extend(
+                    self._apply_response_world_state_effects(
+                        rewrite_response,
+                        "referee_npc_rewrite",
+                        default_character=opponent,
+                        default_location=location,
+                    )
+                )
+                npc_tool_result = self._apply_npc_action_tool(encounter, npc_response, rewrite_response)
+                npc_tool_kind = str(npc_tool_result.get("kind") or "")
+                status_lines.extend(str(line) for line in npc_tool_result.get("lines", []) if line)
+                if not _as_bool(npc_tool_result.get("acted")):
+                    status_lines.extend(self._apply_npc_combat_damage(encounter, npc_response, rewrite_response))
+                if rewrite_response.get("narration") or rewrite_response.get("text") or npc_response.get("narration") or npc_response.get("text"):
+                    narration_parts.append(
+                        str(
+                            rewrite_response.get("narration")
+                            or rewrite_response.get("text")
+                            or npc_response.get("narration")
+                            or npc_response.get("text")
+                            or ""
+                        )
+                    )
+                manager_records.extend(
+                    [
+                        {"manager": "referee_npc", "opponent": opponent.name, "response": _strip_response_metadata(npc_response)},
+                        {
+                            "manager": "referee_npc_rewrite",
+                            "opponent": opponent.name,
+                            "response": _strip_response_metadata(rewrite_response),
+                        },
+                    ]
+                )
+                for manager_name, response in (
+                    ("referee_npc", npc_response),
+                    ("referee_npc_rewrite", rewrite_response),
+                ):
+                    self._apply_response_rewards(response, manager_name)
+                    self._maybe_finish_active_quest_from_response(response, manager_name, action)
+                terminal_outcome = self._apply_encounter_outcome(encounter)
+                status_lines.extend(self._apply_quest_encounter_outcome(encounter, terminal_outcome))
+                if terminal_outcome.get("narration"):
+                    narration_parts.append(str(terminal_outcome.get("narration") or ""))
+                if self._is_game_over() or _as_bool(terminal_outcome.get("game_over")):
+                    finished = True
+                    break
+                if (
+                    npc_tool_kind != "surrender"
+                    and (
+                        _as_bool(npc_response.get("finished"))
+                        or _as_bool(npc_response.get("should_end_encounter"))
+                        or _as_bool(rewrite_response.get("finished"))
+                    )
+                    or _as_bool(terminal_outcome.get("ended"))
+                ):
+                    finished = True
+                    break
+
+        if not self._is_game_over() and not _as_bool(terminal_outcome.get("ended")):
+            status_lines.extend(self._tick_encounter_status_effects(encounter))
+            terminal_outcome = self._apply_encounter_outcome(encounter)
+            status_lines.extend(self._apply_quest_encounter_outcome(encounter, terminal_outcome))
+            if terminal_outcome.get("narration"):
+                narration_parts.append(str(terminal_outcome.get("narration") or ""))
+
+        game_over = self._is_game_over() or _as_bool(terminal_outcome.get("game_over"))
+        living = self._living_encounter_opponents(encounter)
+        if game_over:
+            self.state.flags["screen_mode"] = "game_over"
+            self.state.flags.pop("active_encounter", None)
+            self.state.flags.pop("active_conversation", None)
+        elif finished or _as_bool(terminal_outcome.get("ended")) or not living:
+            encounter["status"] = "ended"
+            self.state.flags.pop("active_encounter", None)
+            self.state.flags["screen_mode"] = "exploration"
+        else:
+            encounter["status"] = "active"
+            acting = self._acting_encounter_opponents(encounter)
+            self._set_encounter_active_opponent(encounter, (acting or living)[0])
+            for opponent in living:
+                self._set_character_presence(opponent, location, "present")
+                self._sync_encounter_opponent_entry(encounter, opponent)
+            self.state.flags["active_encounter"] = encounter
+            self.state.flags["screen_mode"] = "battle"
+
+        narration = "\n".join(part for part in [*narration_parts, "\n".join(status_lines)] if part).strip()
+        if not narration:
+            narration = "The battle situation changed."
+        if game_over:
+            choices = _game_over_choices()
+        else:
+            choices = _dedupe_strs(_as_str_list(player_response.get("choices")) + ([] if not finished else _quest_start_choices(self.state.world_data.quests)))
+            if self._encounter_has_surrendered_opponents(encounter):
+                choices = _dedupe_strs(choices + ["降伏を受け入れる"])
+            if not choices:
+                choices = self._encounter_choices(encounter)
+        self._record_encounter_turn(action, input_type, encounter, manager_records)
+        for record in manager_records:
+            self.state.world_data.history.append(
+                {
+                    "manager": record["manager"],
+                    "action": action,
+                    "input_type": input_type,
+                    "opponent": record.get("opponent"),
+                    "encounter": _strip_encounter_log(encounter),
+                    "response": record["response"],
+                }
+            )
+        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self._apply_visual_intent(player_response, player_manager, location, previous_location)
+        self._apply_response_rewards(player_response, player_manager)
+        self._maybe_finish_active_quest_from_response(player_response, player_manager, action)
+        self.save_game()
+        return self.state.log_text(16)
+
     def _resolve_npc_turn(
         self,
         action: str,
@@ -8294,8 +9016,13 @@ class GameEngine:
                 default_location=str(encounter.get("location") or self.state.current_location),
             )
         )
+        if len(self._encounter_opponents(encounter)) > 1:
+            return self._resolve_group_npc_turn(action, input_type, encounter, player_response, player_manager, status_lines)
+        opponent_surrendered = isinstance(opponent, CharacterData) and self._character_has_surrendered(opponent, encounter)
         if int(encounter.get("opponent_hp") or 0) <= 0:
             npc_response = {"finished": True, "narration": ""}
+        elif opponent_surrendered:
+            npc_response = {"finished": False, "narration": ""}
         else:
             npc_response = self._referee_npc(action, input_type, encounter, player_response)
         self._strip_game_controlled_hp_updates(npc_response, target="player")
@@ -8312,7 +9039,8 @@ class GameEngine:
                 default_location=str(encounter.get("location") or self.state.current_location),
             )
         )
-        if int(encounter.get("opponent_hp") or 0) <= 0:
+        opponent_surrendered = isinstance(opponent, CharacterData) and self._character_has_surrendered(opponent, encounter)
+        if int(encounter.get("opponent_hp") or 0) <= 0 or opponent_surrendered:
             rewrite_response = {}
         else:
             rewrite_response = self._referee_npc_rewrite(action, input_type, encounter, player_response, npc_response)
@@ -8330,7 +9058,11 @@ class GameEngine:
                 default_location=str(encounter.get("location") or self.state.current_location),
             )
         )
-        status_lines.extend(self._apply_npc_combat_damage(encounter, npc_response, rewrite_response))
+        npc_tool_result = self._apply_npc_action_tool(encounter, npc_response, rewrite_response)
+        npc_tool_kind = str(npc_tool_result.get("kind") or "")
+        status_lines.extend(str(line) for line in npc_tool_result.get("lines", []) if line)
+        if not _as_bool(npc_tool_result.get("acted")):
+            status_lines.extend(self._apply_npc_combat_damage(encounter, npc_response, rewrite_response))
         status_lines.extend(self._tick_encounter_status_effects(encounter))
         outcome = self._apply_encounter_outcome(encounter)
         status_lines.extend(self._apply_quest_encounter_outcome(encounter, outcome))
@@ -8350,9 +9082,14 @@ class GameEngine:
 
         finished = (
             _as_bool(player_response.get("finished"))
-            or _as_bool(npc_response.get("finished"))
-            or _as_bool(npc_response.get("should_end_encounter"))
-            or _as_bool(rewrite_response.get("finished"))
+            or (
+                npc_tool_kind != "surrender"
+                and (
+                    _as_bool(npc_response.get("finished"))
+                    or _as_bool(npc_response.get("should_end_encounter"))
+                    or _as_bool(rewrite_response.get("finished"))
+                )
+            )
             or _as_bool(outcome.get("ended"))
         )
         game_over = self._is_game_over() or _as_bool(outcome.get("game_over"))
@@ -8388,6 +9125,8 @@ class GameEngine:
                 _as_str_list(rewrite_response.get("choices") or npc_response.get("choices") or player_response.get("choices"))
                 + ([] if not finished else _quest_start_choices(self.state.world_data.quests))
             )
+            if self._encounter_has_surrendered_opponents(encounter):
+                choices = _dedupe_strs(choices + ["降伏を受け入れる"])
         if not choices:
             choices = self._encounter_choices(encounter)
 
@@ -8539,6 +9278,7 @@ class GameEngine:
         encounter_payload = json.dumps(_strip_encounter_log(encounter), ensure_ascii=False)
         player_payload = json.dumps(_strip_response_metadata(player_response), ensure_ascii=False)
         opponent_payload = json.dumps(self._encounter_opponent_payload(encounter), ensure_ascii=False)
+        player_battle_payload = json.dumps(self._encounter_player_payload(encounter), ensure_ascii=False)
         messages = [
             {
                 "role": "system",
@@ -8556,6 +9296,7 @@ class GameEngine:
                     f"世界データ: {world_payload}\n"
                     f"敵対者: {encounter.get('opponent_name')}\n"
                     f"敵対者データ: {opponent_payload}\n"
+                    f"プレイヤー戦闘データ: {player_battle_payload}\n"
                     f"戦闘状態: {encounter_payload}\n"
                     f"入力種別: {input_type}\n"
                     f"プレイヤー行動: {action}\n"
@@ -8572,7 +9313,16 @@ class GameEngine:
                     "If the NPC or enemy attacks this turn, return combat_judgement with offensive true and "
                     "weakness_multiplier from 0.0 to 3.0. If it does not attack, set offensive false. "
                     "Capture, restraint, disarming, watching, accepting surrender, or non-damaging entanglement after "
-                    "surrender are not HP-damage attacks; use status effects and combat_judgement.offensive=false for them."
+                    "surrender are not HP-damage attacks; use status effects and combat_judgement.offensive=false for them. "
+                    "Choose the NPC action from its personality, traits, role, world context, the player's current HP ratio, "
+                    "player_status, and player_status_effects. If this NPC would capture weak prey, intimidate, restrain, "
+                    "feed, bargain, flee, or watch instead of simply damaging, describe that action and set offensive=false "
+                    "unless it is a real HP-damaging attack. Treat world data, world overview, theme, laws, and setting notes "
+                    "as shared NPC behavior rules. If the world says NPCs avoid killing, capture weakened enemies, honor surrender, "
+                    "or prefer survival, reflect that in this NPC's action. Available explicit NPC action tools: "
+                    "set npc_action='flee' when the NPC escapes to an adjacent node/location, or npc_action='surrender' when the NPC yields and stops acting. "
+                    "Surrender does not end the encounter by itself; the player may accept the surrender or keep fighting. "
+                    "For flee or surrender, set combat_judgement.offensive=false and do not describe HP damage."
                 ),
             }
         )
@@ -8592,10 +9342,12 @@ class GameEngine:
         player_response: dict[str, Any],
         npc_response: dict[str, Any],
     ) -> dict[str, Any]:
+        world_payload = _ai_json(_world_ai_context(self.state.world_data))
         encounter_payload = json.dumps(_strip_encounter_log(encounter), ensure_ascii=False)
         player_payload = json.dumps(_strip_response_metadata(player_response), ensure_ascii=False)
         npc_payload = json.dumps(_strip_response_metadata(npc_response), ensure_ascii=False)
         opponent_payload = json.dumps(self._encounter_opponent_payload(encounter), ensure_ascii=False)
+        player_battle_payload = json.dumps(self._encounter_player_payload(encounter), ensure_ascii=False)
         messages = [
             {
                 "role": "system",
@@ -8612,8 +9364,10 @@ class GameEngine:
             {
                 "role": "user",
                 "content": (
+                    f"世界データ: {world_payload}\n"
                     f"敵対者: {encounter.get('opponent_name')}\n"
                     f"敵対者データ: {opponent_payload}\n"
+                    f"プレイヤー戦闘データ: {player_battle_payload}\n"
                     f"戦闘状態: {encounter_payload}\n"
                     f"入力種別: {input_type}\n"
                     f"プレイヤー行動: {action}\n"
@@ -8623,6 +9377,20 @@ class GameEngine:
                 ),
             },
         ]
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "Rewrite the NPC action while preserving the game judgement. Consider player_hp/player_max_hp, "
+                    "player_status, player_status_effects, the world setting/worldview, and the NPC's personality/traits. "
+                    "If the world setting says NPCs avoid killing, capture weakened enemies, honor surrender, flee from danger, "
+                    "or act by a shared code, preserve that behavior. Do not turn capture, "
+                    "restraint, surrender acceptance, stalking, intimidation, or feeding preparation into a generic damage attack "
+                    "unless combat_judgement.offensive is truly appropriate. Preserve npc_action='flee' or npc_action='surrender' "
+                    "when that is the chosen tool, keep combat_judgement.offensive=false for those tools, and do not mark surrender as encounter finished unless the player accepted it."
+                ),
+            }
+        )
         return self._chat_json(
             "referee_npc_rewrite",
             messages,
@@ -8789,6 +9557,9 @@ class GameEngine:
         for character in self.state.world_data.characters.values():
             if character.flags.get("is_player") or _character_state_is_dead(character):
                 continue
+            if _safe_int(character.max_hp, 0) > 0 and _safe_int(character.current_hp, 0) <= 0:
+                continue
+            self._ensure_character_runtime_data(character)
             if not _character_is_hostile_actor(character):
                 continue
             if not _actor_present_at(character.location, character.state, character.flags, location_name):
@@ -9377,6 +10148,27 @@ class GameEngine:
             return self.state.world_data.characters[name].to_dict()
         return {"name": name, "type": "character"}
 
+    def _encounter_player_payload(self, encounter: dict[str, Any]) -> dict[str, Any]:
+        max_hp = max(1, _safe_int(encounter.get("player_max_hp"), self._player_max_hp()))
+        current_hp = max(0, min(max_hp, _safe_int(encounter.get("player_hp"), self._player_current_hp(max_hp))))
+        max_sp = max(1, _safe_int(encounter.get("player_max_sp"), self._player_max_sp()))
+        current_sp = max(0, min(max_sp, _safe_int(encounter.get("player_sp"), self._player_current_sp(max_sp))))
+        player = self.state.world_data.characters.get(self.state.player_name)
+        return _drop_empty(
+            {
+                "name": self.state.player_name,
+                "current_hp": current_hp,
+                "max_hp": max_hp,
+                "hp_ratio": round(current_hp / max_hp, 3),
+                "current_sp": current_sp,
+                "max_sp": max_sp,
+                "sp_ratio": round(current_sp / max_sp, 3),
+                "player_status": encounter.get("player_status"),
+                "player_status_effects": self._actor_status_effects("player", encounter),
+                "player_character": _character_ai_context(player, details=True) if player else {},
+            }
+        )
+
     def _apply_encounter_update(self, encounter: dict[str, Any], update: Any) -> None:
         if isinstance(update, list):
             for item in update:
@@ -9416,9 +10208,16 @@ class GameEngine:
                 if delta == 0:
                     continue
                 base_key = text_key[: -len("_delta")]
+                if base_key == "opponent_hp":
+                    self._apply_opponent_hp_delta(encounter, delta, source="encounter_update", reason=text_key)
+                    continue
                 encounter[base_key] = max(0, int(encounter.get(base_key, 0) or 0) + delta) if base_key.endswith("_hp") else int(encounter.get(base_key, 0) or 0) + delta
                 continue
             if text_key in {"player_hp", "opponent_hp"}:
+                if text_key == "opponent_hp":
+                    current = max(0, self._hp_number(encounter.get("opponent_hp"), 0))
+                    self._apply_opponent_hp_delta(encounter, self._hp_number(value, current) - current, source="encounter_update", reason=text_key)
+                    continue
                 encounter[text_key] = max(0, self._hp_number(value, 0))
                 continue
             encounter[text_key] = value
@@ -9498,6 +10297,76 @@ class GameEngine:
             return opponent.status_effects
         raw = (encounter or {}).get("opponent_status_effects")
         return raw if isinstance(raw, list) else []
+
+    def _player_incapacitated_effects(self) -> list[dict[str, Any]]:
+        effects: list[dict[str, Any]] = []
+        for raw in self._actor_status_effects("player"):
+            effect = _normalise_status_effect(raw)
+            if not effect:
+                continue
+            if _status_effect_blocks_action(effect) or _status_effect_blocks_movement(effect):
+                effects.append(effect)
+        return effects
+
+    def _player_incapacitated_action_block(
+        self,
+        action: str,
+        *,
+        encounter: dict[str, Any] | None = None,
+        for_movement: bool = False,
+    ) -> str:
+        effects = self._player_incapacitated_effects()
+        if not effects:
+            return ""
+        if for_movement:
+            return "movement" if any(_status_effect_blocks_movement(effect) for effect in effects) else ""
+        if _is_escape_action(action):
+            return "escape" if any(_status_effect_blocks_escape(effect) for effect in effects) else ""
+        if _is_attack_action(action) or _is_aggressive_player_action(action):
+            return "attack" if any(_status_effect_blocks_attack(effect) for effect in effects) else ""
+        if encounter and _is_movement_intent(action):
+            return "movement" if any(_status_effect_blocks_movement(effect) for effect in effects) else ""
+        return ""
+
+    def _player_incapacitated_message(self, reason: str = "") -> str:
+        names = _dedupe_strs(
+            str(effect.get("name") or INCAPACITATED_STATUS_NAME)
+            for effect in self._player_incapacitated_effects()
+            if isinstance(effect, dict)
+        )
+        label = " / ".join(names) if names else INCAPACITATED_STATUS_NAME
+        if reason == "movement":
+            return f"{label}のため、今は移動できない。まず拘束や行動不能の原因を解く必要がある。"
+        if reason == "escape":
+            return f"{label}のため、今は逃走できない。"
+        if reason == "attack":
+            return f"{label}のため、今は攻撃的な行動を取れない。"
+        return f"{label}のため、今はその行動を取れない。"
+
+    def _resolve_blocked_player_action(
+        self,
+        action: str,
+        input_type: str,
+        reason: str,
+        *,
+        encounter: dict[str, Any] | None = None,
+    ) -> str:
+        location = str((encounter or {}).get("location") or self.state.current_location)
+        choices = self._encounter_choices(encounter) if encounter else self.state.choices
+        self.state.flags["screen_mode"] = "battle" if encounter else self.state.flags.get("screen_mode", "exploration")
+        narration = self._player_incapacitated_message(reason)
+        self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        self.state.world_data.history.append(
+            {
+                "manager": "player_action_guard",
+                "action": action,
+                "input_type": input_type,
+                "reason": reason,
+                "status_effects": self._player_incapacitated_effects(),
+            }
+        )
+        self.save_game()
+        return self.state.log_text(16)
 
     def _sync_actor_status_effects(
         self,
@@ -9801,6 +10670,35 @@ class GameEngine:
 
     def _tick_encounter_status_effects(self, encounter: dict[str, Any]) -> list[str]:
         lines: list[str] = []
+        opponents = self._encounter_opponents(encounter)
+        if opponents:
+            player_status_list = self._actor_status_effects("player", encounter)
+            if player_status_list:
+                hp = max(0, int(encounter.get("player_hp") or 0))
+                updated, hp_delta, tick_lines = _tick_status_effects(player_status_list, self.state.player_name or "Player")
+                if hp_delta:
+                    max_hp = _safe_int(encounter.get("player_max_hp"), hp)
+                    hp = max(0, min(max_hp if max_hp > 0 else hp + hp_delta, hp + hp_delta))
+                    encounter["player_hp"] = hp
+                lines.extend(tick_lines)
+                self._sync_actor_status_effects("player", updated, encounter)
+            active_uuid = str(encounter.get("active_opponent_uuid") or encounter.get("opponent_uuid") or "")
+            active_name = str(encounter.get("active_opponent_name") or encounter.get("opponent_name") or "")
+            for opponent in opponents:
+                self._set_encounter_active_opponent(encounter, opponent)
+                opponent_status_list = self._actor_status_effects("opponent", encounter)
+                if not opponent_status_list:
+                    continue
+                updated, hp_delta, tick_lines = _tick_status_effects(opponent_status_list, opponent.name)
+                if hp_delta:
+                    self._apply_opponent_hp_delta(encounter, hp_delta, source="status_tick", reason="status")
+                lines.extend(tick_lines)
+                self._sync_actor_status_effects("opponent", updated, encounter)
+            restore = self._character_from_reference(active_name, active_uuid)
+            if restore:
+                self._set_encounter_active_opponent(encounter, restore)
+            self._sync_player_battle_state(encounter)
+            return lines
         for target, hp_key, label in (
             ("player", "player_hp", "あなた"),
             ("opponent", "opponent_hp", str(encounter.get("opponent_name") or "相手")),
@@ -9823,6 +10721,52 @@ class GameEngine:
         self._sync_player_battle_state(encounter)
         player_hp = int(encounter.get("player_hp") or 0)
         opponent_hp = int(encounter.get("opponent_hp") or 0)
+        if player_hp > 0:
+            opponent = self._encounter_opponent(encounter)
+            if isinstance(opponent, CharacterData):
+                self._sync_encounter_opponent_entry(encounter, opponent)
+                opponent_hp = max(0, _safe_int(opponent.current_hp, 0))
+            living = self._living_encounter_opponents(encounter)
+            if opponent_hp > 0 and not living and self._encounter_opponents(encounter):
+                encounter["status"] = "ended"
+                return {
+                    "ended": True,
+                    "opponent_state": str(encounter.get("opponent_status") or "left"),
+                    "narration": "相手は戦闘を続けられる状態ではなくなった。戦闘は終了した。",
+                }
+            if opponent_hp <= 0:
+                defeated_name = str((opponent.name if isinstance(opponent, CharacterData) else "") or encounter.get("opponent_name") or "Opponent")
+                defeated_uuid = str((opponent.uuid if isinstance(opponent, CharacterData) else "") or encounter.get("opponent_uuid") or "")
+                encounter["opponent_status"] = "defeated"
+                self._add_actor_status_effects(
+                    "opponent",
+                    {"name": "defeated", "id": "defeated", "duration": 0},
+                    encounter=encounter,
+                    source="defeated",
+                )
+                if isinstance(opponent, CharacterData):
+                    self._mark_character_dead(opponent, source="encounter_defeated")
+                    self._sync_encounter_opponent_entry(encounter, opponent)
+                living = self._living_encounter_opponents(encounter)
+                if living:
+                    self._set_encounter_active_opponent(encounter, living[0])
+                    return {
+                        "ended": False,
+                        "opponent_defeated": True,
+                        "opponent_state": "dead",
+                        "defeated_opponent_name": defeated_name,
+                        "defeated_opponent_uuid": defeated_uuid,
+                        "narration": f"{defeated_name} has fallen. The battle continues.",
+                    }
+                encounter["status"] = "ended"
+                return {
+                    "ended": True,
+                    "opponent_defeated": True,
+                    "opponent_state": "dead",
+                    "defeated_opponent_name": defeated_name,
+                    "defeated_opponent_uuid": defeated_uuid,
+                    "narration": f"{defeated_name} has fallen. The battle is over.",
+                }
         if player_hp <= 0:
             encounter["status"] = "ended"
             encounter["player_status"] = "dead"
@@ -9881,6 +10825,10 @@ class GameEngine:
         self.state.extra["max_sp"] = max_sp
         player = self.state.world_data.characters.get(self.state.player_name)
         if player:
+            player.current_hp = hp
+            player.max_hp = max_hp
+            player.current_sp = sp
+            player.max_sp = max_sp
             player.extra["current_hp"] = hp
             player.extra["max_hp"] = max_hp
             player.extra["current_sp"] = sp
@@ -10597,8 +11545,10 @@ class GameEngine:
         return gains
 
     def _encounter_opponent(self, encounter: dict[str, Any]) -> CharacterData | None:
-        name = str(encounter.get("opponent_name") or "")
-        return self.state.world_data.characters.get(name)
+        return self._character_from_reference(
+            str(encounter.get("opponent_name") or ""),
+            str(encounter.get("opponent_uuid") or encounter.get("active_opponent_uuid") or ""),
+        )
 
     def _is_game_over(self) -> bool:
         return bool(self.state.flags.get("game_over"))
@@ -10653,19 +11603,20 @@ class GameEngine:
             self._set_character_presence(character, location, state)
 
     def _apply_quest_encounter_outcome(self, encounter: dict[str, Any], outcome: dict[str, Any]) -> list[str]:
-        if not self.state.active_quest or not _as_bool(outcome.get("ended")):
+        if not self.state.active_quest or not (_as_bool(outcome.get("ended")) or _as_bool(outcome.get("opponent_defeated"))):
             return []
         quest = self._find_quest_by_name(self.state.active_quest)
         if not quest or quest.status != "active":
             return []
-        opponent_uuid = str(encounter.get("opponent_uuid") or "").strip()
+        opponent_uuid = str(outcome.get("defeated_opponent_uuid") or encounter.get("opponent_uuid") or "").strip()
         if not opponent_uuid:
-            opponent = self.state.world_data.characters.get(str(encounter.get("opponent_name") or ""))
+            opponent_name = str(outcome.get("defeated_opponent_name") or encounter.get("opponent_name") or "")
+            opponent = self.state.world_data.characters.get(opponent_name)
             opponent_uuid = str(opponent.uuid if opponent else "")
         if not opponent_uuid:
             return []
         opponent_state = str(outcome.get("opponent_state") or "").strip().lower()
-        opponent_dead = opponent_state in {"dead", "corpse", "killed"} or int(encounter.get("opponent_hp") or 0) <= 0
+        opponent_dead = _as_bool(outcome.get("opponent_defeated")) or opponent_state in {"dead", "corpse", "killed"} or int(encounter.get("opponent_hp") or 0) <= 0
         opponent_gone = opponent_state in {"gone", "fled", "retreated", "neutralized"}
         if not opponent_dead and not opponent_gone:
             return []
@@ -10711,7 +11662,12 @@ class GameEngine:
     def _encounter_choices(self, encounter: dict[str, Any]) -> list[str]:
         if encounter.get("status") == "ended":
             return _quest_start_choices(self.state.world_data.quests) or ["周囲を見る"]
-        return ["攻撃", "スキル", "行動", "逃走"]
+        choices = ["攻撃", "スキル", "行動", "逃走"]
+        if self._player_incapacitated_effects():
+            choices = [choice for choice in choices if choice not in {"攻撃", "逃走"}]
+        if self._encounter_has_surrendered_opponents(encounter):
+            choices.append("降伏を受け入れる")
+        return choices
     def _start_conversation(self, action: str, input_type: str, character: CharacterData) -> str:
         previous_location = self.state.current_location
         response = self._conversation_starter(character, action, input_type)
@@ -11028,6 +11984,9 @@ class GameEngine:
                     "事前にゲーム側へ用意されていない突発イベントが起きるか判定してください。"
                     "ダンジョン発見、助けを求める人物、奇妙な痕跡などから、"
                     "必要なら野生のクエストを生成してください。"
+                    "プレイヤーが明示的にダンジョンを生成・発見・移動したい場合、discovered_location は kind=dungeon にしてください。"
+                    "そのダンジョンにボス、守護者、神、女神、主などが待つ内容なら boss_npc を返してください。"
+                    "boss_npc は name, role, description, personality, look, image_generation_prompt, hostile を持つNPCとして返してください。"
                     "毎回イベントを起こす必要はありません。"
                     "必ず event_occurred, narration, location, choices を持つJSONだけを返してください。"
                     "game_side_action_roll が enabled=true の場合、探索行動の成否はゲーム側の確定判定として必ず尊重してください。"
@@ -11069,9 +12028,12 @@ class GameEngine:
         movement_narration = [str(line) for line in movement_result.get("narration_lines", []) if str(line).strip()]
         if movement_narration:
             narration = "\n".join([narration, *movement_narration]).strip()
-        discovered_location = self._apply_discovered_location(response)
+        discovered_location = self._apply_discovered_location(response, action=action)
         generated_quests = self._apply_field_event_quests(response, location)
         generated_actors = self._apply_field_event_actors(response, location)
+        boss_event = self._ensure_generated_dungeon_boss(discovered_location, action, response)
+        if boss_event:
+            generated_actors.append(boss_event)
         choices = self._augment_location_choices(_as_str_list(response.get("choices")), location)
 
         if location:
@@ -11148,7 +12110,7 @@ class GameEngine:
         self.save_game()
         return self.state.log_text(16)
 
-    def _apply_discovered_location(self, response: dict[str, Any]) -> str:
+    def _apply_discovered_location(self, response: dict[str, Any], *, action: str = "") -> str:
         raw = response.get("discovered_location")
         if not raw:
             return ""
@@ -11157,7 +12119,7 @@ class GameEngine:
             if not name:
                 return ""
             description = str(raw.get("description") or raw.get("overview") or raw.get("summary") or "")
-            kind = _infer_world_location_kind(raw, name, description)
+            kind = _infer_world_location_kind_for_request(action, raw, name, description)
             if kind == "facility" and _add_facility_payload_to_settlement(self.state.world_data, name, description, str(raw.get("type") or raw.get("facility_type") or "")):
                 return ""
             dungeon_parent = _existing_dungeon_location_for_subarea(self.state.world_data, name)
@@ -11173,6 +12135,7 @@ class GameEngine:
             location.extra["danger_level"] = _world_location_danger_from_payload(raw)
             self._set_location_graph_node(self.state.world_data, name, kind=kind, location=location)
             self._connect_world_locations(self.state.world_data, self.state.current_location, name)
+            self._ensure_generated_dungeon_location(location, kind)
             return name
         name = str(raw).strip()
         if not name:
@@ -11184,11 +12147,95 @@ class GameEngine:
         location = self.state.world_data.ensure_location(name)
         location.flags["discovered"] = True
         location.flags["source"] = "field_event_evaluator"
-        kind = _infer_world_location_kind({}, name, location.description)
+        kind = _infer_world_location_kind_for_request(action, {}, name, location.description)
         location.extra["location_kind"] = kind
         self._set_location_graph_node(self.state.world_data, name, kind=kind, location=location)
         self._connect_world_locations(self.state.world_data, self.state.current_location, name)
+        self._ensure_generated_dungeon_location(location, kind)
         return name
+
+    def _ensure_generated_dungeon_location(self, location: LocationData, kind: str = "") -> dict[str, Any]:
+        if str(kind or "").strip().lower() == "dungeon":
+            location.extra["location_kind"] = "dungeon"
+        if not _is_dungeon_location(location):
+            return {}
+        location.flags["dungeon"] = True
+        graph = self._ensure_location_subnode_graph(self.state.world_data, location.name)
+        if graph:
+            graph.setdefault("created_for_generated_dungeon", True)
+        return graph
+
+    def _ensure_generated_dungeon_boss(
+        self,
+        location_name: str,
+        action: str,
+        response: dict[str, Any],
+    ) -> dict[str, str] | None:
+        location_name = str(location_name or "").strip()
+        if not location_name:
+            return None
+        location = self.state.world_data.locations.get(location_name)
+        if not location or not _is_dungeon_location(location):
+            return None
+        graph = self._ensure_generated_dungeon_location(location, "dungeon")
+        nodes = graph.get("nodes", {}) if isinstance(graph, dict) else {}
+        target_subnode = DUNGEON_DEEPEST_SUBNODE_ID if DUNGEON_DEEPEST_SUBNODE_ID in nodes else self._default_subnode_for_location(location)
+        if not target_subnode:
+            return None
+        boss_payload = _generated_dungeon_boss_payload(response)
+        if not boss_payload and not _generated_dungeon_boss_required(action, response, location):
+            return None
+        if self._generated_dungeon_has_boss(location.name):
+            return None
+        if not boss_payload:
+            boss_payload = _fallback_generated_dungeon_boss_payload(location, action, response)
+        character = _enemy_npc_from_raw(boss_payload, len(self.state.world_data.characters))
+        character.name = _unique_character_name(self.state.world_data, character.name)
+        character.role = str(character.role or "ダンジョンボス")
+        character.category = "enemy_npc"
+        character.flags["enemy_npc"] = True
+        character.flags["hostile"] = _as_bool(character.flags.get("hostile") if "hostile" in character.flags else True)
+        character.flags["generated_dungeon_boss"] = True
+        character.extra["generated_dungeon_boss"] = True
+        character.extra["boss_location"] = location.name
+        danger = max(5, _safe_int(location.extra.get("danger_level", location.extra.get("danger")), 0))
+        character.flags.setdefault("danger_level", danger)
+        character.extra.setdefault("danger_level", danger)
+        character.extra["spawn_subnode_id"] = target_subnode
+        character.extra["origin_subnode_id"] = target_subnode
+        character.extra["display_alias"] = str(character.extra.get("display_alias") or "ボス")
+        character.extra["aliases"] = _dedupe_strs([character.name, "ボス", "守護者", *[str(value) for value in _as_list(character.extra.get("aliases"))]])
+        character.level = max(_safe_int(character.level, 1), _generated_dungeon_boss_level(location))
+        _scale_character_for_danger(character, danger, boss=True)
+        self._ensure_character_runtime_data(character)
+        self._set_character_presence(character, location.name, "present", subnode_id=target_subnode)
+        self.state.world_data.characters[character.name] = character
+        generated_bosses = location.extra.get("generated_bosses")
+        if not isinstance(generated_bosses, list):
+            generated_bosses = []
+            location.extra["generated_bosses"] = generated_bosses
+        generated_bosses.append(
+            {
+                "uuid": character.uuid,
+                "name": character.name,
+                "subnode_id": target_subnode,
+                "source": "generated_dungeon_boss",
+            }
+        )
+        return {"type": "character", "name": character.name, "role": "boss", "location": location.name, "subnode": target_subnode}
+
+    def _generated_dungeon_has_boss(self, location_name: str) -> bool:
+        for character in self.state.world_data.characters.values():
+            if character.location != location_name:
+                continue
+            if _character_state_is_dead(character):
+                continue
+            if character.flags.get("generated_dungeon_boss") or character.extra.get("generated_dungeon_boss"):
+                return True
+            text = " ".join(str(value or "") for value in (character.role, character.category, character.extra.get("display_alias")))
+            if any(marker in text.casefold() for marker in ("boss", "ボス", "守護者")):
+                return True
+        return False
 
     def _apply_field_event_actors(self, response: dict[str, Any], location: str) -> list[dict[str, str]]:
         generated: list[dict[str, str]] = []
@@ -11211,6 +12258,7 @@ class GameEngine:
             character.flags["enemy_npc"] = True
             character.flags["hostile"] = _as_bool(character.flags.get("hostile") if "hostile" in character.flags else character.extra.get("hostile", True))
             self._set_character_presence(character, location)
+            _scale_character_for_danger(character, self._current_location_danger(location))
             self._ensure_character_runtime_data(character)
             self.state.world_data.characters[character.name] = character
             generated.append({"type": "character", "name": character.name})
@@ -13730,6 +14778,10 @@ def _normalise_status_effect(value: Any, *, source: str = "") -> dict[str, Any]:
         "stat_modifiers",
         "prevents_action",
         "prevents_movement",
+        "prevents_attack",
+        "prevents_escape",
+        "blocked_actions",
+        "combat_state",
     ):
         item = data.get(key) if key in data else preset.get(key)
         if item not in (None, "", [], {}):
@@ -13861,6 +14913,36 @@ def _format_status_template(template: Any, actor_label: str, name: str, hp_delta
 
 def _status_effect_preset(text: str) -> dict[str, Any]:
     lowered = text.lower()
+    if (
+        any(
+            word in lowered
+            for word in (
+                "incapacitated",
+                "immobilized",
+                "immobilised",
+                "restrained",
+                "bound",
+                "tied up",
+                "unable to act",
+                "cannot act",
+            )
+        )
+        or any(word in text for word in ("行動不能", "拘束", "捕縛", "縛ら", "身動き", "動けない", "動けず"))
+    ):
+        return {
+            "id": INCAPACITATED_STATUS_ID,
+            "name": INCAPACITATED_STATUS_NAME,
+            "duration": 0,
+            "damage_per_turn": 0,
+            "description": "拘束や麻痺などにより、攻撃・逃走・移動ができない。",
+            "category": "control",
+            "prevents_action": True,
+            "prevents_movement": True,
+            "prevents_attack": True,
+            "prevents_escape": True,
+            "blocked_actions": ["attack", "escape", "aggressive_action", "movement"],
+            "tags": ["incapacitated", "restraint"],
+        }
     if "pregnan" in lowered or "妊娠" in text:
         return {
             "id": "pregnancy",
@@ -13880,7 +14962,18 @@ def _status_effect_preset(text: str) -> dict[str, Any]:
     if any(word in lowered for word in ("burn", "burning")) or "火傷" in text or "炎上" in text:
         return {"id": "burning", "name": "火傷", "duration": 2, "damage_per_turn": 1, "description": "火傷が痛む。"}
     if any(word in lowered for word in ("paralysis", "paralyzed", "stun", "stunned")) or "麻痺" in text or "しびれ" in text or "気絶" in text:
-        return {"id": "paralyzed", "name": "麻痺", "duration": 2, "damage_per_turn": 0, "description": "体がうまく動かない。"}
+        return {
+            "id": "paralyzed",
+            "name": "麻痺",
+            "duration": 2,
+            "damage_per_turn": 0,
+            "description": "体がうまく動かない。",
+            "prevents_action": True,
+            "prevents_movement": True,
+            "prevents_attack": True,
+            "prevents_escape": True,
+            "blocked_actions": ["attack", "escape", "aggressive_action", "movement"],
+        }
     if any(word in lowered for word in ("dead", "death")) or "死亡" in text:
         return {"id": "dead", "name": "死亡", "duration": 0, "damage_per_turn": 0}
     if any(word in lowered for word in ("defeated", "unconscious")) or "戦闘不能" in text:
@@ -13893,6 +14986,61 @@ def _status_effect_preset(text: str) -> dict[str, Any]:
 def _status_effect_from_status_text(text: str) -> dict[str, Any]:
     preset = _status_effect_preset(text)
     return _normalise_status_effect(preset, source="status_text") if preset else {}
+
+
+def _status_effect_id_matches(effect: dict[str, Any], ids: set[str]) -> bool:
+    effect_id = _status_effect_id(effect)
+    if effect_id in ids:
+        return True
+    text = json.dumps(effect, ensure_ascii=False, default=str).casefold()
+    return any(item.casefold() in text for item in ids)
+
+
+def _status_effect_blocked_actions(effect: dict[str, Any]) -> set[str]:
+    raw = effect.get("blocked_actions")
+    actions: set[str] = set()
+    if isinstance(raw, str):
+        actions.update(part.strip().casefold() for part in re.split(r"[,/| ]+", raw) if part.strip())
+    elif isinstance(raw, (list, tuple, set)):
+        actions.update(str(part or "").strip().casefold() for part in raw if str(part or "").strip())
+    return actions
+
+
+def _status_effect_blocks_action(effect: dict[str, Any]) -> bool:
+    if _as_bool(effect.get("prevents_action")):
+        return True
+    if _status_effect_id_matches(effect, {INCAPACITATED_STATUS_ID, "paralyzed", "stunned"}):
+        return True
+    blocked = _status_effect_blocked_actions(effect)
+    return bool(blocked.intersection({"action", "actions", "all", "attack", "escape", "aggressive_action"}))
+
+
+def _status_effect_blocks_movement(effect: dict[str, Any]) -> bool:
+    if _as_bool(effect.get("prevents_movement")):
+        return True
+    if _status_effect_id_matches(effect, {INCAPACITATED_STATUS_ID, "paralyzed", "stunned"}):
+        return True
+    return bool(_status_effect_blocked_actions(effect).intersection({"movement", "move", "travel", "map", "subnode"}))
+
+
+def _status_effect_blocks_attack(effect: dict[str, Any]) -> bool:
+    if _as_bool(effect.get("prevents_attack")):
+        return True
+    if _status_effect_blocks_action(effect):
+        return True
+    return bool(_status_effect_blocked_actions(effect).intersection({"attack", "aggressive_action"}))
+
+
+def _status_effect_blocks_escape(effect: dict[str, Any]) -> bool:
+    if _as_bool(effect.get("prevents_escape")):
+        return True
+    if _status_effect_blocks_movement(effect):
+        return True
+    return bool(_status_effect_blocked_actions(effect).intersection({"escape", "flee", "run"}))
+
+
+def _status_effect_is_surrendered_or_fled(effect: dict[str, Any]) -> bool:
+    return _status_effect_id(effect) in {SURRENDERED_STATUS_ID, FLED_STATUS_ID}
 
 
 def _merge_status_effect(status_list: list[dict[str, Any]], effect: dict[str, Any]) -> None:
@@ -14673,8 +15821,41 @@ def _combat_action_text(*responses: Any) -> str:
                 parts.append(str(value))
         update = response.get("encounter_update")
         if isinstance(update, (dict, list)):
-            parts.append(json.dumps(_compact_value(update, max_chars=500), ensure_ascii=False))
+                parts.append(json.dumps(_compact_value(update, max_chars=500), ensure_ascii=False))
     return " ".join(parts)
+
+
+def _npc_action_tool_kind(*responses: Any) -> str:
+    surrender_values = {"surrender", "yield", "give_up", "giveup", "降伏", "降伏する", "降参", "降参する"}
+    flee_values = {"flee", "escape", "run_away", "runaway", "retreat", "withdraw", "逃亡", "逃走", "逃げる", "退却", "離脱"}
+    for response in responses:
+        if not isinstance(response, dict):
+            continue
+        if _as_bool(response.get("npc_surrender") or response.get("surrender")):
+            return "surrender"
+        if _as_bool(response.get("npc_flee") or response.get("flee")):
+            return "flee"
+        values: list[str] = []
+        for key in ("npc_action", "npc_tool", "tool", "intent"):
+            value = response.get(key)
+            if isinstance(value, (dict, list)):
+                value = _compact_value(value, max_chars=120)
+            value_text = str(value or "").strip()
+            if value_text:
+                values.append(value_text)
+        update = response.get("encounter_update")
+        if isinstance(update, dict):
+            for key in ("opponent_status", "npc_action", "npc_tool", "intent"):
+                value_text = str(update.get(key) or "").strip()
+                if value_text:
+                    values.append(value_text)
+        for value in values:
+            normalized = value.strip().casefold().replace("-", "_").replace(" ", "_")
+            if normalized in surrender_values or value.strip() in surrender_values:
+                return "surrender"
+            if normalized in flee_values or value.strip() in flee_values:
+                return "flee"
+    return ""
 
 
 def _skill_sp_cost(skill: dict[str, Any]) -> int:
@@ -14919,6 +16100,78 @@ def _character_calculated_defense(character: CharacterData) -> int:
     return max(0, level // 2 + attrs["con"] // 4 + attrs["wis"] // 6)
 
 
+def _danger_scaled_level_floor(danger: Any, *, boss: bool = False) -> int:
+    resolved = _clamp_world_danger(danger)
+    base = 1 + int(round(resolved * 0.72))
+    if boss:
+        base += 8
+    return max(1, min(NPC_MAX_LEVEL, base))
+
+
+def _danger_scaled_attribute_floor(danger: Any, *, boss: bool = False) -> int:
+    resolved = _clamp_world_danger(danger)
+    base = 10 + resolved // 5
+    if boss:
+        base += 5
+    return max(1, base)
+
+
+def _scale_character_for_danger(character: CharacterData, danger: Any, *, boss: bool = False) -> None:
+    if not isinstance(character, CharacterData) or character.flags.get("is_player"):
+        return
+    resolved_danger = _clamp_world_danger(danger)
+    boss = bool(
+        boss
+        or character.flags.get("generated_dungeon_boss")
+        or character.extra.get("generated_dungeon_boss")
+        or str(character.role or "").casefold() in {"boss", "ボス", "ダンジョンボス"}
+        or "boss" in str(character.category or "").casefold()
+    )
+    level_floor = _danger_scaled_level_floor(resolved_danger, boss=boss)
+    if _safe_int(character.level, 1) < level_floor:
+        character.level = level_floor
+
+    attrs = _character_runtime_attributes(character)
+    floor = _danger_scaled_attribute_floor(resolved_danger, boss=boss)
+    for key in CHARACTER_DEFAULT_ATTRIBUTES:
+        attrs[key] = max(_safe_int(attrs.get(key), CHARACTER_DEFAULT_ATTRIBUTES[key]), floor)
+    attrs["con"] = max(attrs["con"], floor + (2 if boss else 0))
+    attrs["str"] = max(attrs["str"], floor + (1 if boss else 0))
+    attrs["wis"] = max(attrs["wis"], floor)
+    attrs["magic"] = max(_safe_int(attrs.get("magic"), attrs["int"]), attrs["int"])
+    attrs["will"] = max(_safe_int(attrs.get("will"), attrs["wis"]), attrs["wis"])
+    character.attributes = attrs
+    character.extra["attributes"] = dict(attrs)
+    ability = character.extra.setdefault("ability", {})
+    if isinstance(ability, dict):
+        ability["attributes"] = dict(attrs)
+    character.flags["danger_level"] = resolved_danger
+    character.extra["danger_level"] = resolved_danger
+
+    old_max_hp = max(0, _safe_int(character.max_hp, 0))
+    old_current_hp = max(0, _safe_int(character.current_hp, 0))
+    calculated_hp = _character_calculated_max_hp(character)
+    if old_max_hp <= 0 or old_max_hp < calculated_hp:
+        character.max_hp = calculated_hp
+        if old_current_hp <= 0 or old_current_hp >= old_max_hp:
+            character.current_hp = calculated_hp
+        else:
+            character.current_hp = min(calculated_hp, old_current_hp)
+    calculated_sp = _character_calculated_max_sp(character, max_hp=character.max_hp)
+    if _safe_int(character.max_sp, 0) < calculated_sp:
+        character.max_sp = calculated_sp
+        if _safe_int(character.current_sp, 0) <= 0:
+            character.current_sp = calculated_sp
+    character.attack = max(_safe_int(character.attack, 0), _character_calculated_attack(character))
+    character.defense = max(_safe_int(character.defense, 0), _character_calculated_defense(character))
+
+
+def _danger_scaled_placeholder_enemy(name: str, danger: Any) -> CharacterData:
+    character = CharacterData(name=str(name or "Enemy"), role="敵対者", category="enemy_npc")
+    _scale_character_for_danger(character, danger)
+    return character
+
+
 def _character_state_is_dead(character: CharacterData) -> bool:
     state = str(character.state or character.flags.get("state") or "").strip().lower()
     if state in {"dead", "corpse", "killed"}:
@@ -15127,12 +16380,12 @@ def _quest_objective_name_from_text(text: str) -> str:
 
 def _quest_destination_danger(hint: dict[str, Any], kind: str, base_danger: int) -> int:
     text = str(hint.get("source_text") or "").casefold()
-    danger = max(1, int(base_danger) + 1)
+    danger = max(1, int(base_danger) + 5)
     if kind in {"dungeon", "wilderness", "mountain"}:
-        danger = max(2, danger)
+        danger = max(10, danger)
     if any(word in text for word in ("危険", "討伐", "魔物", "モンスター", "monster", "defeat", "rescue", "救出")):
-        danger += 1
-    return max(0, min(9, danger))
+        danger += 5
+    return _clamp_world_danger(danger)
 
 
 def _quest_text_requests_new_site(text: str) -> bool:
@@ -15796,8 +17049,40 @@ def _world_location_description_from_payload(payload: dict[str, Any]) -> str:
 def _world_location_danger_from_payload(payload: dict[str, Any]) -> int:
     for key in ("danger", "danger_level", "threat", "threat_level", "difficulty", "rank"):
         if key in payload:
-            return max(0, _safe_int(payload.get(key), 0))
+            return _clamp_world_danger(payload.get(key))
     return 0
+
+
+def _clamp_world_danger(value: Any, default: int = 0) -> int:
+    return max(0, min(WORLD_DANGER_MAX, _safe_int(value, default)))
+
+
+def _world_default_danger_for_index(index: int, target_count: int, rng: random.Random | None = None) -> int:
+    if target_count <= 1:
+        return 0
+    rng = rng or random.Random(f"world-default-danger|{index}|{target_count}")
+    progress = max(0.0, min(1.0, float(index) / max(1, target_count - 1)))
+    base = int(progress * 38)
+    jitter = rng.randint(0, 3)
+    return _clamp_world_danger(base + jitter)
+
+
+def _world_generation_location_danger(
+    payload: dict[str, Any],
+    name: str,
+    description: str,
+    premise: str,
+    index: int,
+    target_count: int,
+    rng: random.Random | None = None,
+) -> int:
+    if _world_location_is_final_endpoint_candidate(premise, payload, name, description):
+        seed = f"final-danger|{premise}|{name}|{description}"
+        local_rng = random.Random(seed)
+        return local_rng.randint(WORLD_FINAL_DANGER_MIN, WORLD_FINAL_DANGER_MAX)
+    if any(key in payload for key in ("danger", "danger_level", "threat", "threat_level", "difficulty", "rank")):
+        return _world_location_danger_from_payload(payload)
+    return _world_default_danger_for_index(index, target_count, rng)
 
 
 def _looks_like_facility_location_name(value: Any) -> bool:
@@ -15886,6 +17171,333 @@ def _infer_world_location_kind(payload: dict[str, Any], name: str, description: 
     return "landmark"
 
 
+def _infer_world_location_kind_for_request(
+    action: str,
+    payload: dict[str, Any],
+    name: str,
+    description: str = "",
+) -> str:
+    kind = _infer_world_location_kind(payload, name, description)
+    if _explicit_dungeon_location_request(action, payload, name, description):
+        return "dungeon"
+    return kind
+
+
+def _infer_world_location_kind_for_world_generation(
+    premise: str,
+    payload: dict[str, Any],
+    name: str,
+    description: str = "",
+) -> str:
+    kind = _infer_world_location_kind(payload, name, description)
+    if _explicit_dungeon_location_request("", payload, name, description):
+        return "dungeon"
+    if _world_generation_named_location_requested_as_dungeon(premise, payload, name, description):
+        return "dungeon"
+    return kind
+
+
+def _explicit_dungeon_location_request(action: str, payload: dict[str, Any], name: str, description: str = "") -> bool:
+    explicit = str(
+        payload.get("kind")
+        or payload.get("type")
+        or payload.get("category")
+        or payload.get("location_kind")
+        or ""
+    ).strip().casefold()
+    if explicit in {"dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair"}:
+        return True
+    text = "\n".join(
+        str(part or "")
+        for part in (
+            action,
+            name,
+            description,
+            payload.get("description"),
+            payload.get("overview"),
+            payload.get("summary"),
+            payload.get("objective"),
+        )
+    ).casefold()
+    if not text:
+        return False
+    dungeon_words = (
+        "dungeon",
+        "labyrinth",
+        "crypt",
+        "lair",
+        "ダンジョン",
+        "迷宮",
+        "地下迷宮",
+        "洞窟",
+        "洞穴",
+        "遺跡",
+    )
+    temple_words = ("temple", "shrine", "神殿", "祠", "聖域")
+    if any(word in text for word in dungeon_words):
+        return True
+    if any(word in text for word in temple_words) and _generated_dungeon_boss_text_implies_boss(text):
+        return True
+    return False
+
+
+def _world_location_is_final_endpoint_candidate(
+    premise: str,
+    payload: dict[str, Any],
+    name: str,
+    description: str = "",
+) -> bool:
+    local_text = "\n".join(
+        str(part or "")
+        for part in (
+            name,
+            description,
+            payload.get("role"),
+            payload.get("purpose"),
+            payload.get("summary"),
+            payload.get("objective"),
+            payload.get("boss_npc"),
+            payload.get("boss"),
+        )
+    ).casefold()
+    if not local_text:
+        return False
+    premise_text = str(premise or "").casefold()
+    text = f"{local_text}\n{premise_text if _world_generation_premise_refers_to_location(premise, name) else ''}"
+    final_markers = (
+        "final",
+        "last",
+        "endgame",
+        "final boss",
+        "journey's end",
+        "旅の最終",
+        "最終地点",
+        "終着",
+        "終盤",
+        "ラスボス",
+        "最終神殿",
+        "最奥の神殿",
+        "最後の",
+        "終焉",
+    )
+    if any(marker in text for marker in final_markers):
+        return True
+    place_markers = ("神殿", "temple", "shrine", "聖域", "迷宮", "dungeon", "lair")
+    return any(marker in text for marker in place_markers) and _generated_dungeon_boss_text_implies_boss(text)
+
+
+def _world_generation_named_location_requested_as_dungeon(
+    premise: str,
+    payload: dict[str, Any],
+    name: str,
+    description: str = "",
+) -> bool:
+    if not _world_generation_premise_refers_to_location(premise, name):
+        return False
+    return _explicit_dungeon_location_request(premise, payload, name, description)
+
+
+def _world_generation_premise_refers_to_location(premise: str, name: str) -> bool:
+    premise_key = _world_location_name_key(premise)
+    name_key = _world_location_name_key(name)
+    return bool(name_key and len(name_key) >= 3 and name_key in premise_key)
+
+
+def _world_generation_dungeon_has_boss(world: WorldData, location_name: str) -> bool:
+    for character in world.characters.values():
+        if character.location != location_name:
+            continue
+        if _character_state_is_dead(character):
+            continue
+        if character.flags.get("generated_dungeon_boss") or character.extra.get("generated_dungeon_boss"):
+            return True
+        text = " ".join(str(value or "") for value in (character.role, character.category, character.extra.get("display_alias"))).casefold()
+        if any(marker in text for marker in ("boss", "ボス", "守護者", "主")):
+            return True
+    return False
+
+
+def _explicit_generated_dungeon_location_request(
+    action: str,
+    response: dict[str, Any],
+    name: str,
+    description: str = "",
+) -> bool:
+    if not _explicit_dungeon_location_request(action, response, name, description):
+        return False
+    if response.get("discovered_location") or _generated_dungeon_boss_payload(response):
+        return True
+    text = "\n".join(
+        str(part or "")
+        for part in (
+            action,
+            response.get("narration"),
+            response.get("text"),
+            response.get("message"),
+            description,
+        )
+    ).casefold()
+    return any(
+        marker in text
+        for marker in (
+            "create",
+            "generate",
+            "discover",
+            "spawn",
+            "生成",
+            "発見",
+            "出現",
+            "現れ",
+            "生や",
+        )
+    )
+
+
+def _generated_dungeon_boss_payload(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        for key in ("boss_npc", "boss", "boss_enemy", "final_boss", "guardian", "ruler", "keeper"):
+            raw = value.get(key)
+            payload = _generated_dungeon_boss_payload(raw)
+            if payload:
+                return payload
+        discovered = value.get("discovered_location")
+        if isinstance(discovered, dict):
+            payload = _generated_dungeon_boss_payload(discovered)
+            if payload:
+                return payload
+        for key in ("enemies", "opponents", "enemy_npcs", "npcs", "characters"):
+            for item in _as_list(value.get(key)):
+                if not isinstance(item, dict):
+                    continue
+                text = json.dumps(item, ensure_ascii=False).casefold()
+                if any(marker in text for marker in ("boss", "final", "guardian", "ボス", "守護者", "主", "女神")):
+                    return dict(item)
+        return {}
+    if isinstance(value, list):
+        for item in value:
+            payload = _generated_dungeon_boss_payload(item)
+            if payload:
+                return payload
+    if isinstance(value, str) and value.strip():
+        return {"name": value.strip(), "description": value.strip(), "hostile": True}
+    return {}
+
+
+def _generated_dungeon_boss_required(action: str, response: dict[str, Any], location: LocationData) -> bool:
+    if _generated_dungeon_boss_payload(response):
+        return True
+    for key in ("has_boss", "boss_required", "requires_boss", "place_boss", "spawn_boss"):
+        if key in response and _as_bool(response.get(key)):
+            return True
+    discovered = response.get("discovered_location")
+    if isinstance(discovered, dict):
+        for key in ("has_boss", "boss_required", "requires_boss", "place_boss", "spawn_boss"):
+            if key in discovered and _as_bool(discovered.get(key)):
+                return True
+    text = "\n".join(
+        str(part or "")
+        for part in (
+            action,
+            location.name,
+            location.description,
+            response.get("narration"),
+            response.get("objective"),
+            response.get("event"),
+            response.get("discovered_location"),
+        )
+    ).casefold()
+    if any(marker in text for marker in ("no boss", "ボスはいない", "ボスなし", "守護者はいない")):
+        return False
+    return _generated_dungeon_boss_text_implies_boss(text)
+
+
+def _generated_dungeon_boss_text_implies_boss(text: str) -> bool:
+    text = str(text or "").casefold()
+    if not text:
+        return False
+    direct_markers = (
+        "boss",
+        "final boss",
+        "guardian",
+        "overlord",
+        "demon lord",
+        "ボス",
+        "ラスボス",
+        "守護者",
+        "支配者",
+        "魔王",
+        "主が",
+        "主は",
+    )
+    if any(marker in text for marker in direct_markers):
+        return True
+    waiting_markers = ("待つ", "待って", "待ち受け", "鎮座", "await", "waiting", "waits")
+    entity_markers = ("女神", "神", "神格", "邪神", "主", "王", "deity", "goddess", "god", "lord")
+    return any(marker in text for marker in waiting_markers) and any(marker in text for marker in entity_markers)
+
+
+def _fallback_generated_dungeon_boss_payload(
+    location: LocationData,
+    action: str,
+    response: dict[str, Any],
+) -> dict[str, Any]:
+    text = "\n".join(
+        str(part or "")
+        for part in (
+            action,
+            location.name,
+            location.description,
+            response.get("narration"),
+            response.get("objective"),
+        )
+    )
+    name = _generated_dungeon_boss_name_from_text(text) or f"{location.name}の守護者"
+    description = _short_text(
+        f"{location.name}の最奥部で待ち受ける強敵。{location.description or action}",
+        260,
+    )
+    danger = max(5, _safe_int(location.extra.get("danger_level", location.extra.get("danger")), 0))
+    return {
+        "name": name,
+        "role": "ダンジョンボス",
+        "category": "boss",
+        "description": description,
+        "personality": "侵入者の力と意志を試すように振る舞う。",
+        "look": description,
+        "hostile": True,
+        "danger_level": danger,
+        "level": _generated_dungeon_boss_level(location),
+        "image_generation_prompt": [
+            name,
+            "fantasy dungeon boss",
+            "final chamber guardian",
+            "powerful presence",
+        ],
+        "aliases": [name, "ボス", "守護者"],
+    }
+
+
+def _generated_dungeon_boss_name_from_text(text: str) -> str:
+    text = str(text or "")
+    patterns = (
+        r"([^\s、。,.「」『』（）()\[\]{}]{2,24})(?:が|は)(?:待つ|待って|待ち受け|鎮座|いる)",
+        r"([^\s、。,.「」『』（）()\[\]{}]{1,18}の(?:女神|神|邪神|主|王|守護者))",
+        r"(?:boss|guardian|deity|goddess|god|lord)[:：\s]+([A-Za-z0-9 _'\\-]{2,40})",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            value = str(match.group(1) or "").strip("「」『』 　")
+            if value:
+                return _clean_generated_name(value, "ダンジョンの守護者", kind="monster")
+    return ""
+
+
+def _generated_dungeon_boss_level(location: LocationData) -> int:
+    danger = _safe_int(location.extra.get("danger_level", location.extra.get("danger")), 0)
+    return max(5, min(NPC_MAX_LEVEL, 5 + danger * 2))
+
+
 def _world_kind_is_settlement(kind: str) -> bool:
     return str(kind or "").strip().lower() in {"settlement", "town", "village", "city", "hamlet", "base"}
 
@@ -15918,7 +17530,8 @@ def _dungeon_subnode_target_count(location: LocationData) -> int:
         return scale_counts[scale]
     danger = _safe_int(extra.get("danger_level", extra.get("danger")), 0)
     text = "\n".join(str(value or "") for value in (location.name, location.description, extra.get("location_kind"), extra.get("scale"), extra.get("size"))).casefold()
-    base = 6 + max(0, min(9, danger))
+    danger_step = danger if danger <= 9 else danger // 5
+    base = 6 + max(0, min(9, danger_step))
     if any(word in text for word in ("labyrinth", "maze", "迷宮", "迷路", "巨大", "広大", "大規模")):
         base += 5
     elif any(word in text for word in ("ruin", "mine", "遺跡", "鉱山", "廃坑")):
@@ -16150,10 +17763,10 @@ def _dungeon_branch_parent(graph: dict[str, Any], index: int) -> str:
 
 def _world_location_blocks_world_map_departure(location: LocationData) -> bool:
     kind = str(location.extra.get("location_kind") or "").strip().lower()
-    danger = _safe_int(location.extra.get("danger_level", location.extra.get("danger")), 0)
+    danger = _clamp_world_danger(location.extra.get("danger_level", location.extra.get("danger")))
     if kind in {"dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair"}:
         return True
-    if kind in {"wilderness", "forest", "swamp", "mountain", "wilds"} and danger >= 2:
+    if kind in {"wilderness", "forest", "swamp", "mountain", "wilds"} and danger >= 10:
         return True
     if location.flags.get("dangerous") or location.flags.get("dungeon"):
         return True
@@ -16351,7 +17964,28 @@ def _unique_world_location_name(world: WorldData, base: str) -> str:
 
 def _nearby_dynamic_location_requested(action: str, proposed_location: str) -> bool:
     text = f"{action}\n{proposed_location}".lower()
-    movement_words = ("go", "move", "travel", "head", "enter", "nearby", "around", "探", "行", "向", "入", "近く", "周辺")
+    movement_words = (
+        "go",
+        "move",
+        "travel",
+        "head",
+        "enter",
+        "nearby",
+        "around",
+        "create",
+        "generate",
+        "discover",
+        "探",
+        "行",
+        "向",
+        "入",
+        "近く",
+        "周辺",
+        "生成",
+        "発見",
+        "作",
+        "生や",
+    )
     location_words = (
         "dungeon",
         "cave",
@@ -16365,6 +17999,8 @@ def _nearby_dynamic_location_requested(action: str, proposed_location: str) -> b
         "plain",
         "tower",
         "mine",
+        "temple",
+        "shrine",
         "村",
         "街",
         "町",
@@ -16383,6 +18019,10 @@ def _nearby_dynamic_location_requested(action: str, proposed_location: str) -> b
         "塔",
         "遺跡",
         "鉱山",
+        "神殿",
+        "寺院",
+        "祠",
+        "聖域",
     )
     return any(word in text for word in movement_words) and any(word in text for word in location_words)
 
@@ -17777,6 +19417,64 @@ def _is_attack_action(action: str) -> bool:
     return any(keyword in text for keyword in keywords)
 
 
+def _is_aggressive_player_action(action: str) -> bool:
+    text = action.strip()
+    if not text:
+        return False
+    lowered = text.casefold()
+    if _is_attack_action(text):
+        return True
+    japanese_keywords = ("襲う", "殺す", "殺そう", "殴る", "蹴る", "斬る", "刺す", "撃つ", "傷つける", "叩く")
+    english_keywords = (
+        "attack",
+        "assault",
+        "kill",
+        "murder",
+        "strike",
+        "slash",
+        "stab",
+        "shoot",
+        "punch",
+        "kick",
+        "hurt",
+    )
+    return any(word in text for word in japanese_keywords) or any(word in lowered for word in english_keywords)
+
+
+def _is_movement_intent(action: str) -> bool:
+    text = action.strip()
+    if not text:
+        return False
+    lowered = text.casefold()
+    japanese_keywords = (
+        "移動",
+        "行く",
+        "向かう",
+        "進む",
+        "戻る",
+        "入る",
+        "出る",
+        "離れる",
+        "地図",
+        "マップ",
+        "ワールドマップ",
+        "サブノード",
+    )
+    english_keywords = (
+        "move",
+        "go to",
+        "head to",
+        "travel",
+        "enter",
+        "leave",
+        "return",
+        "map",
+        "world map",
+        "subnode",
+    )
+    return any(word in text for word in japanese_keywords) or any(word in lowered for word in english_keywords)
+
+
 def _is_surprise_attack_action(action: str) -> bool:
     text = action.strip().lower()
     return any(keyword in text for keyword in ("不意打ち", "奇襲", "先制", "背後から", "ambush", "surprise", "sneak attack"))
@@ -17790,6 +19488,16 @@ def _is_skill_action(action: str) -> bool:
 def _is_escape_action(action: str) -> bool:
     text = action.strip().lower()
     return any(keyword in text for keyword in ("逃走", "逃げ", "離脱", "退却", "run away", "escape", "flee"))
+
+
+def _is_accept_surrender_action(action: str) -> bool:
+    text = action.strip()
+    if not text:
+        return False
+    lowered = text.casefold()
+    japanese = ("降伏を受け入", "降参を受け入", "降伏を認め", "降参を認め", "戦闘を止め", "見逃す", "許す")
+    english = ("accept surrender", "accept their surrender", "spare", "show mercy", "stop fighting")
+    return any(word in text for word in japanese) or any(word in lowered for word in english)
 
 
 def _extract_skill_name(action: str) -> str:
@@ -18919,6 +20627,12 @@ def _actor_present_at(location: str, state: str, flags: dict[str, Any], current_
 def _character_is_hostile_actor(character: CharacterData) -> bool:
     flags = character.flags if isinstance(character.flags, dict) else {}
     extra = character.extra if isinstance(character.extra, dict) else {}
+    if _as_bool(flags.get("surrendered")) or _as_bool(extra.get("surrendered")):
+        return False
+    if str(extra.get("combat_status") or flags.get("combat_status") or "").strip().lower() == SURRENDERED_STATUS_ID:
+        return False
+    if any(_status_effect_id(_normalise_status_effect(effect)) == SURRENDERED_STATUS_ID for effect in character.status_effects):
+        return False
     if _as_bool(flags.get("hostile")) or _as_bool(extra.get("hostile")):
         return True
     if _as_bool(flags.get("enemy_npc")) or _as_bool(extra.get("enemy_npc")):
@@ -18930,7 +20644,7 @@ def _actor_state_is_present(value: str) -> bool:
     actor_state = str(value or "present").strip().lower()
     if not actor_state:
         actor_state = "present"
-    return actor_state not in {"absent", "gone", "left", "hidden", "dead", "ended", "inactive", "removed"}
+    return actor_state not in {"absent", "gone", "left", "hidden", "dead", "ended", "inactive", "removed", "fled", "escaped", "retreated"}
 
 
 def _combat_trigger_text(action: str, response: dict[str, Any], narration: str, choices: list[str]) -> str:
