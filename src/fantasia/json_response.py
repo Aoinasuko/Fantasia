@@ -1326,6 +1326,59 @@ SCHEMAS: dict[str, ManagerSchema] = {
             },
         },
     ),
+    "create_initial_character_profile": ManagerSchema(
+        manager_name="create_initial_character_profile",
+        fields=(
+            FieldRule("name", (str,)),
+            FieldRule("gender", (str,)),
+            FieldRule("age", (str,)),
+            FieldRule("backstory", (str,)),
+            FieldRule("personality", (str,)),
+            FieldRule("look", (str,)),
+            FieldRule("image_generation_prompt", (list, str), aliases=("image_prompt", "prompt")),
+            FieldRule("traits", (list,), non_empty=False, string_items=False),
+            FieldRule("skills", (list,), non_empty=False, string_items=False),
+            FieldRule("ability", (dict, list, str), required=False, non_empty=False, string_items=False),
+            FieldRule("role", (str,), required=False),
+            FieldRule("category", (str,), required=False),
+            FieldRule("negative_prompt", (str,), required=False, non_empty=False),
+        ),
+        example={
+            "name": "Mira",
+            "gender": "female",
+            "age": "late 30s",
+            "role": "innkeeper",
+            "category": "resident",
+            "backstory": "A former road guide who now keeps the village inn.",
+            "personality": "Calm, observant, and protective toward travelers.",
+            "ability": {"name": "Old Road Memory", "description": "Remembers safe routes and hidden dangers."},
+            "look": "A practical innkeeper with a navy apron, lantern charm, and weathered travel boots.",
+            "image_generation_prompt": ["fantasy innkeeper woman", "navy apron", "lantern charm", "anime illustration"],
+            "traits": [
+                {
+                    "name": "Watchful Host",
+                    "description": "Quickly notices danger near guests.",
+                    "severity": 2,
+                    "power": 2,
+                    "strength_level": 2,
+                    "effect": "Better at warning allies before ambushes.",
+                }
+            ],
+            "skills": [
+                {
+                    "name": "Lantern Signal",
+                    "description": "Uses a lantern flash to guide or distract.",
+                    "element": "light",
+                    "skill_type": "support",
+                    "effects": "Improves ally positioning and weakens surprise attacks.",
+                    "sp_cost": 3,
+                    "power": 2,
+                    "strength_level": 2,
+                    "usefulness": "Supportive utility in travel and combat.",
+                }
+            ],
+        },
+    ),
     "create_look": ManagerSchema(
         manager_name="create_look",
         fields=(
@@ -1528,6 +1581,10 @@ def schema_instruction(manager_name: str) -> str:
         )
     if manager_name == "create_world_location_batch":
         instruction += (
+            "\ncreate_world_location_batch NPC template rules:\n"
+            "- If enemy_npc_templates are supplied and a dungeon boss matches one, include boss_npc.npc_template_id with that template id.\n"
+        )
+        instruction += (
             "\ncreate_world_location_batch rules:\n"
             "- Generate only the requested 3 to 5 new locations, or fewer when remaining_count is smaller.\n"
             "- All human-readable names and descriptions must be Japanese.\n"
@@ -1562,6 +1619,10 @@ def schema_instruction(manager_name: str) -> str:
         )
     if manager_name == "field_event_evaluator":
         instruction += (
+            "\nfield_event_evaluator NPC template rules:\n"
+            "- If NPC template candidates are supplied and a generated npc/enemy/boss matches one, include npc_template_id with that template id.\n"
+        )
+        instruction += (
             "\nfield_event_evaluator rules:\n"
             "- If the player explicitly asks to discover, create, or move to a dungeon, discovered_location.kind must be dungeon.\n"
             "- Do not split a dungeon, temple, cave, entrance, interior, depth, or boss room into separate world locations. Put them into one dungeon location and let the game generate subnodes.\n"
@@ -1571,12 +1632,25 @@ def schema_instruction(manager_name: str) -> str:
         )
     if manager_name == "settlement_quest_generator":
         instruction += (
+            "\nsettlement_quest_generator NPC template rules:\n"
+            "- If NPC template candidates are supplied and fit the objective, include target_npc_template_id. "
+            "Use enemy template ids for defeat targets and rescue blockers; use friendly template ids for rescue targets and delivery targets.\n"
+        )
+        instruction += (
             "\nsettlement_quest_generator rules:\n"
             "- Generate only the requested 2 to 3 quests per response. Do not fill the whole board at once.\n"
             "- Each quest object must include quest_type, one of rescue, retrieve, defeat, delivery, investigate, or procure.\n"
             "- Defeating, hunting, clearing, or driving away monsters/enemies that block a road or place is always quest_type=\"defeat\".\n"
             "- Only requests to obtain a suitable item from somewhere are quest_type=\"procure\".\n"
             "- Include destination_hint with location_kind, anchor_kind, objective_subnode_name, and objective_description whenever possible.\n"
+        )
+    if manager_name == "create_initial_character_profile":
+        instruction += (
+            "\ncreate_initial_character_profile rules:\n"
+            "- Return one character object only, not separate create_character/create_look/create_trait/create_skill payloads.\n"
+            "- image_generation_prompt should be a compact array of English SDXL tags.\n"
+            "- traits and skills may be empty arrays only when the character truly has no notable trait or skill.\n"
+            "- Use the supplied element ids for skill.element.\n"
         )
     if manager_name == "master_ai_facilitator":
         instruction += (
@@ -1754,6 +1828,17 @@ def _apply_alias(response: dict[str, Any], field: FieldRule) -> None:
 def _canonicalize_manager_response(manager_name: str, value: Any) -> Any:
     if manager_name == "create_settlement_detail":
         return _repair_settlement_detail_response(value)
+    if manager_name == "create_initial_character_profile":
+        if isinstance(value, dict):
+            for key in ("character", "profile", "npc"):
+                nested = value.get(key)
+                if isinstance(nested, dict):
+                    response = dict(nested)
+                    for outer_key, outer_value in value.items():
+                        if outer_key != key and outer_key not in response:
+                            response[outer_key] = outer_value
+                    return response
+        return value
     if manager_name == "settlement_quest_generator":
         return _wrap_collection_response(
             value,

@@ -696,6 +696,12 @@ def _quest_from_raw(item: Any, index: int) -> QuestData:
         data["name"] = str(data.get("name") or data.get("quest_name") or data.get("title") or f"Quest {index + 1}")
         data["overview"] = str(data.get("overview") or data.get("description") or data.get("summary") or "")
         quest = QuestData.from_dict(data, default_name=f"Quest {index + 1}")
+        known_keys = {"name", "overview", "status", "neighboring_settlement", "choices", "log", "flags", "extra"}
+        if isinstance(data.get("extra"), dict):
+            quest.extra.update(data.get("extra") or {})
+        for key, value in data.items():
+            if key not in known_keys and value not in (None, "", [], {}):
+                quest.extra.setdefault(key, value)
         quest_type = _normalise_quest_type_id(
             data.get("quest_type")
             or data.get("objective_type")

@@ -60,6 +60,17 @@ from .items import (
 from .json_response import JsonResponseError, retry_prompt, sanitize_retry_response, schema_instruction, validate_manager_response
 from .json_store import JsonStore
 from .llm import BaseLlmBackend
+from .npc_templates import (
+    ENEMY_NPC_TEMPLATE_CATEGORIES,
+    FRIENDLY_NPC_TEMPLATE_CATEGORIES,
+    choose_npc_template,
+    merge_npc_template_payload,
+    npc_template_ai_context,
+    npc_template_ids_from_payloads,
+    npc_template_prompt_summaries,
+    npc_template_to_character_payload,
+    used_npc_template_ids,
+)
 from .paths import GENERATED_DIR
 from .prompt_templates import PromptTemplateStore
 from .quests import (
@@ -3124,6 +3135,84 @@ class GameEngine:
     def _enemy_strength_setting(self) -> str:
         return self._world_customization().get("enemy_strength", DEFAULT_WORLD_ENEMY_STRENGTH)
 
+    def _npc_template_used_ids(self, world: WorldData | None = None) -> set[str]:
+        return used_npc_template_ids(world or self.state.world_data)
+
+    def _npc_template_categories_for_objective(self, objective_role: str) -> tuple[str, ...]:
+        role = str(objective_role or "").strip()
+        if role in {"defeat_target", "blocker", "boss", "enemy", "opponent"}:
+            return ENEMY_NPC_TEMPLATE_CATEGORIES
+        return FRIENDLY_NPC_TEMPLATE_CATEGORIES
+
+    def _npc_template_danger_for_location(self, location_name: str) -> int:
+        return self._current_location_danger(location_name)
+
+    def _select_npc_template(
+        self,
+        *,
+        categories: tuple[str, ...],
+        danger_level: int,
+        seed: str,
+        payloads: tuple[Any, ...] = (),
+    ) -> dict[str, Any] | None:
+        preferred_ids = npc_template_ids_from_payloads(*payloads)
+        return choose_npc_template(
+            categories,
+            danger_level=danger_level,
+            preferred_ids=preferred_ids,
+            used_ids=self._npc_template_used_ids(),
+            seed=seed,
+        )
+
+    def _npc_template_character_payload(
+        self,
+        template: dict[str, Any] | None,
+        *,
+        danger_level: int,
+        seed: str,
+        hostile: bool | None = None,
+        boss: bool = False,
+    ) -> dict[str, Any]:
+        return npc_template_to_character_payload(
+            template,
+            danger_level=danger_level,
+            enemy_strength=self._enemy_strength_setting(),
+            seed=seed,
+            hostile=hostile,
+            boss=boss,
+        )
+
+    def _template_augmented_npc_raw(
+        self,
+        raw: Any,
+        *,
+        categories: tuple[str, ...],
+        danger_level: int,
+        seed: str,
+        hostile: bool | None = None,
+        boss: bool = False,
+        select_without_id: bool = False,
+    ) -> dict[str, Any]:
+        payloads = (raw,) if isinstance(raw, dict) else ()
+        preferred_ids = npc_template_ids_from_payloads(*payloads)
+        if not preferred_ids and not select_without_id:
+            return dict(raw) if isinstance(raw, dict) else {"name": str(raw or "")}
+        template = choose_npc_template(
+            categories,
+            danger_level=danger_level,
+            preferred_ids=preferred_ids,
+            used_ids=self._npc_template_used_ids(),
+            seed=seed,
+        )
+        template_payload = self._npc_template_character_payload(
+            template,
+            danger_level=danger_level,
+            seed=seed,
+            hostile=hostile,
+            boss=boss,
+        )
+        return merge_npc_template_payload(template_payload, raw)
+
     def _ensure_settlement_crime_profile(self, settlement: LocationData) -> dict[str, Any]:
         profile = settlement.extra.setdefault("crime", {})
         if not isinstance(profile, dict):
@@ -4164,11 +4253,28 @@ class GameEngine:
         if not target_subnode:
             return None
         boss_payload = _generated_dungeon_boss_payload(response) or _fallback_generated_dungeon_boss_payload(location, premise_context, response)
+        danger = max(1, _safe_int(location.extra.get("danger_level", location.extra.get("danger")), 0))
+        boss_template = self._select_npc_template(
+            categories=ENEMY_NPC_TEMPLATE_CATEGORIES,
+            danger_level=danger,
+            seed=f"world-generation-boss:{world.world_name}:{location.name}",
+            payloads=(boss_payload, response),
+        ) if npc_template_ids_from_payloads(boss_payload, response) else None
+        if boss_template:
+            boss_payload = merge_npc_template_payload(
+                self._npc_template_character_payload(
+                    boss_template,
+                    danger_level=danger,
+                    seed=f"world-generation-boss-payload:{world.world_name}:{location.name}",
+                    hostile=True,
+                    boss=True,
+                ),
+                boss_payload,
+            )
         character = _enemy_npc_from_raw(boss_payload, len(world.characters))
         character.name = _unique_character_name(world, character.name)
         character.role = str(character.role or "ダンジョンボス")
         character.category = "enemy_npc"
-        danger = max(1, _safe_int(location.extra.get("danger_level", location.extra.get("danger")), 0))
         character.flags["enemy_npc"] = True
         character.flags["hostile"] = _as_bool(character.flags.get("hostile") if "hostile" in character.flags else True)
         character.flags["generated_dungeon_boss"] = True
@@ -4376,6 +4482,12 @@ class GameEngine:
                 if name not in important_names
             ],
             "existing_location_names": existing_names[-80:],
+            "enemy_npc_templates": npc_template_prompt_summaries(
+                ENEMY_NPC_TEMPLATE_CATEGORIES,
+                danger_level=50,
+                used_ids=self._npc_template_used_ids(world),
+                limit=16,
+            ),
             "rules": [
                 "Generate only new locations. Never reuse existing_location_names.",
                 "Avoid creating multiple versions of unique one-off locations such as the capital, final temple, main shrine, or central dungeon.",
@@ -6369,9 +6481,18 @@ class GameEngine:
         character.current_sp = max(0, min(character.max_sp, current_sp))
         calculated_attack = _character_calculated_attack(character)
         calculated_defense = _character_calculated_defense(character)
-        if character.attack <= 0 or (not character.flags.get("is_player") and character.attack < calculated_attack):
+        template_controlled = bool(character.extra.get("npc_template_id") or character.flags.get("npc_template_id"))
+        if character.attack <= 0 or (
+            not character.flags.get("is_player")
+            and not template_controlled
+            and character.attack < calculated_attack
+        ):
             character.attack = calculated_attack
-        if character.defense <= 0 or (not character.flags.get("is_player") and character.defense < calculated_defense):
+        if character.defense <= 0 or (
+            not character.flags.get("is_player")
+            and not template_controlled
+            and character.defense < calculated_defense
+        ):
             character.defense = calculated_defense
         character.extra["level"] = character.level
         character.extra["current_hp"] = character.current_hp
@@ -7781,6 +7902,24 @@ class GameEngine:
         world_payload = _ai_json(
             _world_ai_context(world, include_characters=True, include_monsters=False, include_quests=True)
         )
+        used_template_ids = used_npc_template_ids(world)
+        npc_template_payload = json.dumps(
+            {
+                "enemy_templates": npc_template_prompt_summaries(
+                    ENEMY_NPC_TEMPLATE_CATEGORIES,
+                    danger_level=self._current_location_danger(settlement_name),
+                    used_ids=used_template_ids,
+                    limit=12,
+                ),
+                "friendly_templates": npc_template_prompt_summaries(
+                    FRIENDLY_NPC_TEMPLATE_CATEGORIES,
+                    danger_level=self._current_location_danger(settlement_name),
+                    used_ids=used_template_ids,
+                    limit=12,
+                ),
+            },
+            ensure_ascii=False,
+        )
         collected: list[dict[str, Any]] = []
         seen_names = {quest.name for quest in world.quests}
         batch_records: list[dict[str, Any]] = []
@@ -7823,6 +7962,18 @@ class GameEngine:
                     ),
                 },
             ]
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        f"NPC template candidates: {npc_template_payload}\n"
+                        "When a template fits a quest objective, include target_npc_template_id in the quest object. "
+                        "Use enemy_templates for defeat targets and rescue blockers. "
+                        "Use friendly_templates for rescue targets and delivery targets. "
+                        "The game will instantiate that template and let a later LLM pass fill only missing flavor details."
+                    ),
+                }
+            )
             response = self._chat_json(
                 "settlement_quest_generator",
                 messages,
@@ -8091,36 +8242,17 @@ class GameEngine:
                 item_total=total,
             )
             try:
-                profile = self._create_character(player_name, premise, world, character)
+                profile = self._create_initial_character_profile(player_name, premise, world, character)
             except JsonResponseError as exc:
-                self._append_character_enrichment_error(world, "create_character", character, exc)
+                self._append_character_enrichment_error(world, "create_initial_character_profile", character, exc)
+                self._enrich_initial_character_legacy(player_name, premise, world, character)
             else:
                 self._apply_character_profile(character, profile)
-                self._append_character_history(world, "create_character", character, profile)
-
-            try:
-                look = self._create_look(player_name, world, character)
-            except JsonResponseError as exc:
-                self._append_character_enrichment_error(world, "create_look", character, exc)
-            else:
-                self._apply_character_look(character, look)
-                self._append_character_history(world, "create_look", character, look)
-
-            try:
-                traits = self._create_trait(player_name, world, character)
-            except JsonResponseError as exc:
-                self._append_character_enrichment_error(world, "create_trait", character, exc)
-            else:
-                self._apply_character_traits(character, traits)
-                self._append_character_history(world, "create_trait", character, traits)
-
-            try:
-                skills = self._create_skill(player_name, world, character)
-            except JsonResponseError as exc:
-                self._append_character_enrichment_error(world, "create_skill", character, exc)
-            else:
-                self._apply_character_skills(character, skills)
-                self._append_character_history(world, "create_skill", character, skills)
+                self._apply_character_look(character, profile)
+                self._apply_character_traits(character, profile)
+                self._apply_character_skills(character, profile)
+                character.extra["raw_create_initial_character_profile"] = _strip_response_metadata(profile)
+                self._append_character_history(world, "create_initial_character_profile", character, profile)
             percent = progress_start + int((progress_end - progress_start) * index / max(1, total))
             self._emit_world_generation_progress(
                 progress_callback,
@@ -8131,6 +8263,45 @@ class GameEngine:
                 item_current=index,
                 item_total=total,
             )
+
+    def _enrich_initial_character_legacy(
+        self,
+        player_name: str,
+        premise: str,
+        world: WorldData,
+        character: CharacterData,
+    ) -> None:
+        try:
+            profile = self._create_character(player_name, premise, world, character)
+        except JsonResponseError as exc:
+            self._append_character_enrichment_error(world, "create_character", character, exc)
+        else:
+            self._apply_character_profile(character, profile)
+            self._append_character_history(world, "create_character", character, profile)
+
+        try:
+            look = self._create_look(player_name, world, character)
+        except JsonResponseError as exc:
+            self._append_character_enrichment_error(world, "create_look", character, exc)
+        else:
+            self._apply_character_look(character, look)
+            self._append_character_history(world, "create_look", character, look)
+
+        try:
+            traits = self._create_trait(player_name, world, character)
+        except JsonResponseError as exc:
+            self._append_character_enrichment_error(world, "create_trait", character, exc)
+        else:
+            self._apply_character_traits(character, traits)
+            self._append_character_history(world, "create_trait", character, traits)
+
+        try:
+            skills = self._create_skill(player_name, world, character)
+        except JsonResponseError as exc:
+            self._append_character_enrichment_error(world, "create_skill", character, exc)
+        else:
+            self._apply_character_skills(character, skills)
+            self._append_character_history(world, "create_skill", character, skills)
 
     def _append_character_enrichment_error(
         self,
@@ -8158,6 +8329,56 @@ class GameEngine:
                 "response": sanitize_retry_response(exc.response),
                 "nonfatal": True,
             }
+        )
+
+    def _create_initial_character_profile(
+        self,
+        player_name: str,
+        premise: str,
+        world: WorldData,
+        character: CharacterData,
+    ) -> dict[str, Any]:
+        premise_context = _short_text(premise, 5000)
+        world_payload = _ai_json(
+            _world_ai_context(world, include_characters=False, include_monsters=False, include_quests=True)
+        )
+        character_payload = _ai_json(_character_ai_context(character))
+        power_instruction = _skill_trait_power_instruction(character)
+        element_options = ", ".join(f"{value}({tr_enum('element', value, 'ja', fallback=value)})" for value in ELEMENT_IDS)
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are Fantasia's combined initial NPC enrichment manager. "
+                    "Return compact JSON only. Fill one character profile, appearance, traits, and skills in a single response. "
+                    "Use Japanese for story text. Use concise English SDXL tags for image_generation_prompt. "
+                    "Do not invent extra unrelated characters."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Player name: {player_name}\n"
+                    f"World premise: {premise_context}\n"
+                    f"World data: {world_payload}\n"
+                    f"Character name: {character.name}\n"
+                    f"Character role: {character.role}\n"
+                    f"Existing character data: {character_payload}\n"
+                    f"{power_instruction}\n"
+                    f"Available element ids: {element_options}\n"
+                    "Return fields: name, gender, age, role, category, backstory, personality, ability, "
+                    "look, image_generation_prompt, traits, skills. "
+                    "Each trait should include name, description, severity, power, strength_level, and effect. "
+                    "Each skill should include name, description, element, skill_type, effects, sp_cost, power, strength_level, and usefulness."
+                ),
+            },
+        ]
+        return self._chat_json(
+            "create_initial_character_profile",
+            messages,
+            max_tokens=1500,
+            world_name=world.world_name,
+            player_name=player_name,
         )
 
     def _create_character(
@@ -8876,6 +9097,14 @@ class GameEngine:
             return self.state.log_text(16)
         return self._resolve_player_input(action, "free_action")
 
+    def _is_generated_choice_input(self, action_text: str, input_type: str) -> bool:
+        if input_type != "choice":
+            return False
+        normalized = action_text.strip()
+        if not normalized:
+            return False
+        return any(normalized == str(choice).strip() for choice in self.state.choices if str(choice).strip())
+
     def _resolve_player_input(self, action: str, input_type: str) -> str:
         action_text = action.strip() or "周囲を見る"
         before_context = self._input_dedupe_context()
@@ -8891,11 +9120,28 @@ class GameEngine:
             self.save_game()
             return finish(self.state.log_text(16))
 
-        input_gate = self._input_gatekeeper(
-            action_text,
-            input_type,
-            check_feasibility=not self.allow_any_action_concept,
-        )
+        if self._is_generated_choice_input(action_text, input_type):
+            input_gate = {
+                "content_violation": False,
+                "action_possible": True,
+                "reason": "generated_choice",
+                "message": "",
+            }
+            self.state.world_data.history.append(
+                {
+                    "manager": "input_gatekeeper",
+                    "action": action_text,
+                    "input_type": input_type,
+                    "skipped": True,
+                    "reason": "generated_choice",
+                }
+            )
+        else:
+            input_gate = self._input_gatekeeper(
+                action_text,
+                input_type,
+                check_feasibility=not self.allow_any_action_concept,
+            )
         illegal_check = input_gate
         if _as_bool(illegal_check.get("content_violation")):
             message = str(illegal_check.get("message") or illegal_check.get("reason") or "その行動は処理されませんでした。")
@@ -9002,19 +9248,47 @@ class GameEngine:
         if exploration_action:
             action_roll = self._action_roll_for_input(action_text, input_type, "exploration")
         if exploration_action and self._should_run_field_event_evaluator(action_text, input_type):
-            field_event = self._field_event_evaluator(action_text, input_type, action_roll=action_roll)
-            if _as_bool(field_event.get("event_occurred")):
-                return finish(self._apply_field_event(action_text, input_type, field_event, action_roll=action_roll))
-            self.state.world_data.history.append(
-                {
-                    "manager": "field_event_evaluator",
-                    "action": action_text,
-                    "input_type": input_type,
-                    "action_roll": action_roll,
-                    "event_occurred": False,
-                    "response": _strip_response_metadata(field_event),
-                }
-            )
+            field_event_trigger = self._roll_field_event_trigger(action_text, input_type, action_roll)
+            if not _as_bool(field_event_trigger.get("triggered")):
+                self.state.world_data.history.append(
+                    {
+                        "manager": "field_event_local_roll",
+                        "action": action_text,
+                        "input_type": input_type,
+                        "action_roll": action_roll,
+                        "field_event_trigger": field_event_trigger,
+                        "event_occurred": False,
+                        "called_llm": False,
+                    }
+                )
+            else:
+                field_event = self._field_event_evaluator(
+                    action_text,
+                    input_type,
+                    action_roll=action_roll,
+                    field_event_trigger=field_event_trigger,
+                )
+                if _as_bool(field_event.get("event_occurred")):
+                    return finish(
+                        self._apply_field_event(
+                            action_text,
+                            input_type,
+                            field_event,
+                            action_roll=action_roll,
+                            field_event_trigger=field_event_trigger,
+                        )
+                    )
+                self.state.world_data.history.append(
+                    {
+                        "manager": "field_event_evaluator",
+                        "action": action_text,
+                        "input_type": input_type,
+                        "action_roll": action_roll,
+                        "field_event_trigger": field_event_trigger,
+                        "event_occurred": False,
+                        "response": _strip_response_metadata(field_event),
+                    }
+                )
 
         if action_roll is None:
             action_roll = self._action_roll_for_input(action_text, input_type, "action")
@@ -9219,6 +9493,17 @@ class GameEngine:
         world_payload = _ai_json(self._focused_world_ai_context(include_recent_log=False))
         facilitator_payload = json.dumps(_strip_response_metadata(facilitator_response), ensure_ascii=False)
         request_payload = json.dumps(requests, ensure_ascii=False)
+        npc_template_payload = json.dumps(
+            {
+                "friendly_templates": npc_template_prompt_summaries(
+                    FRIENDLY_NPC_TEMPLATE_CATEGORIES,
+                    danger_level=self._current_location_danger(location),
+                    used_ids=self._npc_template_used_ids(),
+                    limit=12,
+                )
+            },
+            ensure_ascii=False,
+        )
         messages = [
             {
                 "role": "system",
@@ -9246,12 +9531,22 @@ class GameEngine:
         ]
         messages.append(
             {
-                "role": "user",
+                "role": "system",
                 "content": (
                     "NPC completeness rule: every generated NPC in npcs must include gender, age, look, and personality. "
                     "Do not leave these blank. gender must be female, male, none, or a localized equivalent. age must be "
                     "a visible age or age range; for monsters/non-humans use adult, young, ancient, or unknown if exact "
                     "age is not meaningful. look must be concrete enough for character image generation."
+                ),
+            }
+        )
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    f"NPC template candidates: {npc_template_payload}\n"
+                    "If a generated NPC matches a template, include npc_template_id on that NPC object. "
+                    "Keep the same character type and use the template as the base."
                 ),
             }
         )
@@ -9321,7 +9616,15 @@ class GameEngine:
     def _apply_master_ai_npcs(self, response: dict[str, Any], location: str) -> list[CharacterData]:
         raw_npcs = _as_list(response.get("npcs") or response.get("characters") or response.get("npc"))
         generated: list[CharacterData] = []
+        danger_level = self._current_location_danger(location)
         for item in raw_npcs:
+            item = self._template_augmented_npc_raw(
+                item,
+                categories=FRIENDLY_NPC_TEMPLATE_CATEGORIES,
+                danger_level=danger_level,
+                seed=f"master-ai-npc:{self.state.world_name}:{location}:{len(generated)}",
+                hostile=False,
+            )
             character = _npc_from_raw(item, len(self.state.world_data.characters) + len(generated))
             if _world_has_dead_npc_identity(self.state.world_data, name=character.name, uuid=character.uuid):
                 continue
@@ -13951,15 +14254,132 @@ class GameEngine:
                 return True
         return False
 
-    def _field_event_evaluator(
+    def _roll_field_event_trigger(
         self,
         action: str,
         input_type: str,
         action_roll: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        location_name = self.state.current_location or self.state.world_data.starting_location
+        location = self.state.world_data.locations.get(location_name)
+        extra = location.extra if location and isinstance(location.extra, dict) else {}
+        kind = str(extra.get("location_kind") or extra.get("kind") or "").strip().lower()
+        danger = max(0, self._current_location_danger(location_name))
+        chance = 0.10
+        reasons = ["base_exploration"]
+        if input_type == "choice":
+            chance += 0.02
+            reasons.append("choice")
+        lowered = str(action or "").casefold()
+        if any(term in lowered for term in ("search", "explore", "discover", "dungeon", "cave", "ruin", "forest", "help")):
+            chance += 0.10
+            reasons.append("explicit_exploration")
+        if kind in {"dungeon"}:
+            chance += 0.20
+            reasons.append("dungeon_location")
+        elif kind in {"wilderness", "road", "crossroad", "coast", "mountain", "river", "plain"}:
+            chance += 0.12
+            reasons.append("wild_location")
+        elif kind in {"settlement", "town", "village", "city"}:
+            chance += 0.02
+            reasons.append("settlement_location")
+        if danger:
+            chance += min(0.22, danger / 160)
+            reasons.append(f"danger:{danger}")
+
+        graph = self._ensure_location_subnode_graph(self.state.world_data, location_name)
+        subnode_id = self._current_subnode_id(location_name)
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        subnode = nodes.get(subnode_id, {}) if isinstance(nodes, dict) else {}
+        subnode_kind = str(subnode.get("kind") or "").strip().lower()
+        if any(term in subnode_kind for term in ("dungeon", "danger", "nest", "boss", "wild", "forest", "cave", "ruin")):
+            chance += 0.10
+            reasons.append(f"subnode:{subnode_kind}")
+
+        hostile_present = False
+        for character in self.state.world_data.characters.values():
+            if character.flags.get("is_player"):
+                continue
+            if not _actor_present_at(character.location, character.state, character.flags, location_name):
+                continue
+            if bool(character.flags.get("hostile") or character.extra.get("hostile")):
+                hostile_present = True
+                break
+        if hostile_present:
+            chance += 0.14
+            reasons.append("hostile_present")
+
+        if isinstance(action_roll, dict):
+            if _as_bool(action_roll.get("critical_success")) or _as_bool(action_roll.get("critical_failure")):
+                chance += 0.14
+                reasons.append("critical_roll")
+            elif _as_bool(action_roll.get("success")):
+                chance += 0.06
+                reasons.append("successful_roll")
+            elif _as_bool(action_roll.get("failure")):
+                chance += 0.03
+                reasons.append("failed_roll")
+
+        turn_index = len(self.state.action_log)
+        last_trigger_turn = _safe_int(self.state.world_data.extra.get("field_event_last_local_trigger_turn"), -9999)
+        if turn_index - last_trigger_turn <= 2:
+            chance *= 0.35
+            reasons.append("recent_trigger_cooldown")
+
+        chance = max(0.03, min(0.72, chance))
+        seed = (
+            f"field-event-trigger:{self.state.world_name}:{self.state.player_name}:"
+            f"{self.state.day}:{turn_index}:{location_name}:{subnode_id}:{action}"
+        )
+        rng = random.Random(seed)
+        roll = rng.random()
+        triggered = roll < chance
+        result = {
+            "triggered": triggered,
+            "chance": round(chance, 4),
+            "roll": round(roll, 4),
+            "location": location_name,
+            "location_kind": kind,
+            "subnode_id": subnode_id,
+            "subnode_kind": subnode_kind,
+            "danger": danger,
+            "reasons": reasons,
+            "seed": seed,
+        }
+        if triggered:
+            self.state.world_data.extra["field_event_last_local_trigger_turn"] = turn_index
+            self.state.world_data.extra["field_event_last_local_trigger"] = dict(result)
+        return result
+
+    def _field_event_evaluator(
+        self,
+        action: str,
+        input_type: str,
+        action_roll: dict[str, Any] | None = None,
+        field_event_trigger: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         world_payload = _ai_json(self._focused_world_ai_context(include_recent_log=False))
         recent_log = self.state.log_text(10)
         action_roll_payload = json.dumps(action_roll or {}, ensure_ascii=False)
+        field_event_trigger_payload = json.dumps(field_event_trigger or {}, ensure_ascii=False)
+        danger_level = self._current_location_danger(self.state.current_location)
+        npc_template_payload = json.dumps(
+            {
+                "enemy_templates": npc_template_prompt_summaries(
+                    ENEMY_NPC_TEMPLATE_CATEGORIES,
+                    danger_level=danger_level,
+                    used_ids=self._npc_template_used_ids(),
+                    limit=12,
+                ),
+                "friendly_templates": npc_template_prompt_summaries(
+                    FRIENDLY_NPC_TEMPLATE_CATEGORIES,
+                    danger_level=danger_level,
+                    used_ids=self._npc_template_used_ids(),
+                    limit=12,
+                ),
+            },
+            ensure_ascii=False,
+        )
         messages = [
             {
                 "role": "system",
@@ -13992,12 +14412,33 @@ class GameEngine:
         ]
         messages.append(
             {
-                "role": "user",
+                "role": "system",
+                "content": (
+                    f"Local field event trigger: {field_event_trigger_payload}\n"
+                    "The game already ran this local roll before calling field_event_evaluator. "
+                    "If triggered is true, create the triggered event content and return event_occurred=true unless that contradicts the current state."
+                ),
+            }
+        )
+        messages.append(
+            {
+                "role": "system",
                 "content": (
                     "Generated actor completeness rule: if you return npcs, enemies, opponents, or boss_npc, every "
                     "generated character object must include gender, age, look, personality, description, and "
                     "image_generation_prompt. For monsters/non-humans, use gender=none and age=adult/ancient/unknown "
                     "if exact human-style values are not meaningful."
+                ),
+            }
+        )
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    f"NPC template candidates: {npc_template_payload}\n"
+                    "If a generated npc/enemy/boss matches a template, include npc_template_id on that character object. "
+                    "Use enemy_templates for hostile enemies, monsters, blockers, and bosses. "
+                    "Use friendly_templates for neutral or friendly NPCs."
                 ),
             }
         )
@@ -14015,6 +14456,7 @@ class GameEngine:
         input_type: str,
         response: dict[str, Any],
         action_roll: dict[str, Any] | None = None,
+        field_event_trigger: dict[str, Any] | None = None,
     ) -> str:
         previous_location = self.state.current_location
         location = str(response.get("location") or self.state.current_location)
@@ -14042,6 +14484,7 @@ class GameEngine:
             "generated_quests": [quest.name for quest in generated_quests],
             "generated_actors": generated_actors,
             "action_roll": action_roll,
+            "field_event_trigger": field_event_trigger,
             "event": response.get("event"),
             "response": _strip_response_metadata(response),
         }
@@ -14057,6 +14500,7 @@ class GameEngine:
                 "generated_quests": [quest.name for quest in generated_quests],
                 "generated_actors": generated_actors,
                 "action_roll": action_roll,
+                "field_event_trigger": field_event_trigger,
                 "response": _strip_response_metadata(response),
             }
         )
@@ -14185,6 +14629,24 @@ class GameEngine:
             return None
         if not boss_payload:
             boss_payload = _fallback_generated_dungeon_boss_payload(location, action, response)
+        danger = max(5, _safe_int(location.extra.get("danger_level", location.extra.get("danger")), 0))
+        boss_template = self._select_npc_template(
+            categories=ENEMY_NPC_TEMPLATE_CATEGORIES,
+            danger_level=danger,
+            seed=f"generated-dungeon-boss:{self.state.world_name}:{location.name}:{action}",
+            payloads=(boss_payload, response),
+        ) if npc_template_ids_from_payloads(boss_payload, response) else None
+        if boss_template:
+            boss_payload = merge_npc_template_payload(
+                self._npc_template_character_payload(
+                    boss_template,
+                    danger_level=danger,
+                    seed=f"generated-dungeon-boss-payload:{self.state.world_name}:{location.name}:{action}",
+                    hostile=True,
+                    boss=True,
+                ),
+                boss_payload,
+            )
         character = _enemy_npc_from_raw(boss_payload, len(self.state.world_data.characters))
         character.name = _unique_character_name(self.state.world_data, character.name)
         character.role = str(character.role or "ダンジョンボス")
@@ -14194,7 +14656,6 @@ class GameEngine:
         character.flags["generated_dungeon_boss"] = True
         character.extra["generated_dungeon_boss"] = True
         character.extra["boss_location"] = location.name
-        danger = max(5, _safe_int(location.extra.get("danger_level", location.extra.get("danger")), 0))
         character.flags.setdefault("danger_level", danger)
         character.extra.setdefault("danger_level", danger)
         character.extra["spawn_subnode_id"] = target_subnode
@@ -14235,8 +14696,16 @@ class GameEngine:
 
     def _apply_field_event_actors(self, response: dict[str, Any], location: str) -> list[dict[str, str]]:
         generated: list[dict[str, str]] = []
+        danger_level = self._current_location_danger(location)
         raw_characters = _as_list(response.get("npcs") or response.get("characters") or response.get("npc"))
         for item in raw_characters:
+            item = self._template_augmented_npc_raw(
+                item,
+                categories=FRIENDLY_NPC_TEMPLATE_CATEGORIES,
+                danger_level=danger_level,
+                seed=f"field-event-npc:{self.state.world_name}:{location}:{len(generated)}",
+                hostile=False,
+            )
             character = _npc_from_raw(item, len(self.state.world_data.characters) + len(generated))
             if _world_has_dead_npc_identity(self.state.world_data, name=character.name, uuid=character.uuid):
                 continue
@@ -14248,13 +14717,20 @@ class GameEngine:
 
         raw_opponents = _as_list(response.get("opponents") or response.get("enemies") or response.get("enemy_npcs") or response.get("enemy"))
         for item in raw_opponents:
+            item = self._template_augmented_npc_raw(
+                item,
+                categories=ENEMY_NPC_TEMPLATE_CATEGORIES,
+                danger_level=danger_level,
+                seed=f"field-event-enemy:{self.state.world_name}:{location}:{len(generated)}",
+                hostile=True,
+            )
             character = _enemy_npc_from_raw(item, len(self.state.world_data.characters) + len(generated))
             character.name = _unique_character_name(self.state.world_data, character.name)
             character.flags.setdefault("source", "field_event_evaluator")
             character.flags["enemy_npc"] = True
             character.flags["hostile"] = _as_bool(character.flags.get("hostile") if "hostile" in character.flags else character.extra.get("hostile", True))
             self._set_character_presence(character, location)
-            _scale_character_for_danger(character, self._current_location_danger(location))
+            _scale_character_for_danger(character, danger_level)
             self._ensure_character_runtime_data(character)
             self.state.world_data.characters[character.name] = character
             generated.append({"type": "character", "name": character.name})
@@ -14800,6 +15276,43 @@ class GameEngine:
         objective_role: str,
     ) -> dict[str, Any]:
         fallback = _quest_objective_npc_fallback_design(quest, response, objective_role=objective_role)
+        danger_level = self._npc_template_danger_for_location(location_name)
+        template = self._select_npc_template(
+            categories=self._npc_template_categories_for_objective(objective_role),
+            danger_level=danger_level,
+            seed=f"quest-objective:{self.state.world_name}:{quest.name}:{objective_role}:{location_name}:{subnode_id}",
+            payloads=(quest.extra, response),
+        )
+        template_payload = self._npc_template_character_payload(
+            template,
+            danger_level=danger_level,
+            seed=f"quest-objective-payload:{self.state.world_name}:{quest.name}:{objective_role}:{location_name}:{subnode_id}",
+            hostile=objective_role in {"defeat_target", "blocker"},
+        )
+        if template_payload:
+            fallback.update(
+                {
+                    "name": template_payload.get("name") or fallback.get("name"),
+                    "display_alias": template_payload.get("name") or fallback.get("display_alias"),
+                    "role_label": template_payload.get("role") or fallback.get("role_label"),
+                    "description": template_payload.get("description") or fallback.get("description"),
+                    "personality": template_payload.get("personality") or fallback.get("personality"),
+                    "gender": template_payload.get("gender") or fallback.get("gender"),
+                    "age": template_payload.get("age") or fallback.get("age"),
+                    "look": template_payload.get("look") or fallback.get("look"),
+                    "category": template_payload.get("category") or fallback.get("category"),
+                    "image_prompt": ", ".join(_as_str_list(template_payload.get("image_generation_prompt"))),
+                    "attack": template_payload.get("attack"),
+                    "defense": template_payload.get("defense"),
+                    "attributes": template_payload.get("attributes"),
+                    "skills": template_payload.get("skills") if "skills" in template_payload else fallback.get("skills"),
+                    "traits": template_payload.get("traits") if "traits" in template_payload else fallback.get("traits"),
+                    "attacks": (template_payload.get("extra") or {}).get("attacks") if isinstance(template_payload.get("extra"), dict) else [],
+                    "npc_template_id": (template_payload.get("extra") or {}).get("npc_template_id") if isinstance(template_payload.get("extra"), dict) else "",
+                    "npc_template_category": (template_payload.get("extra") or {}).get("npc_template_category") if isinstance(template_payload.get("extra"), dict) else "",
+                    "npc_template_payload": template_payload,
+                }
+            )
         location = self.state.world_data.locations.get(location_name)
         subnode_context: dict[str, Any] = {}
         if location:
@@ -14826,7 +15339,9 @@ class GameEngine:
                     "spirits, bandits, curses, or another non-human threat, do not default to a generic human. "
                     "Do not output UUIDs or internal ids such as rescue_target, blocker, defeat_target, or delivery_target. "
                     "Always include gender and age. Use gender=none and age=adult/ancient/unknown for non-human entities "
-                    "when a human age or binary gender is not meaningful."
+                    "when a human age or binary gender is not meaningful. "
+                    "If npc_template is supplied, keep the same creature/person type and use it as the base; fill only "
+                    "missing flavor such as a concrete name variant, look details, personality details, skills, or traits."
                 ),
             },
             {
@@ -14845,6 +15360,7 @@ class GameEngine:
                         },
                         "quest_response_hints": _compact_value(response, max_chars=1200),
                         "source_text": _quest_destination_source_text(quest, response),
+                        "npc_template": npc_template_ai_context(template),
                     }
                 ),
             },
@@ -14866,6 +15382,9 @@ class GameEngine:
             value = str(generated.get(key) or "").strip()
             if value:
                 design[key] = value
+        for key in ("skills", "traits", "attacks"):
+            if key in generated and isinstance(generated.get(key), list):
+                design[key] = generated.get(key)
         image_prompt = generated.get("image_prompt")
         if isinstance(image_prompt, list):
             image_prompt = ", ".join(str(item).strip() for item in image_prompt if str(item).strip())
@@ -14903,20 +15422,36 @@ class GameEngine:
         description = str(design.get("description") or response.get("objective_npc_description") or response.get("objective") or quest.overview)
         personality = str(design.get("personality") or response.get("objective_npc_personality") or "")
         look = str(design.get("look") or design.get("image_prompt") or "")
+        image_prompts = _as_str_list(design.get("image_prompt") or design.get("image_generation_prompt"))
+        if not image_prompts and look:
+            image_prompts = [look]
+        attributes = {
+            key: max(1, _safe_int(value, CHARACTER_DEFAULT_ATTRIBUTES.get(key, 10)))
+            for key, value in (design.get("attributes") if isinstance(design.get("attributes"), dict) else {}).items()
+            if key in CHARACTER_DEFAULT_ATTRIBUTES
+        }
+        skills = [skill for skill in (_normalise_skill(item) for item in _as_list(design.get("skills"))) if skill.get("name")]
+        traits = [trait for trait in (_normalise_trait(item) for item in _as_list(design.get("traits"))) if trait.get("name")]
+        attacks = [dict(item) for item in _as_list(design.get("attacks")) if isinstance(item, dict)]
+        npc_template_payload = design.get("npc_template_payload") if isinstance(design.get("npc_template_payload"), dict) else {}
+        npc_template_extra = npc_template_payload.get("extra") if isinstance(npc_template_payload.get("extra"), dict) else {}
+        npc_template_flags = npc_template_payload.get("flags") if isinstance(npc_template_payload.get("flags"), dict) else {}
+        npc_template_id = str(design.get("npc_template_id") or npc_template_extra.get("npc_template_id") or "").strip()
         character = CharacterData(
             name=name,
             role=role_label,
             category=str(design.get("category") or "quest_objective"),
+            attack=max(0, _safe_int(design.get("attack"), 0)),
+            defense=max(0, _safe_int(design.get("defense"), 0)),
+            attributes=attributes,
             gender=str(design.get("gender") or ""),
             age=str(design.get("age") or ""),
             backstory=description,
             personality=personality,
             look=look,
-            image_generation_prompt=[
-                part
-                for part in (str(design.get("image_prompt") or "").strip(), look, description)
-                if part
-            ],
+            image_generation_prompt=[part for part in [*image_prompts, description] if part],
+            skills=skills,
+            traits=traits,
             flags={
                 "source": "quest_objective",
                 "quest_objective": True,
@@ -14926,6 +15461,7 @@ class GameEngine:
                 "hostile": hostile,
                 "display_alias": display_alias,
                 "role_label": role_label,
+                **npc_template_flags,
             },
             extra={
                 "quest_name": quest.name,
@@ -14937,15 +15473,23 @@ class GameEngine:
                 "aliases": aliases,
                 "species": str(design.get("species") or ""),
                 "appearance_prompt": str(design.get("image_prompt") or look),
+                "attacks": attacks or npc_template_extra.get("attacks") or [],
+                "combat_attacks": attacks or npc_template_extra.get("combat_attacks") or [],
+                "npc_template_id": npc_template_id,
+                "npc_template_category": str(design.get("npc_template_category") or npc_template_extra.get("npc_template_category") or ""),
+                "npc_template_source": str(npc_template_extra.get("npc_template_source") or ""),
                 "objective_location": location_name,
                 "objective_subnode_id": subnode_id,
                 "origin_location": quest.extra.get("origin_location") or self._quest_origin_location(quest),
+                **npc_template_extra,
             },
             prompts={
                 "character": str(design.get("image_prompt") or look),
                 "quest_objective": description,
             },
         )
+        if objective_role in {"defeat_target", "blocker"}:
+            _scale_character_for_danger(character, self._npc_template_danger_for_location(location_name))
         self._ensure_character_runtime_data(character)
         self._set_character_presence(character, location_name, "quest_objective", subnode_id=subnode_id)
         self.state.world_data.characters[character.name] = character
@@ -17594,6 +18138,14 @@ def _npc_level_tendency_attributes(
     if not isinstance(character, CharacterData) or character.flags.get("is_player"):
         return attrs
     boss = boss or _npc_is_boss_like(character)
+    if (character.extra.get("npc_template_id") or character.flags.get("npc_template_id")) and not force:
+        resolved = {
+            key: max(1, _safe_int(attrs.get(key), CHARACTER_DEFAULT_ATTRIBUTES[key]))
+            for key in CHARACTER_DEFAULT_ATTRIBUTES
+        }
+        resolved["magic"] = max(1, _safe_int(attrs.get("magic", attrs.get("mag", resolved["int"])), resolved["int"]))
+        resolved["will"] = max(1, _safe_int(attrs.get("will", resolved["wis"]), resolved["wis"]))
+        return resolved
     base = _npc_attribute_base_for_level(character.level)
     if force or _npc_attributes_need_generation(character, attrs):
         resolved = _npc_profile_attributes(character, base, boss=boss)
@@ -17678,8 +18230,17 @@ def _scale_character_for_danger(character: CharacterData, danger: Any, *, boss: 
         character.max_sp = calculated_sp
         if _safe_int(character.current_sp, 0) <= 0:
             character.current_sp = calculated_sp
-    character.attack = max(_safe_int(character.attack, 0), _character_calculated_attack(character))
-    character.defense = max(_safe_int(character.defense, 0), _character_calculated_defense(character))
+    calculated_attack = _character_calculated_attack(character)
+    calculated_defense = _character_calculated_defense(character)
+    template_controlled = bool(character.extra.get("npc_template_id") or character.flags.get("npc_template_id"))
+    if template_controlled:
+        if _safe_int(character.attack, 0) <= 0:
+            character.attack = calculated_attack
+        if _safe_int(character.defense, 0) <= 0:
+            character.defense = calculated_defense
+    else:
+        character.attack = max(_safe_int(character.attack, 0), calculated_attack)
+        character.defense = max(_safe_int(character.defense, 0), calculated_defense)
 
 
 def _danger_scaled_placeholder_enemy(name: str, danger: Any) -> CharacterData:
@@ -20562,6 +21123,11 @@ def _character_ai_context(character: CharacterData, *, details: bool = True) -> 
         data["skill_trait_power_used"] = _entry_power_total(character.traits) + _entry_power_total(character.skills)
     if character.image_generation_prompt:
         data["image_generation_prompt"] = [str(item) for item in character.image_generation_prompt[:12]]
+    combat_attacks = character.extra.get("combat_attacks") if isinstance(character.extra, dict) else None
+    if not combat_attacks and isinstance(character.extra, dict):
+        combat_attacks = character.extra.get("attacks")
+    if combat_attacks:
+        data["combat_attacks"] = _compact_value(combat_attacks, max_chars=500)
     if details:
         data["traits"] = _compact_value(character.traits, max_chars=900)
         data["skills"] = _compact_value(character.skills, max_chars=1000)

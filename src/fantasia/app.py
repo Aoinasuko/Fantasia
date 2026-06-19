@@ -273,6 +273,10 @@ class FantasiaApp(tk.Tk):
         self.current_task_cancel_requested = False
         self.current_task_auto_status = True
         self.current_task_log_animation_enabled = True
+        self.visual_task_sequence_id = 0
+        self.visual_task_id = 0
+        self.visual_task_name = ""
+        self.visual_task_started_at = 0.0
         self.task_tick_after_id: str | None = None
         self.world_generation_progress_after_id: str | None = None
         self.world_generation_progress_queue: queue.Queue[dict[str, object]] = queue.Queue()
@@ -5843,6 +5847,60 @@ class FantasiaApp(tk.Tk):
 
         threading.Thread(target=runner, daemon=True).start()
 
+    def _run_visual_task(self, status: str, work, done) -> None:
+        if self.current_task_id or self.visual_task_id:
+            return
+        self.visual_task_sequence_id += 1
+        task_id = self.visual_task_sequence_id
+        self.visual_task_id = task_id
+        self.visual_task_name = status
+        self.visual_task_started_at = time.time()
+        self._record_visual_task_event("started", status, message=_ui_text(self.config_data, "task_started"))
+
+        def runner() -> None:
+            try:
+                result = work()
+            except Exception as exc:
+                trace = traceback.format_exc()
+                self.after(0, lambda exc=exc, trace=trace: self._finish_visual_task_error(task_id, status, exc, trace))
+            else:
+                self.after(0, lambda result=result: self._finish_visual_task_success(task_id, status, result, done))
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _finish_visual_task_success(self, task_id: int, status: str, result, done) -> None:
+        if task_id != self.visual_task_id:
+            return
+        try:
+            done(result)
+        except Exception as exc:
+            self._finish_visual_task_error(task_id, status, exc, traceback.format_exc())
+            return
+        self._record_visual_task_event(
+            "completed",
+            status,
+            message=_task_result_message(result, self.config_data.language) or _ui_text(self.config_data, "task_completed"),
+        )
+        self._end_visual_task()
+        self._schedule_visual_updates()
+
+    def _finish_visual_task_error(self, task_id: int, status: str, exc: Exception, trace: str) -> None:
+        if task_id != self.visual_task_id:
+            return
+        self._record_visual_task_event(
+            "failed",
+            status,
+            message=_ui_text(self.config_data, "task_failed_detail"),
+            error=str(exc),
+            traceback_text=trace,
+        )
+        self._end_visual_task()
+
+    def _end_visual_task(self) -> None:
+        self.visual_task_id = 0
+        self.visual_task_name = ""
+        self.visual_task_started_at = 0.0
+
     def _finish_task_success(self, task_id: int, status: str, result, done) -> None:
         if task_id != self.current_task_id:
             return
@@ -6024,6 +6082,31 @@ class FantasiaApp(tk.Tk):
         if hasattr(self, "generation_log_listbox"):
             self._refresh_generation_log_screen()
 
+    def _record_visual_task_event(
+        self,
+        status: str,
+        name: str,
+        message: str = "",
+        error: str = "",
+        traceback_text: str = "",
+    ) -> None:
+        append_task_event(
+            LOG_DIR,
+            {
+                "status": status,
+                "name": name,
+                "message": message,
+                "error": error,
+                "traceback": traceback_text,
+                "world_name": self.engine.state.world_name,
+                "player_name": self.engine.state.player_name,
+                "elapsed_sec": int(time.time() - self.visual_task_started_at) if self.visual_task_started_at else 0,
+                "background": True,
+            },
+        )
+        if hasattr(self, "generation_log_listbox"):
+            self._refresh_generation_log_screen()
+
     def _set_buttons(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
         for button in self.task_buttons:
@@ -6141,7 +6224,7 @@ class FantasiaApp(tk.Tk):
 
     def _maybe_auto_generate_visuals(self) -> None:
         self.visual_task_after_id = None
-        if self.current_task_id or self.current_screen_name != "game":
+        if self.current_task_id or self.visual_task_id or self.current_screen_name != "game":
             return
         state = self.engine.state
         if not self._image_generation_enabled():
@@ -6152,7 +6235,7 @@ class FantasiaApp(tk.Tk):
         if state.world_data.world_name == "unknown":
             return
         if isinstance(state.flags.get("pending_cg_request"), dict):
-            self._run_task(
+            self._run_visual_task(
                 _ui_text(self.config_data, "task_generating_cg_image"),
                 self.engine.generate_cg_image,
                 lambda result: self._on_cg_image_generated(result.path),
@@ -6170,7 +6253,7 @@ class FantasiaApp(tk.Tk):
             or pending_background == current_location
             or (not active_background_exists and location_data is not None and not location_data.image_path)
         ):
-            self._run_task(
+            self._run_visual_task(
                 _ui_text(self.config_data, "task_generating_scene_image"),
                 self.engine.generate_scene_image,
                 lambda result: self._on_scene_image_generated(result.path),
@@ -6186,7 +6269,7 @@ class FantasiaApp(tk.Tk):
                     missing_character = character
                     break
             if missing_character is not None:
-                self._run_task(
+                self._run_visual_task(
                     _ui_text(self.config_data, "task_generating_character_image"),
                     lambda name=missing_character.name: self.engine.generate_character_image(name),
                     lambda result: self._on_layer_image_generated(result.path),
@@ -6198,7 +6281,7 @@ class FantasiaApp(tk.Tk):
             name = str(active_conversation.get("character") or "")
             character = state.world_data.characters.get(name)
             if character and not _subject_image_path(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image")):
-                self._run_task(
+                self._run_visual_task(
                     _ui_text(self.config_data, "task_generating_character_image"),
                     lambda name=name: self.engine.generate_character_image(name),
                     lambda result: self._on_layer_image_generated(result.path),
@@ -6207,7 +6290,7 @@ class FantasiaApp(tk.Tk):
 
         player = state.world_data.characters.get(state.player_name)
         if player and not _subject_image_path(player.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image")):
-            self._run_task(
+            self._run_visual_task(
                 _ui_text(self.config_data, "task_generating_player_image"),
                 lambda name=state.player_name: self.engine.generate_character_image(name),
                 lambda result: self._on_layer_image_generated(result.path),

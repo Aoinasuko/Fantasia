@@ -848,6 +848,55 @@ class FixtureLlmBackend(BaseLlmBackend):
             else:
                 narration = f"{actor}は{action}を使った。温かな光が{target}を包み、傷が目に見えて癒えていく。"
             content = {"narration": narration}
+        elif manager_name == "create_initial_character_profile":
+            name = _extract_character_name(user_text) or "Mira"
+            role = _extract_character_role(user_text) or "innkeeper"
+            content = {
+                "name": name,
+                "gender": "female",
+                "age": "late 30s",
+                "role": role,
+                "category": "resident",
+                "backstory": f"{name} is a local fixture character who knows the roads around the starting inn.",
+                "personality": "Calm, observant, and willing to help cautious travelers.",
+                "ability": {
+                    "name": "Rain Road Memory",
+                    "description": "Reads changes in rain, sound, and road mud to predict danger.",
+                },
+                "look": f"{name} wears practical travel clothes, a dark apron, and a small lantern charm.",
+                "image_generation_prompt": [
+                    "fantasy RPG character",
+                    f"{name}",
+                    "rainy frontier inn",
+                    "lantern accessory",
+                    "anime illustration",
+                    "detailed outfit",
+                ],
+                "negative_prompt": "low quality, blurry, text, watermark, extra fingers",
+                "traits": [
+                    {
+                        "name": "Watchful",
+                        "description": "Notices danger before most people do.",
+                        "severity": 2,
+                        "power": 2,
+                        "strength_level": 2,
+                        "effect": "Provides hints before risky travel or negotiation.",
+                    }
+                ],
+                "skills": [
+                    {
+                        "name": "Lantern Signal",
+                        "description": "Uses a lantern flash to guide allies or distract threats.",
+                        "element": "none",
+                        "skill_type": "support",
+                        "effects": [{"name": "guidance", "value": 1}],
+                        "sp_cost": 3,
+                        "power": 2,
+                        "strength_level": 2,
+                        "usefulness": "Useful for exploration, conversation, and opening combat support.",
+                    }
+                ],
+            }
         elif manager_name == "create_character":
             name = _extract_character_name(user_text) or "ミラ"
             role = _extract_character_role(user_text) or "宿の主人"
