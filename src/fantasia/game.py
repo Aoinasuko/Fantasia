@@ -12,6 +12,33 @@ from uuid import uuid4
 from .image_pipeline import process_subject_image
 from .imagegen import BaseImageBackend, ImageResult
 from .i18n import ELEMENT_IDS, tr_enum
+from .combat import (
+    _capture_subnode_description,
+    _capture_subnode_name,
+    _combat_action_text,
+    _combat_apply_defense,
+    _combat_ability_from_response,
+    _combat_damage_message,
+    _combat_heal_message,
+    _combat_narration_payload,
+    _combat_response_candidates,
+    _combat_value_from_response,
+    _combat_weakness_multiplier,
+    _encounter_player_surrendered,
+    _first_int,
+    _game_controlled_hp_keys,
+    _normalise_combat_ability,
+    _npc_action_tool_kind,
+    _npc_response_is_offensive,
+    _player_surrender_response_ends_encounter,
+    _response_has_status_effect_update,
+    _response_implies_capture_relocation,
+    _skill_default_ability,
+    _skill_default_uses_defense,
+    _skill_is_healing,
+    _strip_hp_update_value,
+    _surrender_control_prevents_npc_damage,
+)
 from .items import (
     EQUIPMENT_SLOT_LABELS,
     EQUIPMENT_SLOTS,
@@ -35,12 +62,147 @@ from .json_store import JsonStore
 from .llm import BaseLlmBackend
 from .paths import GENERATED_DIR
 from .prompt_templates import PromptTemplateStore
+from .quests import (
+    INTERNAL_QUEST_TOKEN_LABELS,
+    QUEST_BOARD_CHOICE_LABEL,
+    QUEST_BOARD_NAME,
+    QUEST_DEADLINE_HOURS,
+    QUEST_REPORT_STAGE,
+    QUEST_TYPES,
+    SETTLEMENT_QUEST_BATCH_MAX,
+    SETTLEMENT_QUEST_BATCH_MIN,
+    SETTLEMENT_QUEST_MAX_PER_SETTLEMENT,
+    _hide_internal_quest_tokens,
+    _infer_quest_finish_status,
+    _is_quest_abandon_action,
+    _map_reveal_reason,
+    _map_reveal_value_means_active_quest,
+    _normalise_quest_type_id,
+    _quest_ai_context,
+    _quest_anchor_kind_from_text,
+    _quest_destination_danger,
+    _quest_destination_hint,
+    _quest_destination_name,
+    _quest_destination_source_text,
+    _quest_event_needs_resolve,
+    _quest_finish_status,
+    _quest_from_raw,
+    _quest_location_kind_from_text,
+    _quest_location_kind_label,
+    _quest_objective_name_from_text,
+    _quest_payload_has_reward,
+    _quest_requires_captor,
+    _quest_response_narration,
+    _quest_start_choices,
+    _quest_text_requests_new_site,
+    _quest_type,
+)
 from .save_store import SaveSlot, SaveStore
 from .status_effects import (
+    FLED_STATUS_ID,
+    INCAPACITATED_STATUS_ID,
+    INCAPACITATED_STATUS_NAME,
+    SURRENDERED_STATUS_ID,
     STATUS_IMMUNITY_EFFECT_IDS,
     canonical_status_effect_id,
-    status_effect_description,
-    status_effect_label,
+    _combat_status_effects_fallback_note,
+    _combat_status_effects_mentioned,
+    _combat_status_effects_payload,
+    _contextual_incapacitated_status_details,
+    _global_status_target,
+    _merge_status_effect,
+    _normalise_status_effect,
+    _status_effect_action_uses_mouth,
+    _status_effect_applied_line,
+    _status_effect_blocks_action,
+    _status_effect_blocks_attack,
+    _status_effect_blocks_escape,
+    _status_effect_blocks_movement,
+    _status_effect_blocks_skill,
+    _status_effect_from_status_text,
+    _status_effect_has_generic_incapacitated_description,
+    _status_effect_has_generic_incapacitated_name,
+    _status_effect_has_generic_incapacitated_text,
+    _status_effect_id,
+    _status_effect_is_incapacitating,
+    _status_effect_is_surrendered_or_fled,
+    _status_effect_items,
+    _status_effect_merge_key,
+    _status_effect_removed_line,
+    _status_effect_target,
+    _status_response_context_text,
+    _tick_status_effects,
+)
+from .world_generation import (
+    ACTOR_SUBNODE_ID_FLAG,
+    ACTOR_SUBNODE_LOCATION_FLAG,
+    CURRENT_SUBNODE_FLAG,
+    DEFAULT_SUBNODE_ID,
+    DEFAULT_WORLD_CRIME_RISK,
+    DEFAULT_WORLD_ENEMY_STRENGTH,
+    DEFAULT_WORLD_LOCATION_COUNT,
+    DUNGEON_DEEPEST_SUBNODE_ID,
+    DUNGEON_ENTRY_SUBNODE_ID,
+    DUNGEON_SUBNODE_LAYOUT_VERSION,
+    FANTASY_LOCATION_PREFIXES,
+    FANTASY_LOCATION_STEMS,
+    SUBNODE_EXTERNAL_PREFIX,
+    SUBNODE_GRAPH_KEY,
+    WORLD_CRIME_RISK_OPTIONS,
+    WORLD_DANGER_MAX,
+    WORLD_ENEMY_STRENGTH_OPTIONS,
+    WORLD_FINAL_DANGER_MAX,
+    WORLD_FINAL_DANGER_MIN,
+    WORLD_LOCATION_BATCH_MAX,
+    WORLD_LOCATION_BATCH_MIN,
+    WORLD_LOCATION_COUNT_OPTIONS,
+    WORLD_LOCATION_KIND_LABELS,
+    WORLD_LOCATION_KIND_OPTIONS,
+    WORLD_MAP_EDGE_HOURS,
+    WORLD_MAP_MAX_DYNAMIC_DEGREE,
+    _clamp_world_danger,
+    _dungeon_branch_parent,
+    _dungeon_scale_label,
+    _dungeon_subnode_target_count,
+    _ensure_dungeon_graph_connected,
+    _explicit_dungeon_location_request,
+    _explicit_generated_dungeon_location_request,
+    _fallback_dungeon_subnode_layout,
+    _fallback_world_location_description,
+    _fallback_world_location_kind,
+    _fallback_world_location_name,
+    _generated_dungeon_boss_payload,
+    _generated_dungeon_boss_required,
+    _generated_dungeon_boss_text_implies_boss,
+    _infer_world_location_kind,
+    _infer_world_location_kind_for_request,
+    _infer_world_location_kind_for_world_generation,
+    _looks_like_facility_location_name,
+    _merge_dungeon_subnode_layout,
+    _protected_dungeon_subnodes,
+    _safe_subnode_kind,
+    _world_connection_payloads,
+    _world_customization_settings,
+    _world_default_danger_for_index,
+    _world_generation_dungeon_has_boss,
+    _world_generation_location_danger,
+    _world_generation_named_location_requested_as_dungeon,
+    _world_generation_premise_refers_to_location,
+    _world_kind_is_settlement,
+    _world_location_allows_world_map_departure,
+    _world_location_batch_max_tokens,
+    _world_location_batch_size,
+    _world_location_blocks_world_map_departure,
+    _world_location_danger_from_payload,
+    _world_location_description_from_payload,
+    _world_location_is_final_endpoint_candidate,
+    _world_location_is_world_map_exit,
+    _world_location_kind_guidance,
+    _world_location_name_from_payload,
+    _world_location_name_key,
+    _world_location_payloads,
+    _world_location_target_count,
+    _world_overview_max_tokens,
 )
 from .world_model import CharacterData, GameStateData, LocationData, QuestData, WorldData
 
@@ -77,28 +239,6 @@ TEMP_CONTEXT_AWARE_MANAGERS = {
     "referee_npc",
     "referee_npc_rewrite",
 }
-INTERNAL_QUEST_NPC_ROLES = {
-    "rescue_target",
-    "blocker",
-    "defeat_target",
-    "delivery_target",
-}
-INTERNAL_QUEST_TOKEN_LABELS = {
-    "rescue_target": "救出対象",
-    "blocker": "妨害者",
-    "defeat_target": "討伐対象",
-    "delivery_target": "配達先",
-    "retrieve_item": "回収品",
-    "delivery_item": "配達品",
-    "investigation_point": "調査地点",
-    "procurement_requirement": "調達条件",
-}
-WORLD_LOCATION_COUNT_OPTIONS = {"small": 30, "normal": 60, "many": 90}
-DEFAULT_WORLD_LOCATION_COUNT = WORLD_LOCATION_COUNT_OPTIONS["normal"]
-WORLD_CRIME_RISK_OPTIONS = {"none", "normal", "strict"}
-DEFAULT_WORLD_CRIME_RISK = "none"
-WORLD_ENEMY_STRENGTH_OPTIONS = {"weak", "normal", "strong"}
-DEFAULT_WORLD_ENEMY_STRENGTH = "normal"
 CRAFT_INTENT_DEFINITIONS = {
     "auto": {
         "label_ja": "おまかせ",
@@ -132,95 +272,9 @@ CRAFT_INTENT_DEFINITIONS = {
     },
 }
 COMBAT_MAX_OPPONENTS = 3
-INCAPACITATED_STATUS_ID = "Inoperable"
-INCAPACITATED_STATUS_NAME = "行動不能"
-SURRENDERED_STATUS_ID = "surrendered"
-FLED_STATUS_ID = "fled"
-WORLD_LOCATION_BATCH_MIN = 3
-WORLD_LOCATION_BATCH_MAX = 5
-WORLD_MAP_EDGE_HOURS = 2
-WORLD_MAP_MAX_DYNAMIC_DEGREE = 3
-WORLD_DANGER_MAX = 50
-WORLD_FINAL_DANGER_MIN = 40
-WORLD_FINAL_DANGER_MAX = 45
-WORLD_LOCATION_KIND_OPTIONS = (
-    "settlement",
-    "wilderness",
-    "dungeon",
-    "landmark",
-    "road",
-    "crossroad",
-    "coast",
-    "mountain",
-    "river",
-    "plain",
-)
-WORLD_LOCATION_KIND_LABELS = {
-    "settlement": "街/村/拠点",
-    "wilderness": "森/荒野/湿地",
-    "dungeon": "洞窟/遺跡/迷宮",
-    "landmark": "目印/名所",
-    "road": "街道",
-    "crossroad": "分岐路",
-    "coast": "海岸",
-    "mountain": "山",
-    "river": "川",
-    "plain": "平原",
-}
-FANTASY_LOCATION_PREFIXES = (
-    "エル",
-    "ルナ",
-    "セラ",
-    "ヴェル",
-    "ノクス",
-    "アルカ",
-    "ミスト",
-    "リュミ",
-    "オル",
-    "ファル",
-)
-FANTASY_LOCATION_STEMS = (
-    "ディア",
-    "フィル",
-    "ノア",
-    "グラン",
-    "シア",
-    "リス",
-    "ヴェイン",
-    "ティス",
-    "レム",
-    "カイル",
-)
-SUBNODE_GRAPH_KEY = "subnode_graph"
-CURRENT_SUBNODE_FLAG = "current_subnode"
-ACTOR_SUBNODE_ID_FLAG = "current_subnode_id"
-ACTOR_SUBNODE_LOCATION_FLAG = "current_subnode_location"
-DEFAULT_SUBNODE_ID = "center"
-DUNGEON_ENTRY_SUBNODE_ID = "entrance"
-DUNGEON_DEEPEST_SUBNODE_ID = "deepest"
-DUNGEON_SUBNODE_LAYOUT_VERSION = 2
-DUNGEON_SUBNODE_MIN_COUNT = 5
-DUNGEON_SUBNODE_MAX_COUNT = 20
-DUNGEON_SUBNODE_KIND_CATALOG: tuple[tuple[str, str, str], ...] = (
-    ("ore_vein", "鉱脈の広間", "壁一面に鉱石が走る、採掘の痕跡が残る空間。"),
-    ("herb_grove", "薬草の群生地", "淡い光を浴びた薬草が群生している湿った場所。"),
-    ("treasure_room", "宝箱の間", "古びた宝箱や台座が置かれ、罠の気配が漂う部屋。"),
-    ("underground_stream", "地下水脈", "冷たい水が細く流れ、足場が不安定な通路。"),
-    ("collapsed_passage", "崩落通路", "天井や壁が崩れ、迂回や慎重な移動が必要な道。"),
-    ("monster_nest", "魔物の巣", "獣臭と爪痕が残る、魔物の気配が濃い場所。"),
-    ("ancient_altar", "古代祭壇", "読めない文字が刻まれた祭壇が鎮座している部屋。"),
-    ("crystal_cavity", "水晶洞", "結晶が光を反射し、視界を惑わせる美しい洞穴。"),
-    ("mushroom_grove", "発光茸の群生地", "発光する茸が壁や床に広がる幻想的な空間。"),
-    ("trap_hall", "罠の回廊", "床や壁に不自然な継ぎ目がある緊張感のある回廊。"),
-    ("storage_ruins", "朽ちた保管庫", "壊れた木箱や棚が並び、古い物資が眠っている部屋。"),
-    ("hidden_chamber", "隠し部屋", "本道から外れた場所にある、ひっそりとした小部屋。"),
-)
-SUBNODE_EXTERNAL_PREFIX = "external:"
 REPEATED_INPUT_DEDUPE_SECONDS = 4.0
 DEFAULT_GUILD_NAME = "冒険者ギルド"
-QUEST_BOARD_NAME = "依頼掲示板"
 MOVE_CHOICE_LABEL = "移動する"
-QUEST_BOARD_CHOICE_LABEL = "依頼掲示板を見る"
 PLAYER_HOMES_KEY = "player_homes"
 PLAYER_HOME_CONSTRUCTION_KEY = "player_home_construction"
 PLAYER_HOME_SUBNODE_ID = "player_home"
@@ -245,12 +299,6 @@ NPC_AFFINITY_DELTA_MIN = -10
 NPC_AFFINITY_DELTA_MAX = 10
 COMPANION_WAIT_RETURN_DAYS = 3
 PLAYER_INVENTORY_MAX_SLOTS = 27
-QUEST_DEADLINE_HOURS = 48
-QUEST_TYPES = {"rescue", "retrieve", "defeat", "delivery", "investigate", "procure"}
-QUEST_REPORT_STAGE = "report_ready"
-SETTLEMENT_QUEST_MAX_PER_SETTLEMENT = 9
-SETTLEMENT_QUEST_BATCH_MIN = 2
-SETTLEMENT_QUEST_BATCH_MAX = 3
 
 FACILITY_KEYWORDS = (
     "guild",
@@ -4525,9 +4573,100 @@ class GameEngine:
         edge_key = {a, b}
         for edge in graph.setdefault("edges", []):
             if {str(edge.get("from") or ""), str(edge.get("to") or "")} == edge_key:
-                edge["hours"] = WORLD_MAP_EDGE_HOURS
+                edge["hours"] = int(hours or WORLD_MAP_EDGE_HOURS)
+                edge.setdefault("kind", kind)
+                self._ensure_world_edge_subnodes(world, edge)
                 return
-        graph.setdefault("edges", []).append({"from": a, "to": b, "hours": int(hours or WORLD_MAP_EDGE_HOURS), "kind": kind})
+        edge = {"from": a, "to": b, "hours": int(hours or WORLD_MAP_EDGE_HOURS), "kind": kind}
+        self._ensure_world_edge_subnodes(world, edge)
+        graph.setdefault("edges", []).append(edge)
+
+    def _world_edge_between(self, world: WorldData, a: str, b: str) -> dict[str, Any] | None:
+        a = str(a or "").strip()
+        b = str(b or "").strip()
+        if not a or not b or a == b:
+            return None
+        graph = self._location_graph_for_update(world)
+        edge_key = {a, b}
+        for edge in graph.get("edges", []):
+            if not isinstance(edge, dict):
+                continue
+            if {str(edge.get("from") or ""), str(edge.get("to") or "")} == edge_key:
+                self._ensure_world_edge_subnodes(world, edge)
+                return edge
+        return None
+
+    def _ensure_world_edge_subnodes(self, world: WorldData, edge: dict[str, Any]) -> None:
+        a = str(edge.get("from") or "").strip()
+        b = str(edge.get("to") or "").strip()
+        if not a or not b:
+            return
+        self._ensure_location_subnode_graph(world, a)
+        self._ensure_location_subnode_graph(world, b)
+        from_subnode = self._declared_world_edge_subnode(edge, "from", a) or self._default_external_source_subnode(world, a, b)
+        to_subnode = self._declared_world_edge_subnode(edge, "to", b) or self._default_external_target_subnode(world, b, a)
+        if from_subnode:
+            edge["from_subnode"] = from_subnode
+            edge.setdefault("subnodes", {})[a] = from_subnode
+        if to_subnode:
+            edge["to_subnode"] = to_subnode
+            edge.setdefault("subnodes", {})[b] = to_subnode
+
+    def _world_edge_subnode_for_location(self, world: WorldData, edge: dict[str, Any], location_name: str) -> str:
+        location_name = str(location_name or "").strip()
+        a = str(edge.get("from") or "").strip()
+        b = str(edge.get("to") or "").strip()
+        self._ensure_world_edge_subnodes(world, edge)
+        if location_name == a:
+            return self._declared_world_edge_subnode(edge, "from", location_name)
+        if location_name == b:
+            return self._declared_world_edge_subnode(edge, "to", location_name)
+        return ""
+
+    def _current_subnode_can_reach_world_edge(self, world: WorldData, location_name: str, edge: dict[str, Any]) -> bool:
+        graph = self._ensure_location_subnode_graph(world, location_name)
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        source = self._world_edge_subnode_for_location(world, edge, location_name)
+        if not source or source not in nodes:
+            return False
+        current = self._current_subnode_id(location_name)
+        if current == source:
+            return True
+        movement = str(graph.get("movement") or "adjacent")
+        if movement == "free":
+            return self._subnode_reachable(graph, current, source)
+        return False
+
+    def _world_path_subnode_route(self, world: WorldData, path: list[str]) -> list[dict[str, Any]] | None:
+        if len(path) < 2:
+            return []
+        route: list[dict[str, Any]] = []
+        current_subnodes: dict[str, str] = {path[0]: self._current_subnode_id(path[0])}
+        for current, target in zip(path, path[1:]):
+            edge = self._world_edge_between(world, current, target)
+            if not edge:
+                return None
+            source_subnode = self._world_edge_subnode_for_location(world, edge, current)
+            target_subnode = self._world_edge_subnode_for_location(world, edge, target)
+            if not source_subnode or not target_subnode:
+                return None
+            graph = self._ensure_location_subnode_graph(world, current)
+            movement = str(graph.get("movement") or "adjacent")
+            current_subnode = current_subnodes.get(current) or self._current_subnode_id(current)
+            if current_subnode != source_subnode:
+                if movement != "free" or not self._subnode_reachable(graph, current_subnode, source_subnode):
+                    return None
+            route.append(
+                {
+                    "from": current,
+                    "to": target,
+                    "from_subnode": source_subnode,
+                    "to_subnode": target_subnode,
+                    "edge": edge,
+                }
+            )
+            current_subnodes[target] = target_subnode
+        return route
 
     def _world_neighbors(self, world: WorldData, location: str) -> list[str]:
         graph = self._location_graph_for_update(world)
@@ -4599,16 +4738,10 @@ class GameEngine:
         return _dedupe_strs(result)
 
     def _location_uses_subnodes(self, location: LocationData | None) -> bool:
-        if location is None:
-            return False
-        extra = location.extra if isinstance(location.extra, dict) else {}
-        if isinstance(extra.get(SUBNODE_GRAPH_KEY), dict):
-            return True
-        if _is_settlement_location(location) or _is_dungeon_location(location):
-            return True
-        if extra.get("subareas") or extra.get("subnodes"):
-            return True
-        return _world_location_blocks_world_map_departure(location)
+        # World edges are resolved at subnode endpoints, so every location owns
+        # at least one hidden center node. Single-node locations still hide the
+        # subnode map in the UI.
+        return location is not None
 
     def _ensure_location_subnode_graph(self, world: WorldData, location_name: str) -> dict[str, Any]:
         name = str(location_name or "").strip()
@@ -5116,10 +5249,14 @@ class GameEngine:
         if not self._current_subnode_allows_world_map_departure(world, current):
             return self._dangerous_fast_travel_message()
         if target in self._world_neighbors(world, current):
-            return ""
+            route = self._world_path_subnode_route(world, [current, target])
+            return "" if route is not None else self._dangerous_fast_travel_message()
         if not bool(nodes.get(target, {}).get("visited")):
             return "その場所はまだ地図に記録されていません。"
         path = self._shortest_world_path(world, current, target, visited_only=True)
+        route = self._world_path_subnode_route(world, path)
+        if route is None:
+            return self._dangerous_fast_travel_message()
         if not path:
             return "現在地からその場所までの道が見つかりません。"
         return ""
@@ -5154,7 +5291,12 @@ class GameEngine:
         return ""
 
     def has_current_subnode_map(self) -> bool:
-        return bool(self.subnode_map_data().get("nodes"))
+        nodes = [
+            node
+            for node in self.subnode_map_data().get("nodes", [])
+            if isinstance(node, dict) and not node.get("external")
+        ]
+        return len(nodes) > 1
 
     def has_movement_options(self) -> bool:
         return bool(self.available_movement_options())
@@ -5227,6 +5369,8 @@ class GameEngine:
                         "kind": "external",
                         "location": location_name,
                         "target_location": target_location,
+                        "target_subnode": str(edge.get("target_subnode") or ""),
+                        "source_subnode": source_id,
                         "external": True,
                     }
                 )
@@ -5236,6 +5380,9 @@ class GameEngine:
             world_nodes = world_graph.get("nodes", {}) if isinstance(world_graph.get("nodes"), dict) else {}
             for neighbor in self._world_neighbors(world, location_name):
                 if not neighbor or neighbor in external_targets:
+                    continue
+                world_edge = self._world_edge_between(world, location_name, neighbor)
+                if not world_edge or not self._current_subnode_can_reach_world_edge(world, location_name, world_edge):
                     continue
                 node = world_nodes.get(neighbor, {}) if isinstance(world_nodes.get(neighbor), dict) else {}
                 if _world_graph_node_is_facility(world, node):
@@ -5457,9 +5604,8 @@ class GameEngine:
             target = b if a == location_name else a
             if not target or target == location_name:
                 continue
-            source_side = "from" if a == location_name else "to"
-            target_side = "to" if a == location_name else "from"
-            source_id = self._declared_world_edge_subnode(edge, source_side, location_name) or self._default_external_source_subnode(world, location_name, target)
+            self._ensure_world_edge_subnodes(world, edge)
+            source_id = self._world_edge_subnode_for_location(world, edge, location_name)
             if source_id not in nodes:
                 source_id = self._default_subnode_for_location(world.locations.get(location_name))
             if source_id not in nodes:
@@ -5468,7 +5614,7 @@ class GameEngine:
                 {
                     "from": source_id,
                     "target_location": target,
-                    "target_subnode": self._declared_world_edge_subnode(edge, target_side, target) or self._default_external_target_subnode(world, target, location_name),
+                    "target_subnode": self._world_edge_subnode_for_location(world, edge, target),
                     "hours": _safe_int(edge.get("hours"), WORLD_MAP_EDGE_HOURS),
                     "kind": str(edge.get("kind") or "exit"),
                     "description": str(edge.get("description") or ""),
@@ -5624,8 +5770,21 @@ class GameEngine:
         self._mark_location_visited(world, target_location)
         target_graph = self._ensure_location_subnode_graph(world, target_location)
         target_subnode = str(target.get("target_subnode") or "")
+        edge = self._world_edge_between(world, current_location, target_location)
+        if (not target_subnode or target_subnode not in target_graph.get("nodes", {})) and edge:
+            target_subnode = self._world_edge_subnode_for_location(world, edge, target_location)
         if not target_subnode or target_subnode not in target_graph.get("nodes", {}):
             target_subnode = self._default_subnode_for_location(world.locations.get(target_location))
+        if edge:
+            current_side = "from" if str(edge.get("from") or "") == current_location else "to"
+            target_side = "to" if current_side == "from" else "from"
+            source_subnode = str(source_id or self._current_subnode_id(current_location) or "")
+            if source_subnode:
+                edge[f"{current_side}_subnode"] = source_subnode
+                edge.setdefault("subnodes", {})[current_location] = source_subnode
+            if target_subnode:
+                edge[f"{target_side}_subnode"] = target_subnode
+                edge.setdefault("subnodes", {})[target_location] = target_subnode
         self._set_current_subnode(target_location, target_subnode)
         self._set_player_presence(target_location)
         narration = str(narrator_response.get("narration") or f"{previous_location} -> {target_location} \u3078\u79fb\u52d5\u3057\u305f\u3002")
@@ -5679,11 +5838,20 @@ class GameEngine:
             if isinstance(node, dict) and bool(node.get("visited")) and not _world_graph_node_is_facility(world, node)
         ]
         visited_names = {str(node.get("name") or "") for node in visited_nodes}
-        edges = [
-            dict(edge)
-            for edge in graph.get("edges", [])
-            if str(edge.get("from") or "") in visited_names and str(edge.get("to") or "") in visited_names
-        ]
+        edges: list[dict[str, Any]] = []
+        for edge in graph.get("edges", []):
+            if not isinstance(edge, dict):
+                continue
+            a = str(edge.get("from") or "")
+            b = str(edge.get("to") or "")
+            if a not in visited_names or b not in visited_names:
+                continue
+            self._ensure_world_edge_subnodes(world, edge)
+            if not self._world_edge_subnode_for_location(world, edge, a):
+                continue
+            if not self._world_edge_subnode_for_location(world, edge, b):
+                continue
+            edges.append(dict(edge))
         return {
             "current_location": self.state.current_location,
             "edge_hours": WORLD_MAP_EDGE_HOURS,
@@ -5717,7 +5885,11 @@ class GameEngine:
             path = self._shortest_world_path(world, current, target, visited_only=True)
         if not path:
             raise ValueError("現在地からその場所までの道が見つかりません。")
-        hours = (len(path) - 1) * WORLD_MAP_EDGE_HOURS
+        route = self._world_path_subnode_route(world, path)
+        if route is None:
+            raise ValueError(self._dangerous_fast_travel_message())
+        hours = sum(max(0, _safe_int(step.get("edge", {}).get("hours"), WORLD_MAP_EDGE_HOURS)) for step in route)
+        target_subnode = str(route[-1].get("to_subnode") or "") if route else self._current_subnode_id(target)
         target_location = world.locations.get(target)
         narrator_response = self._direct_travel_narrator(
             action="ワールドマップ移動",
@@ -5738,7 +5910,9 @@ class GameEngine:
         self._mark_location_visited(world, target)
         target_graph = self._ensure_location_subnode_graph(world, target)
         if target_graph:
-            self._set_current_subnode(target, self._default_subnode_for_location(world.locations.get(target)))
+            if target_subnode not in target_graph.get("nodes", {}):
+                target_subnode = self._default_subnode_for_location(world.locations.get(target))
+            self._set_current_subnode(target, target_subnode)
         narration, choices, _ = self._evaluate_hostile_arrival(
             "ワールドマップ移動",
             "choice",
@@ -5932,12 +6106,23 @@ class GameEngine:
                     "moved": False,
                     "denied": True,
                 }
+            edge = self._world_edge_between(world, current, proposed)
+            if not edge or not self._current_subnode_can_reach_world_edge(world, current, edge):
+                return {
+                    "location": current,
+                    "narration_lines": [self._dangerous_fast_travel_message()],
+                    "status_lines": [],
+                    "moved": False,
+                    "denied": True,
+                }
             if proposed not in nodes:
                 location = world.ensure_location(proposed, _short_text(str(response.get("narration") or ""), 220))
                 kind = _infer_world_location_kind_for_request(action, response, proposed, location.description)
                 location.extra["location_kind"] = kind
                 self._set_location_graph_node(world, proposed, kind=kind, location=location)
-            event = self._advance_world_time(WORLD_MAP_EDGE_HOURS, source="world_travel", reason="adjacent location travel", append_log=False)
+            target_subnode = self._world_edge_subnode_for_location(world, edge, proposed)
+            hours = max(0, _safe_int(edge.get("hours"), WORLD_MAP_EDGE_HOURS))
+            event = self._advance_world_time(hours, source="world_travel", reason="adjacent location travel", append_log=False)
             if event.get("line"):
                 status_lines.append(str(event["line"]))
             status_lines.extend(str(item) for item in event.get("companion_lines", []) if item)
@@ -5945,7 +6130,9 @@ class GameEngine:
             self._mark_location_visited(world, proposed)
             target_graph = self._ensure_location_subnode_graph(world, proposed)
             if target_graph:
-                self._set_current_subnode(proposed, self._default_subnode_for_location(world.locations.get(proposed)))
+                if target_subnode not in target_graph.get("nodes", {}):
+                    target_subnode = self._default_subnode_for_location(world.locations.get(proposed))
+                self._set_current_subnode(proposed, target_subnode)
             boss_event = self._ensure_generated_dungeon_boss(proposed, action, response)
             if boss_event:
                 status_lines.append(f"> [NPC] {boss_event.get('name')} が {proposed} の奥に配置されました。")
@@ -5979,7 +6166,21 @@ class GameEngine:
                 location.flags["settlement"] = True
             self._set_location_graph_node(world, proposed, kind=kind, danger=danger, location=location)
             self._connect_world_locations(world, current, proposed)
-            event = self._advance_world_time(WORLD_MAP_EDGE_HOURS, source="world_travel", reason="new nearby location", append_log=False)
+            edge = self._world_edge_between(world, current, proposed)
+            target_subnode = ""
+            if edge:
+                current_side = "from" if str(edge.get("from") or "") == current else "to"
+                target_side = "to" if current_side == "from" else "from"
+                current_subnode = self._current_subnode_id(current)
+                target_subnode = self._world_edge_subnode_for_location(world, edge, proposed)
+                if current_subnode:
+                    edge[f"{current_side}_subnode"] = current_subnode
+                    edge.setdefault("subnodes", {})[current] = current_subnode
+                if target_subnode:
+                    edge[f"{target_side}_subnode"] = target_subnode
+                    edge.setdefault("subnodes", {})[proposed] = target_subnode
+            hours = max(0, _safe_int(edge.get("hours") if edge else WORLD_MAP_EDGE_HOURS, WORLD_MAP_EDGE_HOURS))
+            event = self._advance_world_time(hours, source="world_travel", reason="new nearby location", append_log=False)
             if event.get("line"):
                 status_lines.append(str(event["line"]))
             status_lines.extend(str(item) for item in event.get("companion_lines", []) if item)
@@ -5987,7 +6188,9 @@ class GameEngine:
             self._mark_location_visited(world, proposed)
             target_graph = self._ensure_location_subnode_graph(world, proposed)
             if target_graph:
-                self._set_current_subnode(proposed, self._default_subnode_for_location(world.locations.get(proposed)))
+                if target_subnode not in target_graph.get("nodes", {}):
+                    target_subnode = self._default_subnode_for_location(world.locations.get(proposed))
+                self._set_current_subnode(proposed, target_subnode)
             boss_event = self._ensure_generated_dungeon_boss(proposed, action, response)
             if boss_event:
                 status_lines.append(f"> [NPC] {boss_event.get('name')} が {proposed} の奥に配置されました。")
@@ -16752,688 +16955,6 @@ def _ability_visual_parts(extra: dict[str, Any]) -> list[str]:
     return parts
 
 
-def _status_effect_target(value: Any) -> str:
-    if not isinstance(value, dict):
-        return ""
-    text = str(value.get("target") or value.get("actor") or value.get("recipient") or "").strip().lower()
-    if text in {"player", "pc", "hero", "self", "you", "あなた", "プレイヤー"}:
-        return "player"
-    if text in {"opponent", "enemy", "monster", "npc", "target", "foe", "相手", "敵", "対象"}:
-        return "opponent"
-    return ""
-
-
-def _global_status_target(value: Any, default_target: str, context_target: str) -> str:
-    if not isinstance(value, dict):
-        return default_target
-    text = str(
-        value.get("target")
-        or value.get("actor")
-        or value.get("recipient")
-        or value.get("character")
-        or value.get("character_name")
-        or value.get("npc")
-        or value.get("npc_name")
-        or ""
-    ).strip()
-    lowered = text.lower()
-    if lowered in {"", "default"}:
-        return default_target
-    if lowered in {"player", "pc", "hero", "protagonist", "you", "あなた", "プレイヤー"}:
-        return "player"
-    if lowered in {"self"}:
-        return default_target
-    if lowered in {"speaker", "npc", "character", "target"}:
-        return context_target or default_target
-    if lowered in {"monster", "enemy", "opponent"}:
-        return "monster"
-    return text
-
-
-def _status_effect_applied_line(item: dict[str, Any]) -> str:
-    label = str(item.get("label") or item.get("target") or "対象")
-    effect = item.get("effect") if isinstance(item.get("effect"), dict) else {}
-    name = str(effect.get("name") or "状態")
-    marker = "長期状態" if _safe_int(effect.get("duration"), 0) == -1 else "状態"
-    stage = str(effect.get("stage") or "")
-    suffix = f" ({stage})" if stage else ""
-    return f"[{marker}] {label}に{name}{suffix}が付与された。"
-
-
-def _status_effect_removed_line(item: dict[str, Any]) -> str:
-    label = str(item.get("label") or item.get("target") or "target")
-    effect = item.get("effect") if isinstance(item.get("effect"), dict) else {}
-    name = str(effect.get("name") or "status")
-    marker = "long-term status removed" if _safe_int(effect.get("duration"), 0) == -1 else "status removed"
-    treatment = str(item.get("treatment") or "")
-    suffix = f" ({treatment})" if treatment else ""
-    return f"[{marker}] {label}: {name}{suffix}"
-
-
-def _status_effect_items(value: Any) -> list[Any]:
-    if value is None or value == "":
-        return []
-    if isinstance(value, list):
-        return value
-    if isinstance(value, tuple):
-        return list(value)
-    if isinstance(value, dict):
-        if any(
-            key in value
-            for key in (
-                "name",
-                "title",
-                "label",
-                "id",
-                "effect_id",
-                "status",
-                "condition",
-                "effect",
-                "effect_text",
-                "llm_effect",
-                "description",
-                "mechanics",
-                "power",
-                "duration",
-                "remove_condition",
-            )
-        ):
-            return [value]
-        result: list[Any] = []
-        for item in value.values():
-            result.extend(_status_effect_items(item))
-        return result
-    return [value]
-
-
-def _normalise_status_effect(value: Any, *, source: str = "") -> dict[str, Any]:
-    if isinstance(value, dict):
-        raw_name = str(
-            value.get("name")
-            or value.get("title")
-            or value.get("label")
-            or value.get("id")
-            or value.get("status")
-            or value.get("condition")
-            or ""
-        ).strip()
-        data = {str(key): item for key, item in value.items()}
-    else:
-        raw_name = str(value).strip()
-        data = {"name": raw_name}
-    raw_effect_text = _first_status_text(
-        data,
-        "effect",
-        "effect_text",
-        "mechanics",
-        "mechanical_effect",
-        "rule",
-        "rules",
-    )
-    effect_text_is_id = bool(canonical_status_effect_id(raw_effect_text))
-    description = _first_status_text(data, "description", "summary", "detail")
-    llm_effect = _first_status_text(data, "llm_effect", "send_llm", "send_llm_text", "llm_text")
-    if not llm_effect and raw_effect_text and not effect_text_is_id:
-        llm_effect = raw_effect_text
-    raw_name = raw_name or _status_name_from_text(llm_effect or description)
-    combined = " ".join(part for part in (raw_name, raw_effect_text, description, llm_effect) if part)
-    preset = _status_effect_preset(combined)
-    raw_id = str(
-        data.get("effect_id")
-        or data.get("effect_type")
-        or data.get("status_id")
-        or data.get("id")
-        or (raw_effect_text if effect_text_is_id else "")
-        or preset.get("effect_id")
-        or preset.get("id")
-        or ""
-    ).strip()
-    system_id = raw_id if raw_id in {"dead", "defeated", SURRENDERED_STATUS_ID, FLED_STATUS_ID} else ""
-    effect_id = canonical_status_effect_id(raw_id) or canonical_status_effect_id(combined) or system_id
-    if not effect_id:
-        effect_id = "SendLLM" if (llm_effect or description or raw_name) else ""
-    if not effect_id:
-        return {}
-    name = str(data.get("name") or preset.get("name") or raw_name or status_effect_label(effect_id)).strip()
-    if name == effect_id:
-        name = status_effect_label(effect_id)
-    description = description or str(preset.get("description") or status_effect_description(effect_id) or "")
-    remove_condition = str(data.get("remove_condition") or data.get("cure_condition") or preset.get("remove_condition") or "").strip()
-    inferred_duration = _infer_status_duration(llm_effect or description or raw_name)
-    duration_value = (
-        data.get("duration")
-        if "duration" in data
-        else data.get("time", data.get("turns", preset.get("duration", inferred_duration)))
-    )
-    permanent = _is_permanent_status_duration(duration_value) or _as_bool(data.get("permanent") or data.get("persistent") or preset.get("persistent"))
-    duration = -1 if permanent else _safe_int(duration_value, _safe_int(preset.get("duration", inferred_duration), 0))
-    if duration <= 0 and inferred_duration > 0:
-        duration = inferred_duration
-    power = _safe_int(
-        data.get(
-            "power",
-            data.get(
-                "value",
-                data.get("amount", data.get("effect_amount", preset.get("power", 0))),
-            ),
-        ),
-        _safe_int(preset.get("power"), 0),
-    )
-    if effect_id in {"HP_Damage", "SP_Damage", "Paralysis"}:
-        power = abs(power)
-    result = {
-        "name": name,
-        "description": description,
-        "remove_condition": remove_condition,
-        "power": power,
-        "duration": duration,
-        "effect_id": effect_id,
-        "llm_effect": llm_effect,
-        "source": source or str(data.get("source") or ""),
-    }
-    for key in (
-        "severity",
-        "category",
-        "scope",
-        "stage",
-        "progress",
-        "visual",
-        "tick_text",
-        "expire_text",
-        "apply_text",
-        "started_day",
-        "started_location",
-        "expected_day",
-        "due_day",
-        "expires_day",
-        "notes",
-        "combat_state",
-    ):
-        item = data.get(key) if key in data else preset.get(key)
-        if item not in (None, "", [], {}):
-            result[key] = item
-    return _drop_empty(result)
-
-
-def _first_status_text(data: dict[str, Any], *keys: str) -> str:
-    for key in keys:
-        value = data.get(key)
-        if value in (None, "", [], {}):
-            continue
-        if isinstance(value, (dict, list)):
-            return json.dumps(value, ensure_ascii=False)
-        return str(value).strip()
-    return ""
-
-
-def _status_name_from_text(text: str) -> str:
-    cleaned = " ".join(str(text or "").split())
-    if not cleaned:
-        return ""
-    for separator in ("。", ".", "、", ",", ":", "：", "\n"):
-        if separator in cleaned:
-            cleaned = cleaned.split(separator, 1)[0].strip()
-            break
-    return cleaned[:28] + ("..." if len(cleaned) > 28 else "")
-
-
-def _infer_status_duration(text: str) -> int:
-    source = str(text or "")
-    patterns = (
-        r"(\d+)\s*(?:ターン|turns?)",
-        r"(?:for|next)\s+(\d+)\s+turns?",
-    )
-    for pattern in patterns:
-        match = re.search(pattern, source, flags=re.IGNORECASE)
-        if match:
-            return max(0, _safe_int(match.group(1), 0))
-    return 0
-
-
-def _is_permanent_status_duration(value: Any) -> bool:
-    text = str(value or "").strip().lower()
-    return text in {
-        "permanent",
-        "persistent",
-        "indefinite",
-        "until_removed",
-        "until removed",
-        "long_term",
-        "long term",
-        "永続",
-        "恒久",
-        "長期",
-        "解除まで",
-    }
-
-
-def _format_status_template(template: Any, actor_label: str, name: str, hp_delta: int) -> str:
-    text = str(template or "").strip()
-    if not text:
-        return ""
-    values = {
-        "actor": actor_label,
-        "name": name,
-        "damage": abs(hp_delta) if hp_delta < 0 else 0,
-        "heal": hp_delta if hp_delta > 0 else 0,
-        "hp_delta": hp_delta,
-    }
-    try:
-        return text.format(**values)
-    except (KeyError, ValueError):
-        return text
-
-
-def _status_effect_preset(text: str) -> dict[str, Any]:
-    source = str(text or "")
-    lowered = source.casefold()
-    effect_id = canonical_status_effect_id(source)
-    if effect_id:
-        power = 1 if effect_id in {"HP_Damage", "SP_Damage", "Paralysis"} else 0
-        return {
-            "effect_id": effect_id,
-            "name": status_effect_label(effect_id),
-            "description": status_effect_description(effect_id),
-            "duration": 3 if effect_id in {"HP_Damage", "SP_Damage", "Paralysis", "Silence", "Psychosis", "Inoperable"} else 0,
-            "power": power,
-        }
-    if any(word in lowered for word in ("dead", "death")) or "死亡" in source:
-        return {"effect_id": "dead", "name": "死亡", "duration": -1, "power": 0}
-    if any(word in lowered for word in ("defeated", "unconscious")) or "戦闘不能" in source:
-        return {"effect_id": "defeated", "name": "戦闘不能", "duration": -1, "power": 0}
-    if "surrender" in lowered or "降伏" in source:
-        return {"effect_id": SURRENDERED_STATUS_ID, "name": "降伏", "duration": -1, "power": 0}
-    if any(word in lowered for word in ("fled", "escaped")) or "逃走" in source:
-        return {"effect_id": FLED_STATUS_ID, "name": "逃走", "duration": -1, "power": 0}
-    if "pregnan" in lowered or "妊娠" in source:
-        return {
-            "effect_id": "SendLLM",
-            "name": "妊娠",
-            "description": "長期的に保持される身体状態。",
-            "duration": -1,
-            "power": 0,
-            "llm_effect": "妊娠している。行動や描写で必要に応じて考慮する。",
-            "scope": "character",
-        }
-    if any(word in lowered for word in ("wounded", "injured")) or "負傷" in source or "重傷" in source:
-        return {
-            "effect_id": "SendLLM",
-            "name": "負傷",
-            "description": "傷を負っており、行動や描写に影響する。",
-            "duration": 0,
-            "power": 0,
-            "llm_effect": "負傷している。痛みや動作の鈍りを描写に反映する。",
-        }
-    return {}
-
-
-def _status_effect_from_status_text(text: str) -> dict[str, Any]:
-    preset = _status_effect_preset(text)
-    return _normalise_status_effect(preset, source="status_text") if preset else {}
-
-
-def _status_effect_id_matches(effect: dict[str, Any], ids: set[str]) -> bool:
-    effect_id = _status_effect_id(effect)
-    if effect_id in ids:
-        return True
-    return False
-
-
-def _status_effect_blocks_action(effect: dict[str, Any]) -> bool:
-    return _status_effect_id(effect) == "Inoperable"
-
-
-def _status_effect_blocks_movement(effect: dict[str, Any]) -> bool:
-    return _status_effect_id(effect) == "Inoperable"
-
-
-def _status_effect_blocks_attack(effect: dict[str, Any]) -> bool:
-    return _status_effect_id(effect) == "Inoperable"
-
-
-def _status_effect_blocks_escape(effect: dict[str, Any]) -> bool:
-    return _status_effect_id(effect) == "Inoperable"
-
-
-def _status_effect_blocks_skill(effect: dict[str, Any]) -> bool:
-    return _status_effect_id(effect) == "Psychosis"
-
-
-def _status_effect_action_uses_mouth(action: str) -> bool:
-    text = str(action or "").casefold()
-    if not text:
-        return False
-    return any(
-        keyword in text
-        for keyword in (
-            "詠唱",
-            "唱える",
-            "唱え",
-            "話す",
-            "話しかけ",
-            "説得",
-            "交渉",
-            "叫ぶ",
-            "歌う",
-            "speech",
-            "speak",
-            "talk",
-            "negotiate",
-            "persuade",
-            "chant",
-            "cast",
-            "sing",
-            "shout",
-        )
-    )
-
-
-def _status_effect_is_surrendered_or_fled(effect: dict[str, Any]) -> bool:
-    return _status_effect_id(effect) in {SURRENDERED_STATUS_ID, FLED_STATUS_ID}
-
-
-def _status_response_context_text(value: Any) -> str:
-    if value in (None, "", [], {}):
-        return ""
-    if isinstance(value, dict):
-        parts = [
-            str(value.get(key) or "")
-            for key in (
-                "narration",
-                "text",
-                "message",
-                "npc_action",
-                "intent",
-                "reason",
-                "description",
-            )
-        ]
-        judgement = value.get("combat_judgement")
-        if isinstance(judgement, dict):
-            parts.extend(str(judgement.get(key) or "") for key in ("reason", "description"))
-        return "\n".join(part for part in parts if part)
-    try:
-        return json.dumps(value, ensure_ascii=False, default=str)
-    except TypeError:
-        return str(value)
-
-
-def _status_effect_is_incapacitating(effect: dict[str, Any]) -> bool:
-    if not isinstance(effect, dict):
-        return False
-    return _status_effect_id(effect) == "Inoperable"
-
-
-def _status_effect_has_generic_incapacitated_text(effect: dict[str, Any]) -> bool:
-    return _status_effect_has_generic_incapacitated_name(effect) or _status_effect_has_generic_incapacitated_description(effect)
-
-
-def _status_effect_has_generic_incapacitated_name(effect: dict[str, Any]) -> bool:
-    name = str(effect.get("name") or "").strip()
-    lowered = name.casefold()
-    return lowered in {
-        "",
-        INCAPACITATED_STATUS_ID,
-        "immobilized",
-        "immobilised",
-        "restrained",
-        "bound",
-        "unable to act",
-        "cannot act",
-        "status",
-        "condition",
-        "状態",
-        INCAPACITATED_STATUS_NAME,
-        "拘束",
-        "拘束状態",
-        "捕縛",
-        "身動き不能",
-        "動けない",
-    }
-
-
-def _status_effect_has_generic_incapacitated_description(effect: dict[str, Any]) -> bool:
-    description = str(effect.get("description") or "").strip()
-    effect_text = str(effect.get("llm_effect") or effect.get("effect") or "").strip()
-    if not description and not effect_text:
-        return True
-    generic_parts = (
-        "拘束や麻痺などにより",
-        "攻撃・逃走・移動ができない",
-        "unable to act",
-        "cannot act",
-        "prevents action",
-    )
-    combined = f"{description}\n{effect_text}".casefold()
-    return any(part.casefold() in combined for part in generic_parts)
-
-
-def _contextual_incapacitated_status_details(actor_name: str, context_text: str) -> dict[str, str]:
-    actor = str(actor_name or "").strip()
-    source = f"{actor}\n{context_text}".casefold()
-
-    def has_any(*words: str) -> bool:
-        return any(word.casefold() in source for word in words)
-
-    if has_any("触手", "tentacle"):
-        return {
-            "name": "触手拘束",
-            "description": "絡みつく触手に手足を押さえ込まれ、攻撃・逃走・移動ができない。",
-            "effect": "触手による拘束。攻撃・逃走・移動を妨げる。",
-        }
-    if has_any("糸", "蜘蛛", "粘糸", "web", "spider"):
-        return {
-            "name": "粘糸拘束",
-            "description": "粘つく糸が体に絡み、攻撃・逃走・移動ができない。",
-            "effect": "粘糸による拘束。攻撃・逃走・移動を妨げる。",
-        }
-    if has_any("粘液", "スライム", "slime", "mucus"):
-        return {
-            "name": "粘液拘束",
-            "description": "まとわりつく粘液で体の自由を奪われ、攻撃・逃走・移動ができない。",
-            "effect": "粘液による拘束。攻撃・逃走・移動を妨げる。",
-        }
-    if has_any("蔓", "つる", "根", "植物", "vine", "root"):
-        return {
-            "name": "蔓絡み",
-            "description": "蔓や根が足元から絡みつき、攻撃・逃走・移動ができない。",
-            "effect": "植物による拘束。攻撃・逃走・移動を妨げる。",
-        }
-    if has_any("氷", "凍", "ice", "frost", "freeze"):
-        return {
-            "name": "氷縛",
-            "description": "凍りついた冷気が体を固め、攻撃・逃走・移動ができない。",
-            "effect": "氷結による拘束。攻撃・逃走・移動を妨げる。",
-        }
-    if has_any("雷", "電", "痺", "しびれ", "麻痺", "lightning", "shock", "paraly"):
-        return {
-            "name": "電撃麻痺",
-            "description": "走るしびれで体が硬直し、攻撃・逃走・移動ができない。",
-            "effect": "電撃による麻痺。攻撃・逃走・移動を妨げる。",
-        }
-    if has_any("影", "闇", "shadow", "dark"):
-        return {
-            "name": "影縛り",
-            "description": "足元の影に縫い止められ、攻撃・逃走・移動ができない。",
-            "effect": "影による拘束。攻撃・逃走・移動を妨げる。",
-        }
-    if has_any("鎖", "縄", "ロープ", "chain", "rope"):
-        return {
-            "name": "鎖縄拘束",
-            "description": "鎖や縄で体を取られ、攻撃・逃走・移動ができない。",
-            "effect": "鎖縄による拘束。攻撃・逃走・移動を妨げる。",
-        }
-    if has_any("網", "罠", "net", "trap"):
-        return {
-            "name": "罠絡み",
-            "description": "罠に体を絡め取られ、攻撃・逃走・移動ができない。",
-            "effect": "罠による拘束。攻撃・逃走・移動を妨げる。",
-        }
-    if has_any("呪", "魔法", "spell", "curse", "magic"):
-        return {
-            "name": "呪縛",
-            "description": "敵の術が体の自由を奪い、攻撃・逃走・移動ができない。",
-            "effect": "呪いまたは魔法による拘束。攻撃・逃走・移動を妨げる。",
-        }
-    if has_any("押さえ", "組み伏せ", "掴", "grab", "pin", "grapple"):
-        return {
-            "name": "組み伏せ",
-            "description": "体勢を崩されて押さえ込まれ、攻撃・逃走・移動ができない。",
-            "effect": "組み伏せによる拘束。攻撃・逃走・移動を妨げる。",
-        }
-    label = f"{actor}の拘束" if actor else "拘束"
-    return {
-        "name": label,
-        "description": "敵の攻撃で体の自由を奪われ、攻撃・逃走・移動ができない。",
-        "effect": "攻撃に伴う拘束。攻撃・逃走・移動を妨げる。",
-    }
-
-
-def _combat_status_effects_payload(value: Any) -> list[dict[str, Any]]:
-    effects: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for raw in _status_effect_items(value):
-        effect = _normalise_status_effect(raw) if not isinstance(raw, dict) else _normalise_status_effect(raw, source=str(raw.get("source") or ""))
-        if not effect:
-            continue
-        name = str(effect.get("name") or "").strip()
-        if not name:
-            continue
-        key = f"{_status_effect_id(effect)}|{name}"
-        if key in seen:
-            continue
-        seen.add(key)
-        item = {
-            "effect_id": _status_effect_id(effect),
-            "name": name,
-            "description": str(effect.get("description") or ""),
-            "remove_condition": str(effect.get("remove_condition") or ""),
-            "power": effect.get("power"),
-            "duration": effect.get("duration"),
-            "llm_effect": str(effect.get("llm_effect") or ""),
-        }
-        effects.append({key: value for key, value in item.items() if value not in (None, "", [], {})})
-    return effects[:3]
-
-
-def _combat_status_effects_fallback_note(value: Any, target_name: str) -> str:
-    effects = _combat_status_effects_payload(value)
-    if not effects:
-        return ""
-    target = str(target_name or "対象")
-    parts: list[str] = []
-    for effect in effects[:2]:
-        name = str(effect.get("name") or "状態異常")
-        description = str(effect.get("description") or effect.get("llm_effect") or "")
-        parts.append(f"{target}は「{name}」を受けた。{description}".strip())
-    return " " + " ".join(parts)
-
-
-def _combat_status_effects_mentioned(text: str, value: Any) -> bool:
-    source = str(text or "")
-    if not source:
-        return False
-    for effect in _combat_status_effects_payload(value):
-        name = str(effect.get("name") or "").strip()
-        description = str(effect.get("description") or effect.get("llm_effect") or "").strip()
-        if name and name in source:
-            return True
-        if description:
-            fragment = description[: min(10, len(description))]
-            if fragment and fragment in source:
-                return True
-    return False
-
-
-def _status_effect_merge_key(effect: dict[str, Any]) -> str:
-    return f"{_status_effect_id(effect)}|{str(effect.get('name') or '').casefold()}"
-
-
-def _merge_status_effect(status_list: list[dict[str, Any]], effect: dict[str, Any]) -> None:
-    effect_key = _status_effect_merge_key(effect)
-    for existing in status_list:
-        if _status_effect_merge_key(existing) != effect_key:
-            continue
-        existing.update({key: value for key, value in effect.items() if value not in (None, "", [])})
-        existing_duration = _safe_int(existing.get("duration"), 0)
-        effect_duration = _safe_int(effect.get("duration"), 0)
-        existing["duration"] = -1 if -1 in {existing_duration, effect_duration} else max(existing_duration, effect_duration)
-        existing["power"] = max(_safe_int(existing.get("power"), 0), _safe_int(effect.get("power"), 0))
-        return
-    status_list.append(effect)
-
-
-def _tick_status_effects(status_list: list[dict[str, Any]], actor_label: str) -> tuple[list[dict[str, Any]], int, int, list[str]]:
-    updated: list[dict[str, Any]] = []
-    total_hp_delta = 0
-    total_sp_delta = 0
-    lines: list[str] = []
-    for raw in status_list:
-        effect = _normalise_status_effect(raw, source=str(raw.get("source") or "") if isinstance(raw, dict) else "")
-        if not effect:
-            continue
-        name = str(effect.get("name") or "状態異常")
-        effect_id = _status_effect_id(effect)
-        power = max(0, _safe_int(effect.get("power"), 0))
-        hp_delta = -power if effect_id == "HP_Damage" and power else 0
-        sp_delta = -power if effect_id == "SP_Damage" and power else 0
-        if hp_delta:
-            total_hp_delta += hp_delta
-            tick_text = _format_status_template(effect.get("tick_text"), actor_label, name, hp_delta)
-            if tick_text:
-                lines.append(tick_text)
-            elif hp_delta < 0:
-                lines.append(f"[状態] {actor_label}は{name}により{abs(hp_delta)}ダメージを受けた。")
-            else:
-                lines.append(f"[状態] {actor_label}は{name}により{hp_delta}回復した。")
-        if sp_delta:
-            total_sp_delta += sp_delta
-            lines.append(f"[状態] {actor_label}は{name}によりSPを{abs(sp_delta)}失った。")
-        elif effect.get("tick_text"):
-            lines.append(_format_status_template(effect.get("tick_text"), actor_label, name, hp_delta))
-        elif effect.get("llm_effect") and _safe_int(effect.get("duration"), 0) > 0:
-            lines.append(f"[状態] {actor_label}は{name}の影響を受けている: {effect.get('llm_effect')}")
-        duration = _safe_int(effect.get("duration"), 0)
-        if duration > 0:
-            duration -= 1
-            if duration <= 0:
-                expire_text = _format_status_template(effect.get("expire_text"), actor_label, name, hp_delta)
-                lines.append(expire_text or f"[状態] {actor_label}の{name}は治まった。")
-                continue
-            effect["duration"] = duration
-        updated.append(effect)
-    return updated, total_hp_delta, total_sp_delta, lines
-
-
-def _status_effect_id(value: Any) -> str:
-    if isinstance(value, dict):
-        direct = str(value.get("effect_id") or value.get("effect_type") or value.get("status_id") or "").strip()
-        canonical = canonical_status_effect_id(direct)
-        if canonical:
-            return canonical
-        raw_id = str(value.get("id") or "").strip()
-        if raw_id in {"dead", "defeated", SURRENDERED_STATUS_ID, FLED_STATUS_ID}:
-            return raw_id
-        text = str(value.get("name") or value.get("title") or value.get("label") or value.get("status") or value.get("condition") or value.get("effect") or value.get("description") or "")
-    else:
-        text = str(value)
-    preset = _status_effect_preset(text)
-    preset_id = str(preset.get("effect_id") or preset.get("id") or "").strip()
-    canonical = canonical_status_effect_id(preset_id) or canonical_status_effect_id(text)
-    if canonical:
-        return canonical
-    if preset_id in {"dead", "defeated", SURRENDERED_STATUS_ID, FLED_STATUS_ID}:
-        return preset_id
-    return _slug_status(text)
-
-
-def _slug_status(text: str) -> str:
-    cleaned = "".join(ch.lower() if ch.isalnum() else "_" for ch in str(text).strip())
-    while "__" in cleaned:
-        cleaned = cleaned.replace("__", "_")
-    return cleaned.strip("_") or "status"
-
-
 def _game_over_choices() -> list[str]:
     return ["ゲームオーバー"]
 
@@ -17698,641 +17219,6 @@ def _normalise_trait(value: Any) -> dict[str, Any]:
     trait["strength_level"] = power
     trait["severity"] = power
     return trait
-
-
-def _game_controlled_hp_keys(target: str, *, top_level: bool = False) -> set[str]:
-    if target == "opponent":
-        return {
-            "opponent_hp",
-            "enemy_hp",
-            "target_hp",
-            "opponent_current_hp",
-            "opponent_hp_delta",
-            "enemy_hp_delta",
-            "target_hp_delta",
-            "opponent_damage_hp",
-            "enemy_damage_hp",
-            "target_damage_hp",
-            "opponent_heal_hp",
-            "enemy_heal_hp",
-            "target_heal_hp",
-        }
-    keys = {
-        "player_hp",
-        "player_current_hp",
-        "player_hp_delta",
-        "hp_delta",
-        "health_delta",
-        "damage_hp",
-        "hp_damage",
-        "player_damage_hp",
-        "harm_hp",
-        "heal_hp",
-        "healing",
-        "restore_hp",
-        "recover_hp",
-        "hp_restore",
-        "player_heal_hp",
-        "player_recover_hp",
-        "hp_effect",
-        "hp_effects",
-        "player_hp_effect",
-        "player_hp_effects",
-        "health_effect",
-        "health_effects",
-        "recovery_effect",
-        "recovery_effects",
-    }
-    if top_level:
-        keys.add("current_hp")
-    return keys
-
-
-def _strip_hp_update_value(value: Any, target: str) -> Any:
-    if isinstance(value, list):
-        return [_strip_hp_update_value(item, target) for item in value]
-    if not isinstance(value, dict):
-        return value
-    blocked = _game_controlled_hp_keys(target)
-    cleaned: dict[str, Any] = {}
-    for key, item in value.items():
-        if str(key).strip().lower() in blocked:
-            continue
-        cleaned[key] = _strip_hp_update_value(item, target)
-    return cleaned
-
-
-def _combat_response_candidates(response: Any) -> list[dict[str, Any]]:
-    if not isinstance(response, dict):
-        return []
-    candidates = [response]
-    for key in (
-        "combat_judgement",
-        "combat_judgment",
-        "combat_result",
-        "damage_judgement",
-        "damage_judgment",
-        "damage_calculation",
-        "skill_judgement",
-        "skill_judgment",
-        "skill_calculation",
-        "attack_result",
-        "game_combat_result",
-    ):
-        value = response.get(key)
-        if isinstance(value, dict):
-            candidates.append(value)
-    return candidates
-
-
-def _response_has_status_effect_update(value: Any, *, _depth: int = 0) -> bool:
-    if _depth > 4 or value in (None, "", [], {}):
-        return False
-    status_keys = {
-        "status_effect",
-        "status_effects",
-        "player_status",
-        "player_status_effect",
-        "player_status_effects",
-        "add_player_status_effect",
-        "add_player_status_effects",
-        "opponent_status",
-        "opponent_status_effect",
-        "opponent_status_effects",
-        "add_opponent_status_effect",
-        "add_opponent_status_effects",
-        "npc_status_effects",
-        "character_status_effects",
-        "long_term_statuses",
-        "persistent_statuses",
-    }
-    if isinstance(value, list):
-        return any(_response_has_status_effect_update(item, _depth=_depth + 1) for item in value)
-    if not isinstance(value, dict):
-        return False
-    for key, item in value.items():
-        key_text = str(key).strip().lower()
-        if key_text in status_keys and item not in (None, "", [], {}):
-            return True
-        if key_text in {"encounter_update", "updates", "effects", "result"} and _response_has_status_effect_update(item, _depth=_depth + 1):
-            return True
-    return False
-
-
-def _combat_value_from_response(response: Any, keys: tuple[str, ...]) -> Any:
-    for candidate in _combat_response_candidates(response):
-        for key in keys:
-            if key in candidate and candidate.get(key) not in (None, ""):
-                return candidate.get(key)
-    return None
-
-
-def _combat_weakness_multiplier(response: Any, default: float = 1.0) -> float:
-    value = _combat_value_from_response(
-        response,
-        (
-            "weakness_multiplier",
-            "weakness_modifier",
-            "weakness",
-            "damage_multiplier",
-            "effectiveness",
-            "element_multiplier",
-            "element_modifier",
-            "multiplier",
-        ),
-    )
-    if value is None:
-        return default
-    if isinstance(value, str):
-        text = value.strip().lower()
-        number_match = re.search(r"-?\d+(?:\.\d+)?", text)
-        if number_match:
-            value = number_match.group(0)
-        elif any(word in text for word in ("immune", "無効", "効かない", "通らない")):
-            return 0.0
-        elif any(word in text for word in ("resist", "耐性", "軽減", "半減")):
-            return 0.5
-        elif any(word in text for word in ("very weak", "大弱点", "致命的", "critical")):
-            return 2.0
-        elif any(word in text for word in ("weak", "弱点", "有効")):
-            return 1.5
-        else:
-            return default
-    multiplier = _safe_float(value, default)
-    if multiplier > 3 and multiplier <= 300:
-        multiplier /= 100.0
-    return max(0.0, min(3.0, multiplier))
-
-
-def _combat_apply_defense(response: Any, *, default: bool) -> bool:
-    ignore_value = _combat_value_from_response(response, ("ignore_defense", "pierce_defense", "defense_ignored"))
-    if ignore_value not in (None, "") and _as_bool(ignore_value):
-        return False
-    value = _combat_value_from_response(
-        response,
-        ("apply_defense", "uses_defense", "use_defense", "defense_applies", "subtract_defense"),
-    )
-    if value in (None, ""):
-        return default
-    return _as_bool(value)
-
-
-def _combat_ability_from_response(response: Any, *, skill: dict[str, Any], healing: bool) -> str:
-    value = _combat_value_from_response(
-        response,
-        ("ability", "attribute", "ability_id", "attribute_id", "damage_ability", "scaling_attribute"),
-    )
-    ability = _normalise_combat_ability(value)
-    if ability:
-        return ability
-    return _skill_default_ability(skill, healing=healing)
-
-
-def _normalise_combat_ability(value: Any) -> str:
-    text = str(value or "").strip().lower()
-    if not text:
-        return ""
-    aliases = {
-        "str": "str",
-        "strength": "str",
-        "power": "str",
-        "筋力": "str",
-        "力": "str",
-        "dex": "dex",
-        "dexterity": "dex",
-        "agi": "dex",
-        "agility": "dex",
-        "器用": "dex",
-        "敏捷": "dex",
-        "con": "con",
-        "constitution": "con",
-        "endurance": "con",
-        "耐久": "con",
-        "int": "int",
-        "intelligence": "int",
-        "knowledge": "int",
-        "知力": "int",
-        "wis": "wis",
-        "will": "will",
-        "wisdom": "wis",
-        "spirit": "will",
-        "意志": "will",
-        "精神": "wis",
-        "cha": "cha",
-        "charisma": "cha",
-        "charm": "cha",
-        "魅力": "cha",
-        "交渉": "cha",
-        "magic": "magic",
-        "mag": "magic",
-        "魔力": "magic",
-    }
-    return aliases.get(text, "")
-
-
-def _skill_is_healing(skill: dict[str, Any], response: Any) -> bool:
-    value = _combat_value_from_response(response, ("effect_type", "skill_effect", "intent", "result_type", "type"))
-    text = " ".join(
-        str(item or "")
-        for item in (
-            value,
-            skill.get("name"),
-            skill.get("skill_type"),
-            skill.get("element"),
-            skill.get("description"),
-            skill.get("effect"),
-            skill.get("effects"),
-        )
-    ).lower()
-    return any(word in text for word in ("heal", "healing", "recover", "recovery", "restore", "cure", "treat", "回復", "治療", "癒", "応急"))
-
-
-def _skill_default_uses_defense(skill: dict[str, Any]) -> bool:
-    text = " ".join(str(skill.get(key) or "") for key in ("skill_type", "element", "category", "description", "effect")).lower()
-    if any(word in text for word in ("magic", "spell", "arcane", "mental", "poison", "light", "dark", "fire", "water", "ice", "lightning")):
-        return False
-    if any(word in text for word in ("support", "heal", "healing", "recover", "回復", "治療", "補助")):
-        return False
-    return True
-
-
-def _skill_default_ability(skill: dict[str, Any], *, healing: bool) -> str:
-    text = " ".join(str(skill.get(key) or "") for key in ("skill_type", "element", "category", "description", "effect")).lower()
-    if healing:
-        return "wis"
-    if any(word in text for word in ("physical", "weapon", "slash", "strike", "none", "物理")):
-        return "str"
-    if any(word in text for word in ("support", "mental", "spirit", "精神")):
-        return "wis"
-    if any(word in text for word in ("magic", "spell", "arcane", "fire", "water", "ice", "lightning", "earth", "wind", "light", "dark", "魔法", "魔力")):
-        return "magic"
-    if any(word in text for word in ("poison", "grass", "tool", "道具", "毒", "草")):
-        return "dex"
-    return "str"
-
-
-def _combat_damage_message(damage: int, max_hp: int, *, action_name: str) -> str:
-    hp = max(1, int(max_hp or 1))
-    ratio = max(0.0, damage / hp)
-    if damage <= 0:
-        return f"{action_name}は通らず、相手に有効な傷を与えられなかった。"
-    if damage <= 2 or ratio <= 0.05:
-        return f"勢いよく{action_name}したが、かすり傷しか与えられなかった。"
-    if ratio <= 0.15:
-        return f"{action_name}が浅く入り、相手に小さな傷を負わせた。"
-    if ratio <= 0.35:
-        return f"{action_name}がしっかり命中し、確かなダメージを与えた。"
-    if ratio <= 0.60:
-        return f"重い{action_name}が入り、相手の体勢を大きく崩した。"
-    return f"{action_name}が急所を捉え、致命的な傷を与えた。"
-
-
-def _combat_heal_message(amount: int, skill_name: str) -> str:
-    if amount <= 0:
-        return f"> [戦闘] {skill_name}を使ったが、HPは回復しなかった。"
-    if amount <= 5:
-        return f"> [戦闘] {skill_name}で少し体勢を立て直した。"
-    if amount <= 20:
-        return f"> [戦闘] {skill_name}が傷を癒やし、HPを回復した。"
-    return f"> [戦闘] {skill_name}が大きく傷を癒やし、HPを大幅に回復した。"
-
-
-def _combat_narration_payload(combat_result: dict[str, Any]) -> dict[str, Any]:
-    old_hp = _first_int(combat_result, ("old_hp", "player_old_hp"), 0)
-    new_hp = _first_int(combat_result, ("new_hp", "player_new_hp"), old_hp)
-    max_hp = max(1, _first_int(combat_result, ("max_hp", "player_max_hp"), max(old_hp, new_hp, 1)))
-    damage = _first_int(combat_result, ("damage",), max(0, old_hp - new_hp))
-    actual_damage = max(0, old_hp - new_hp)
-    healing = _first_int(combat_result, ("actual_healing", "healing"), max(0, new_hp - old_hp))
-    payload = {
-        "type": combat_result.get("type"),
-        "damage": damage,
-        "actual_damage": actual_damage,
-        "healing": healing,
-        "old_hp": old_hp,
-        "new_hp": new_hp,
-        "max_hp": max_hp,
-        "lethal": new_hp <= 0 and damage > 0,
-        "weakness_multiplier": combat_result.get("weakness_multiplier"),
-        "base_damage": combat_result.get("base_damage"),
-        "attack": combat_result.get("attack"),
-        "defense": combat_result.get("defense"),
-        "ability": combat_result.get("ability"),
-        "ability_score": combat_result.get("ability_score"),
-        "power": combat_result.get("power"),
-    }
-    status_effects = _combat_status_effects_payload(combat_result.get("applied_status_effects"))
-    if status_effects:
-        payload["applied_status_effects"] = status_effects
-    return {key: value for key, value in payload.items() if value not in (None, "")}
-
-
-def _first_int(data: dict[str, Any], keys: tuple[str, ...], default: int = 0) -> int:
-    for key in keys:
-        if key in data:
-            return _safe_int(data.get(key), default)
-    return default
-
-
-def _npc_response_is_offensive(*responses: Any) -> bool:
-    texts: list[str] = []
-    explicit: bool | None = None
-    for response in responses:
-        if not isinstance(response, dict):
-            continue
-        for candidate in _combat_response_candidates(response):
-            for key in ("offensive", "attack", "attacks", "damage_intent", "hostile_action"):
-                if key in candidate and candidate.get(key) not in (None, ""):
-                    explicit = _as_bool(candidate.get(key))
-        for key in ("npc_action", "action", "intent", "narration", "text", "message"):
-            value = response.get(key)
-            if isinstance(value, (dict, list)):
-                value = _compact_value(value, max_chars=400)
-            texts.append(str(value or ""))
-    if explicit is not None:
-        return explicit
-    joined = " ".join(texts).lower()
-    if not joined.strip():
-        return False
-    if any(word in joined for word in ("降伏", "逃走", "退却", "交渉", "防御", "様子", "hesitate", "surrender", "flee", "defend", "negotiate")):
-        return False
-    return any(
-        word in joined
-        for word in (
-            "攻撃",
-            "襲",
-            "斬",
-            "刺",
-            "殴",
-            "噛",
-            "爪",
-            "撃つ",
-            "矢",
-            "魔法を放",
-            "ダメージ",
-            "attack",
-            "strike",
-            "slash",
-            "stab",
-            "bite",
-            "claw",
-            "shoot",
-            "cast",
-            "damage",
-        )
-    )
-
-
-def _surrender_control_prevents_npc_damage(encounter: dict[str, Any], *responses: Any) -> bool:
-    if not _encounter_player_surrendered(encounter):
-        return False
-    joined = _combat_action_text(*responses).lower()
-    if not joined.strip():
-        return False
-    control_terms = (
-        "accept_surrender",
-        "surrender_accepted",
-        "approach_and_entangle",
-        "entangle",
-        "restrain",
-        "restrained",
-        "capture",
-        "bind",
-        "grapple",
-        "disarm",
-        "watch",
-        "guard",
-        "拘束",
-        "絡め",
-        "絡み",
-        "包み込",
-        "包囲",
-        "捕獲",
-        "確保",
-        "監視",
-        "見張",
-        "武装解除",
-        "降伏を受け入",
-        "屈服",
-        "身を委ね",
-        "警戒",
-    )
-    if not any(term in joined for term in control_terms):
-        return False
-    damaging_terms = (
-        "damage",
-        "hp",
-        "kill",
-        "strike",
-        "slash",
-        "stab",
-        "bite",
-        "claw",
-        "shoot",
-        "cast",
-        "ダメージ",
-        "殺",
-        "致命",
-        "襲",
-        "斬",
-        "刺",
-        "殴",
-        "噛",
-        "爪",
-        "裂",
-        "貫",
-        "焼",
-        "燃",
-        "締め付け",
-        "締め上げ",
-    )
-    return not any(term in joined for term in damaging_terms)
-
-
-def _player_surrender_response_ends_encounter(encounter: dict[str, Any], *responses: Any) -> bool:
-    if not isinstance(encounter, dict):
-        return False
-    if _as_bool(encounter.get("capture_relocated")):
-        return True
-    if not _encounter_player_surrendered(encounter):
-        return False
-    joined = _combat_action_text(*responses).casefold()
-    if not joined.strip():
-        return False
-    if _npc_response_is_offensive(*responses) and not _surrender_control_prevents_npc_damage(encounter, *responses):
-        return False
-    accept_terms = (
-        "accept_surrender",
-        "surrender_accepted",
-        "player_surrendered",
-        "capture",
-        "captured",
-        "restrain",
-        "restrained",
-        "watch",
-        "guard",
-        "disarm",
-        "post_capture",
-        "降伏を受け入",
-        "降参を受け入",
-        "屈服",
-        "捕獲",
-        "拘束",
-        "監視",
-        "見張",
-        "武装解除",
-        "連れ去",
-    )
-    if any(term.casefold() in joined for term in accept_terms):
-        return True
-    return any(isinstance(response, dict) and _as_bool(response.get("finished") or response.get("should_end_encounter")) for response in responses)
-
-
-def _encounter_player_surrendered(encounter: dict[str, Any]) -> bool:
-    if _as_bool(encounter.get("player_surrendered")):
-        return True
-    status_text = " ".join(
-        str(encounter.get(key) or "")
-        for key in ("player_status", "intent", "last_player_intent")
-    ).lower()
-    return any(term in status_text for term in ("surrender", "surrendering", "surrender_accepted", "降伏", "屈服"))
-
-
-def _combat_action_text(*responses: Any) -> str:
-    parts: list[str] = []
-    for response in responses:
-        if not isinstance(response, dict):
-            continue
-        for key in ("npc_action", "action", "intent", "narration", "text", "message"):
-            value = response.get(key)
-            if isinstance(value, (dict, list)):
-                value = _compact_value(value, max_chars=400)
-            if value:
-                parts.append(str(value))
-        update = response.get("encounter_update")
-        if isinstance(update, (dict, list)):
-                parts.append(json.dumps(_compact_value(update, max_chars=500), ensure_ascii=False))
-    return " ".join(parts)
-
-
-def _response_implies_capture_relocation(response: dict[str, Any]) -> bool:
-    if not isinstance(response, dict):
-        return False
-    text = _combat_action_text(response).casefold()
-    if not text:
-        return False
-    capture_terms = (
-        "capture",
-        "captured",
-        "captivity",
-        "kidnap",
-        "abduct",
-        "carried away",
-        "dragged away",
-        "taken away",
-        "nest",
-        "lair",
-        "den",
-        "base",
-        "hideout",
-        "post_capture",
-        "broodmother",
-        "連れ去",
-        "連行",
-        "攫",
-        "さらわ",
-        "捕獲",
-        "拘束",
-        "巣",
-        "巣穴",
-        "拠点",
-        "根城",
-        "苗床",
-    )
-    if not any(term.casefold() in text for term in capture_terms):
-        return False
-    movement_terms = (
-        "moved",
-        "relocated",
-        "transported",
-        "dragged",
-        "carried",
-        "taken",
-        "連れ",
-        "運ば",
-        "引きず",
-        "移動",
-        "連行",
-        "運搬",
-    )
-    status_terms = (
-        "post_capture",
-        "captivity",
-        "captured_to",
-        "broodmother",
-        "nest",
-        "lair",
-        "base",
-        "hideout",
-        "巣",
-        "巣穴",
-        "拠点",
-        "根城",
-        "苗床",
-    )
-    return any(term.casefold() in text for term in movement_terms) or any(term.casefold() in text for term in status_terms)
-
-
-def _capture_subnode_name(response: dict[str, Any], opponent_name: str = "") -> str:
-    text = _combat_action_text(response)
-    lowered = text.casefold()
-    base = str(opponent_name or "").strip()
-    if "巣" in text or "nest" in lowered or "den" in lowered:
-        return _short_text(f"{base}の巣" if base else "敵の巣", 48)
-    if "拠点" in text or "base" in lowered or "hideout" in lowered or "lair" in lowered:
-        return _short_text(f"{base}の拠点" if base else "敵の拠点", 48)
-    return _short_text(f"{base}の捕獲場所" if base else "捕獲場所", 48)
-
-
-def _capture_subnode_description(response: dict[str, Any], opponent_name: str = "") -> str:
-    narration = str(response.get("narration") or response.get("text") or response.get("message") or "").strip()
-    if narration:
-        return _short_text(narration, 180)
-    base = str(opponent_name or "敵").strip()
-    return f"{base}に連れ込まれた場所。出口までの道を探す必要がある。"
-
-
-def _npc_action_tool_kind(*responses: Any) -> str:
-    surrender_values = {"surrender", "yield", "give_up", "giveup", "降伏", "降伏する", "降参", "降参する"}
-    flee_values = {"flee", "escape", "run_away", "runaway", "retreat", "withdraw", "逃亡", "逃走", "逃げる", "退却", "離脱"}
-    for response in responses:
-        if not isinstance(response, dict):
-            continue
-        if _as_bool(response.get("npc_surrender") or response.get("surrender")):
-            return "surrender"
-        if _as_bool(response.get("npc_flee") or response.get("flee")):
-            return "flee"
-        values: list[str] = []
-        for key in ("npc_action", "npc_tool", "tool", "intent"):
-            value = response.get(key)
-            if isinstance(value, (dict, list)):
-                value = _compact_value(value, max_chars=120)
-            value_text = str(value or "").strip()
-            if value_text:
-                values.append(value_text)
-        update = response.get("encounter_update")
-        if isinstance(update, dict):
-            for key in ("opponent_status", "npc_action", "npc_tool", "intent"):
-                value_text = str(update.get(key) or "").strip()
-                if value_text:
-                    values.append(value_text)
-        for value in values:
-            normalized = value.strip().casefold().replace("-", "_").replace(" ", "_")
-            if normalized in surrender_values or value.strip() in surrender_values:
-                return "surrender"
-            if normalized in flee_values or value.strip() in flee_values:
-                return "flee"
-    return ""
 
 
 def _skill_sp_cost(skill: dict[str, Any]) -> int:
@@ -18811,44 +17697,16 @@ def _character_state_is_dead(character: CharacterData) -> bool:
     return False
 
 
-def _world_location_target_count(value: Any) -> int:
-    requested = _safe_int(value, DEFAULT_WORLD_LOCATION_COUNT)
-    candidates = sorted(WORLD_LOCATION_COUNT_OPTIONS.values())
-    return min(candidates, key=lambda item: abs(item - requested))
 
 
-def _world_customization_settings(crime_risk: Any, enemy_strength: Any) -> dict[str, str]:
-    crime = str(crime_risk or DEFAULT_WORLD_CRIME_RISK).strip().lower().replace("-", "_").replace(" ", "_")
-    strength = str(enemy_strength or DEFAULT_WORLD_ENEMY_STRENGTH).strip().lower().replace("-", "_").replace(" ", "_")
-    if crime not in WORLD_CRIME_RISK_OPTIONS:
-        crime = DEFAULT_WORLD_CRIME_RISK
-    if strength not in WORLD_ENEMY_STRENGTH_OPTIONS:
-        strength = DEFAULT_WORLD_ENEMY_STRENGTH
-    return {
-        "crime_risk": crime,
-        "enemy_strength": strength,
-    }
 
 
-def _world_overview_max_tokens(target_count: Any) -> int:
-    count = _world_location_target_count(target_count)
-    return max(1400, min(2600, 1000 + count * 12))
 
 
-def _world_location_batch_size(remaining: int) -> int:
-    if remaining <= 0:
-        return 0
-    if remaining < WORLD_LOCATION_BATCH_MIN:
-        return remaining
-    return min(WORLD_LOCATION_BATCH_MAX, remaining)
 
 
-def _world_location_batch_max_tokens(batch_size: int) -> int:
-    return max(700, min(1500, 450 + max(1, int(batch_size)) * 180))
 
 
-def _world_location_name_key(value: Any) -> str:
-    return re.sub(r"\s+", "", str(value or "").strip().lower())
 
 
 def _subnode_display_needs_fill(value: Any) -> bool:
@@ -18875,279 +17733,32 @@ def _subnode_display_needs_fill(value: Any) -> bool:
     return False
 
 
-def _quest_destination_hint(quest: QuestData, response: dict[str, Any] | None = None) -> dict[str, Any]:
-    response = response or {}
-    extra = quest.extra if isinstance(quest.extra, dict) else {}
-    destination_raw = extra.get("destination") if isinstance(extra.get("destination"), dict) else {}
-    hint_raw = extra.get("destination_hint") if isinstance(extra.get("destination_hint"), dict) else {}
-    text = _quest_destination_source_text(quest, response)
-    location_name = str(
-        response.get("destination_location")
-        or response.get("target_location")
-        or hint_raw.get("location")
-        or hint_raw.get("destination_location")
-        or destination_raw.get("location")
-        or extra.get("destination_location")
-        or extra.get("target_location")
-        or ""
-    ).strip()
-    kind = str(
-        response.get("destination_kind")
-        or response.get("location_kind")
-        or hint_raw.get("kind")
-        or hint_raw.get("location_kind")
-        or destination_raw.get("location_kind")
-        or ""
-    ).strip().lower()
-    if not kind:
-        kind = _quest_location_kind_from_text(text)
-    anchor_kind = str(hint_raw.get("anchor_kind") or "").strip().lower()
-    if not anchor_kind:
-        anchor_kind = _quest_anchor_kind_from_text(text, kind)
-    objective_name = str(
-        response.get("objective_subnode_name")
-        or response.get("objective_name")
-        or hint_raw.get("objective_subnode_name")
-        or hint_raw.get("objective_name")
-        or destination_raw.get("objective_subnode_name")
-        or ""
-    ).strip()
-    objective_description = str(
-        response.get("objective_subnode_description")
-        or response.get("objective_description")
-        or hint_raw.get("objective_subnode_description")
-        or hint_raw.get("objective_description")
-        or destination_raw.get("objective_subnode_description")
-        or quest.overview
-        or ""
-    ).strip()
-    return {
-        "source_text": text,
-        "location": location_name,
-        "location_kind": kind,
-        "anchor_kind": anchor_kind,
-        "anchor_location": str(hint_raw.get("anchor_location") or destination_raw.get("anchor_location") or "").strip(),
-        "description": str(hint_raw.get("description") or destination_raw.get("description") or "").strip(),
-        "objective_subnode_id": str(destination_raw.get("objective_subnode_id") or "").strip(),
-        "objective_subnode_name": objective_name or _quest_objective_name_from_text(text),
-        "objective_subnode_description": objective_description,
-    }
 
 
-def _quest_destination_source_text(quest: QuestData, response: dict[str, Any] | None = None) -> str:
-    response = response or {}
-    extra = quest.extra if isinstance(quest.extra, dict) else {}
-    parts: list[str] = [
-        quest.name,
-        quest.overview,
-        quest.neighboring_settlement,
-        json.dumps(quest.choices, ensure_ascii=False, default=str),
-        json.dumps(extra, ensure_ascii=False, default=str),
-    ]
-    if response:
-        parts.append(json.dumps(_strip_response_metadata(response), ensure_ascii=False, default=str))
-    return "\n".join(part for part in parts if str(part or "").strip())
 
 
-def _quest_location_kind_from_text(text: str) -> str:
-    lowered = str(text or "").casefold()
-    if any(word in lowered for word in ("dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair", "洞窟", "迷宮", "遺跡", "鉱山", "巣穴", "巣")):
-        return "dungeon"
-    if any(word in lowered for word in ("forest", "woods", "swamp", "wild", "森", "樹海", "沼", "荒野")):
-        return "wilderness"
-    if any(word in lowered for word in ("coast", "beach", "shore", "seaside", "海岸", "浜辺", "岬")):
-        return "coast"
-    if any(word in lowered for word in ("mountain", "peak", "ridge", "山", "峠", "尾根")):
-        return "mountain"
-    if any(word in lowered for word in ("river", "stream", "brook", "川", "河", "沢", "渡し")):
-        return "river"
-    if any(word in lowered for word in ("plain", "field", "grassland", "meadow", "平原", "草原", "牧野")):
-        return "plain"
-    if any(word in lowered for word in ("crossroad", "junction", "fork", "分岐路", "分かれ道", "辻")):
-        return "crossroad"
-    if any(word in lowered for word in ("road", "trail", "route", "街道", "古道", "小道")):
-        return "road"
-    if any(word in lowered for word in ("rescue", "save", "討伐", "救出", "救助", "行方不明", "連れ去", "魔物", "モンスター")):
-        return "wilderness"
-    return "wilderness"
 
 
-def _quest_anchor_kind_from_text(text: str, destination_kind: str) -> str:
-    lowered = str(text or "").casefold()
-    near_words = ("near", "nearby", "around", "近く", "周辺", "付近", "そば")
-    if not any(word in lowered for word in near_words):
-        return ""
-    if any(word in lowered for word in ("road", "trail", "route", "街道", "古道", "小道")) and destination_kind != "road":
-        return "road"
-    if any(word in lowered for word in ("crossroad", "junction", "分岐路", "分かれ道", "辻")) and destination_kind != "crossroad":
-        return "crossroad"
-    if any(word in lowered for word in ("river", "stream", "川", "河", "沢")) and destination_kind != "river":
-        return "river"
-    return ""
 
 
-def _quest_location_kind_label(kind: str) -> str:
-    return {
-        "dungeon": "ダンジョン",
-        "wilderness": "森",
-        "road": "街道",
-        "crossroad": "分岐路",
-        "coast": "海岸",
-        "mountain": "山",
-        "river": "川辺",
-        "plain": "平原",
-        "landmark": "目標地点",
-    }.get(str(kind or "").strip().lower(), "探索地")
 
 
-def _quest_destination_name(quest: QuestData, hint: dict[str, Any], origin: str, anchor: str) -> str:
-    kind = str(hint.get("location_kind") or "wilderness").strip().lower()
-    anchor_kind = str(hint.get("anchor_kind") or "").strip().lower()
-    label = _quest_location_kind_label(kind)
-    text = str(hint.get("source_text") or "")
-    anchor_name = str(anchor or origin or "").strip()
-    if kind == "wilderness" and any(word in text for word in ("森", "forest", "woods")):
-        label = "森"
-    elif kind == "dungeon" and any(word in text for word in ("洞窟", "cave", "cavern")):
-        label = "洞窟"
-    if anchor_kind == "road" and anchor_name:
-        return f"{str(origin or anchor_name).strip()}近郊の街道沿いの{label}"
-    if anchor_kind == "crossroad" and anchor_name:
-        return f"{str(origin or anchor_name).strip()}近郊の分岐路そばの{label}"
-    if anchor_name:
-        return f"{anchor_name}近くの{label}"
-    return f"{quest.name}の{label}"
 
 
-def _quest_objective_name_from_text(text: str) -> str:
-    lowered = str(text or "").casefold()
-    if any(word in lowered for word in ("rescue", "save", "救出", "救助", "娘", "行方不明")):
-        return "救出対象のいる地点"
-    if any(word in lowered for word in ("defeat", "討伐", "退治", "倒")):
-        return "討伐目標のいる地点"
-    if any(word in lowered for word in ("collect", "採取", "収集", "回収", "入手")):
-        return "回収目標のある地点"
-    if any(word in lowered for word in ("investigate", "調査", "確認", "探索")):
-        return "調査目標地点"
-    return "依頼目標地点"
 
 
-def _quest_destination_danger(hint: dict[str, Any], kind: str, base_danger: int) -> int:
-    text = str(hint.get("source_text") or "").casefold()
-    danger = max(1, int(base_danger) + 5)
-    if kind in {"dungeon", "wilderness", "mountain"}:
-        danger = max(10, danger)
-    if any(word in text for word in ("危険", "討伐", "魔物", "モンスター", "monster", "defeat", "rescue", "救出")):
-        danger += 5
-    return _clamp_world_danger(danger)
 
 
-def _quest_text_requests_new_site(text: str) -> bool:
-    lowered = str(text or "").casefold()
-    return any(word in lowered for word in ("未知", "新しい", "隠れ", "未踏", "hidden", "unknown", "undiscovered"))
 
 
-def _map_reveal_value_means_active_quest(value: Any) -> bool:
-    text = str(value or "").strip().casefold()
-    return text in {
-        "active_quest",
-        "quest",
-        "quest_destination",
-        "objective_location",
-        "target_location",
-        "current_quest",
-        "依頼目的地",
-        "クエスト目的地",
-        "目的地",
-    }
 
 
-def _map_reveal_reason(entry: Any) -> str:
-    if isinstance(entry, dict):
-        for key in ("reason", "source", "item", "map_name", "description"):
-            value = str(entry.get(key) or "").strip()
-            if value:
-                return _short_text(value, 80)
-    if entry is True:
-        return "map reveal"
-    return _short_text(str(entry or ""), 80)
 
 
-def _normalise_quest_type_id(value: Any) -> str:
-    explicit = str(value or "").strip().lower()
-    aliases = {
-        "rescue": "rescue",
-        "search": "rescue",
-        "find_person": "rescue",
-        "escort": "rescue",
-        "retrieve": "retrieve",
-        "collect": "retrieve",
-        "gather": "retrieve",
-        "lost_item": "retrieve",
-        "defeat": "defeat",
-        "hunt": "defeat",
-        "slay": "defeat",
-        "subjugation": "defeat",
-        "delivery": "delivery",
-        "deliver": "delivery",
-        "errand": "delivery",
-        "investigate": "investigate",
-        "investigation": "investigate",
-        "survey": "investigate",
-        "inspect": "investigate",
-        "procure": "procure",
-        "procurement": "procure",
-        "supply": "procure",
-        "acquire": "procure",
-    }
-    return aliases.get(explicit, "")
 
 
-def _quest_type(quest: QuestData, response: dict[str, Any] | None = None) -> str:
-    response = response or {}
-    extra = quest.extra if isinstance(quest.extra, dict) else {}
-    explicit = _normalise_quest_type_id(
-        response.get("quest_type")
-        or response.get("objective_type")
-        or extra.get("quest_type")
-        or extra.get("objective_type")
-        or extra.get("type")
-        or extra.get("kind")
-        or ""
-    )
-    if explicit:
-        return explicit
-    text = _quest_destination_source_text(quest, response)
-    lowered = text.casefold()
-    if any(word in lowered for word in ("deliver", "delivery", "errand", "courier")) or any(
-        word in text for word in ("\u914d\u9054", "\u5c4a\u3051", "\u304a\u4f7f\u3044", "\u904b\u642c", "\u5c4a\u3051\u7269")
-    ):
-        return "delivery"
-    if any(word in lowered for word in ("defeat", "slay", "hunt", "subjugate", "kill")) or any(
-        word in text for word in ("\u8a0e\u4f10", "\u9000\u6cbb", "\u5012", "\u72e9", "\u6226")
-    ):
-        return "defeat"
-    if any(word in lowered for word in ("rescue", "save", "escort", "hostage", "kidnap", "missing person")) or any(
-        word in text for word in ("\u6551\u51fa", "\u6551\u52a9", "\u4fdd\u8b77", "\u8b77\u9001", "\u4eba\u8cea", "\u652b", "\u5a18", "\u884c\u65b9\u4e0d\u660e")
-    ):
-        return "rescue"
-    if any(word in lowered for word in ("investigate", "investigation", "survey", "inspect", "research")) or any(
-        word in text for word in ("\u8abf\u67fb", "\u8abf\u3079", "\u63a2\u308b", "\u63a2\u7d22", "\u78ba\u8a8d", "\u8e0f\u67fb", "\u5075\u5bdf", "\u6700\u6df1\u90e8")
-    ):
-        return "investigate"
-    if any(word in lowered for word in ("procure", "procurement", "acquire", "obtain", "supply", "bring me")) or any(
-        word in text for word in ("\u8abf\u9054", "\u7528\u610f", "\u624b\u306b\u5165\u308c\u3066", "\u5165\u624b\u3057\u3066", "\u8cb7\u3063\u3066", "\u4ed5\u5165\u308c")
-    ):
-        return "procure"
-    return "retrieve"
 
 
-def _quest_requires_captor(quest: QuestData, response: dict[str, Any] | None = None) -> bool:
-    response = response or {}
-    explicit = response.get("requires_captor") or response.get("captor_required") or quest.extra.get("requires_captor")
-    if explicit not in (None, "", [], {}):
-        return _as_bool(explicit)
-    return False
 
 
 def _quest_investigation_point_name(quest: QuestData, response: dict[str, Any] | None = None) -> str:
@@ -19639,455 +18250,46 @@ def _starting_settlement_payload(payloads: list[dict[str, Any]], original_start:
     return sorted(candidates, key=lambda item: item[0])[0][1]
 
 
-def _world_location_payloads(value: Any) -> list[dict[str, Any]]:
-    payloads: list[dict[str, Any]] = []
-    if isinstance(value, dict):
-        for key in ("locations", "location_nodes", "map_locations", "nodes"):
-            payloads.extend(_world_location_payloads(value.get(key)))
-        structure = value.get("structure")
-        if isinstance(structure, (dict, list)):
-            payloads.extend(_world_location_payloads(structure))
-        if any(key in value for key in ("name", "title", "location_name", "id")):
-            payloads.append(dict(value))
-    elif isinstance(value, list):
-        for item in value:
-            payloads.extend(_world_location_payloads(item))
-    elif isinstance(value, str):
-        text = value.strip()
-        if text:
-            payloads.append({"name": text})
-    result: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for payload in payloads:
-        name = _world_location_name_from_payload(payload)
-        if not name or name in seen:
-            continue
-        seen.add(name)
-        result.append(payload)
-    return result
 
 
-def _world_connection_payloads(value: Any) -> list[dict[str, Any]]:
-    payloads: list[dict[str, Any]] = []
-    if isinstance(value, dict):
-        for key in ("connections", "edges", "routes", "roads", "links", "paths"):
-            payloads.extend(_world_connection_payloads(value.get(key)))
-        structure = value.get("structure")
-        if isinstance(structure, (dict, list)):
-            payloads.extend(_world_connection_payloads(structure))
-        if any(key in value for key in ("from", "source", "a")) and any(key in value for key in ("to", "target", "b")):
-            payloads.append(dict(value))
-    elif isinstance(value, list):
-        for item in value:
-            if isinstance(item, dict):
-                payloads.extend(_world_connection_payloads(item))
-    return payloads
 
 
-def _world_location_name_from_payload(payload: dict[str, Any]) -> str:
-    for key in ("name", "title", "location_name", "id"):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
 
 
-def _world_location_description_from_payload(payload: dict[str, Any]) -> str:
-    for key in ("description", "overview", "summary", "detail", "text"):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
 
 
-def _world_location_danger_from_payload(payload: dict[str, Any]) -> int:
-    for key in ("danger", "danger_level", "threat", "threat_level", "difficulty", "rank"):
-        if key in payload:
-            return _clamp_world_danger(payload.get(key))
-    return 0
 
 
-def _clamp_world_danger(value: Any, default: int = 0) -> int:
-    return max(0, min(WORLD_DANGER_MAX, _safe_int(value, default)))
 
 
-def _world_default_danger_for_index(index: int, target_count: int, rng: random.Random | None = None) -> int:
-    if target_count <= 1:
-        return 0
-    rng = rng or random.Random(f"world-default-danger|{index}|{target_count}")
-    progress = max(0.0, min(1.0, float(index) / max(1, target_count - 1)))
-    base = int(progress * 38)
-    jitter = rng.randint(0, 3)
-    return _clamp_world_danger(base + jitter)
 
 
-def _world_generation_location_danger(
-    payload: dict[str, Any],
-    name: str,
-    description: str,
-    premise: str,
-    index: int,
-    target_count: int,
-    rng: random.Random | None = None,
-) -> int:
-    if _world_location_is_final_endpoint_candidate(premise, payload, name, description):
-        seed = f"final-danger|{premise}|{name}|{description}"
-        local_rng = random.Random(seed)
-        return local_rng.randint(WORLD_FINAL_DANGER_MIN, WORLD_FINAL_DANGER_MAX)
-    if any(key in payload for key in ("danger", "danger_level", "threat", "threat_level", "difficulty", "rank")):
-        return _world_location_danger_from_payload(payload)
-    return _world_default_danger_for_index(index, target_count, rng)
 
 
-def _looks_like_facility_location_name(value: Any) -> bool:
-    text = str(value or "").strip().casefold()
-    if not text:
-        return False
-    return any(
-        word in text
-        for word in (
-            "inn",
-            "guild",
-            "shop",
-            "store",
-            "market",
-            "blacksmith",
-            "smith",
-            "apothecary",
-            "tavern",
-            "temple",
-            "church",
-            "clinic",
-            "workshop",
-            "宿屋",
-            "亭",
-            "ギルド",
-            "店",
-            "商店",
-            "鍛冶",
-            "鍛冶屋",
-            "薬屋",
-            "薬品店",
-            "酒場",
-            "市場",
-            "神殿",
-            "教会",
-            "診療所",
-            "工房",
-        )
-    )
 
 
-def _infer_world_location_kind(payload: dict[str, Any], name: str, description: str = "") -> str:
-    for key in ("kind", "type", "category", "location_kind"):
-        value = str(payload.get(key) or "").strip().lower()
-        if value:
-            if value in {"town", "village", "city", "settlement", "hamlet", "base"}:
-                return "settlement"
-            if value in {"dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair"}:
-                return "dungeon"
-            if value in {"facility", "shop", "inn", "guild", "temple", "market"}:
-                return "facility"
-            if value in {"road", "highway", "trail", "path", "route", "街道", "道"}:
-                return "road"
-            if value in {"crossroad", "crossroads", "fork", "junction", "branch", "分岐路", "分かれ道", "辻"}:
-                return "crossroad"
-            if value in {"coast", "beach", "shore", "seaside", "海岸", "浜辺", "岬"}:
-                return "coast"
-            if value in {"mountain", "mountains", "peak", "ridge", "山", "山岳", "峠"}:
-                return "mountain"
-            if value in {"river", "stream", "brook", "ford", "川", "河", "沢", "渡し"}:
-                return "river"
-            if value in {"plain", "plains", "field", "grassland", "meadow", "平原", "草原", "野"}:
-                return "plain"
-            return value
-    text = f"{name}\n{description}".lower()
-    if _looks_like_facility_location_name(name):
-        return "facility"
-    if any(word in text for word in ("dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair", "洞窟", "迷宮", "遺跡", "鉱山")):
-        return "dungeon"
-    if any(word in text for word in ("crossroad", "crossroads", "junction", "fork", "分岐路", "分かれ道", "辻")):
-        return "crossroad"
-    if any(word in text for word in ("road", "highway", "trail", "route", "街道", "古道", "小道")):
-        return "road"
-    if any(word in text for word in ("coast", "beach", "shore", "seaside", "海岸", "浜辺", "岬", "河口")):
-        return "coast"
-    if any(word in text for word in ("mountain", "mountains", "peak", "ridge", "山", "山岳", "峠", "尾根")):
-        return "mountain"
-    if any(word in text for word in ("river", "stream", "brook", "ford", "川", "河", "沢", "渡し")):
-        return "river"
-    if any(word in text for word in ("plain", "plains", "field", "grassland", "meadow", "平原", "草原", "牧野")):
-        return "plain"
-    if any(word in text for word in ("town", "village", "city", "settlement", "村", "街", "町", "都市", "宿場")):
-        return "settlement"
-    if any(word in text for word in ("forest", "swamp", "wilderness", "森", "沼", "荒野")):
-        return "wilderness"
-    return "landmark"
 
 
-def _infer_world_location_kind_for_request(
-    action: str,
-    payload: dict[str, Any],
-    name: str,
-    description: str = "",
-) -> str:
-    kind = _infer_world_location_kind(payload, name, description)
-    if _explicit_dungeon_location_request(action, payload, name, description):
-        return "dungeon"
-    return kind
 
 
-def _infer_world_location_kind_for_world_generation(
-    premise: str,
-    payload: dict[str, Any],
-    name: str,
-    description: str = "",
-) -> str:
-    kind = _infer_world_location_kind(payload, name, description)
-    if _explicit_dungeon_location_request("", payload, name, description):
-        return "dungeon"
-    if _world_generation_named_location_requested_as_dungeon(premise, payload, name, description):
-        return "dungeon"
-    return kind
 
 
-def _explicit_dungeon_location_request(action: str, payload: dict[str, Any], name: str, description: str = "") -> bool:
-    explicit = str(
-        payload.get("kind")
-        or payload.get("type")
-        or payload.get("category")
-        or payload.get("location_kind")
-        or ""
-    ).strip().casefold()
-    if explicit in {"dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair"}:
-        return True
-    text = "\n".join(
-        str(part or "")
-        for part in (
-            action,
-            name,
-            description,
-            payload.get("description"),
-            payload.get("overview"),
-            payload.get("summary"),
-            payload.get("objective"),
-        )
-    ).casefold()
-    if not text:
-        return False
-    dungeon_words = (
-        "dungeon",
-        "labyrinth",
-        "crypt",
-        "lair",
-        "ダンジョン",
-        "迷宮",
-        "地下迷宮",
-        "洞窟",
-        "洞穴",
-        "遺跡",
-    )
-    temple_words = ("temple", "shrine", "神殿", "祠", "聖域")
-    if any(word in text for word in dungeon_words):
-        return True
-    if any(word in text for word in temple_words) and _generated_dungeon_boss_text_implies_boss(text):
-        return True
-    return False
 
 
-def _world_location_is_final_endpoint_candidate(
-    premise: str,
-    payload: dict[str, Any],
-    name: str,
-    description: str = "",
-) -> bool:
-    local_text = "\n".join(
-        str(part or "")
-        for part in (
-            name,
-            description,
-            payload.get("role"),
-            payload.get("purpose"),
-            payload.get("summary"),
-            payload.get("objective"),
-            payload.get("boss_npc"),
-            payload.get("boss"),
-        )
-    ).casefold()
-    if not local_text:
-        return False
-    premise_text = str(premise or "").casefold()
-    text = f"{local_text}\n{premise_text if _world_generation_premise_refers_to_location(premise, name) else ''}"
-    final_markers = (
-        "final",
-        "last",
-        "endgame",
-        "final boss",
-        "journey's end",
-        "旅の最終",
-        "最終地点",
-        "終着",
-        "終盤",
-        "ラスボス",
-        "最終神殿",
-        "最奥の神殿",
-        "最後の",
-        "終焉",
-    )
-    if any(marker in text for marker in final_markers):
-        return True
-    place_markers = ("神殿", "temple", "shrine", "聖域", "迷宮", "dungeon", "lair")
-    return any(marker in text for marker in place_markers) and _generated_dungeon_boss_text_implies_boss(text)
 
 
-def _world_generation_named_location_requested_as_dungeon(
-    premise: str,
-    payload: dict[str, Any],
-    name: str,
-    description: str = "",
-) -> bool:
-    if not _world_generation_premise_refers_to_location(premise, name):
-        return False
-    return _explicit_dungeon_location_request(premise, payload, name, description)
 
 
-def _world_generation_premise_refers_to_location(premise: str, name: str) -> bool:
-    premise_key = _world_location_name_key(premise)
-    name_key = _world_location_name_key(name)
-    return bool(name_key and len(name_key) >= 3 and name_key in premise_key)
 
 
-def _world_generation_dungeon_has_boss(world: WorldData, location_name: str) -> bool:
-    for character in world.characters.values():
-        if character.location != location_name:
-            continue
-        if _character_state_is_dead(character):
-            continue
-        if character.flags.get("generated_dungeon_boss") or character.extra.get("generated_dungeon_boss"):
-            return True
-        text = " ".join(str(value or "") for value in (character.role, character.category, character.extra.get("display_alias"))).casefold()
-        if any(marker in text for marker in ("boss", "ボス", "守護者", "主")):
-            return True
-    return False
 
 
-def _explicit_generated_dungeon_location_request(
-    action: str,
-    response: dict[str, Any],
-    name: str,
-    description: str = "",
-) -> bool:
-    if not _explicit_dungeon_location_request(action, response, name, description):
-        return False
-    if response.get("discovered_location") or _generated_dungeon_boss_payload(response):
-        return True
-    text = "\n".join(
-        str(part or "")
-        for part in (
-            action,
-            response.get("narration"),
-            response.get("text"),
-            response.get("message"),
-            description,
-        )
-    ).casefold()
-    return any(
-        marker in text
-        for marker in (
-            "create",
-            "generate",
-            "discover",
-            "spawn",
-            "生成",
-            "発見",
-            "出現",
-            "現れ",
-            "生や",
-        )
-    )
 
 
-def _generated_dungeon_boss_payload(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        for key in ("boss_npc", "boss", "boss_enemy", "final_boss", "guardian", "ruler", "keeper"):
-            raw = value.get(key)
-            payload = _generated_dungeon_boss_payload(raw)
-            if payload:
-                return payload
-        discovered = value.get("discovered_location")
-        if isinstance(discovered, dict):
-            payload = _generated_dungeon_boss_payload(discovered)
-            if payload:
-                return payload
-        for key in ("enemies", "opponents", "enemy_npcs", "npcs", "characters"):
-            for item in _as_list(value.get(key)):
-                if not isinstance(item, dict):
-                    continue
-                text = json.dumps(item, ensure_ascii=False).casefold()
-                if any(marker in text for marker in ("boss", "final", "guardian", "ボス", "守護者", "主", "女神")):
-                    return dict(item)
-        return {}
-    if isinstance(value, list):
-        for item in value:
-            payload = _generated_dungeon_boss_payload(item)
-            if payload:
-                return payload
-    if isinstance(value, str) and value.strip():
-        return {"name": value.strip(), "description": value.strip(), "hostile": True}
-    return {}
 
 
-def _generated_dungeon_boss_required(action: str, response: dict[str, Any], location: LocationData) -> bool:
-    if _generated_dungeon_boss_payload(response):
-        return True
-    for key in ("has_boss", "boss_required", "requires_boss", "place_boss", "spawn_boss"):
-        if key in response and _as_bool(response.get(key)):
-            return True
-    discovered = response.get("discovered_location")
-    if isinstance(discovered, dict):
-        for key in ("has_boss", "boss_required", "requires_boss", "place_boss", "spawn_boss"):
-            if key in discovered and _as_bool(discovered.get(key)):
-                return True
-    text = "\n".join(
-        str(part or "")
-        for part in (
-            action,
-            location.name,
-            location.description,
-            response.get("narration"),
-            response.get("objective"),
-            response.get("event"),
-            response.get("discovered_location"),
-        )
-    ).casefold()
-    if any(marker in text for marker in ("no boss", "ボスはいない", "ボスなし", "守護者はいない")):
-        return False
-    return _generated_dungeon_boss_text_implies_boss(text)
 
 
-def _generated_dungeon_boss_text_implies_boss(text: str) -> bool:
-    text = str(text or "").casefold()
-    if not text:
-        return False
-    direct_markers = (
-        "boss",
-        "final boss",
-        "guardian",
-        "overlord",
-        "demon lord",
-        "ボス",
-        "ラスボス",
-        "守護者",
-        "支配者",
-        "魔王",
-        "主が",
-        "主は",
-    )
-    if any(marker in text for marker in direct_markers):
-        return True
-    waiting_markers = ("待つ", "待って", "待ち受け", "鎮座", "await", "waiting", "waits")
-    entity_markers = ("女神", "神", "神格", "邪神", "主", "王", "deity", "goddess", "god", "lord")
-    return any(marker in text for marker in waiting_markers) and any(marker in text for marker in entity_markers)
 
 
 def _fallback_generated_dungeon_boss_payload(
@@ -20154,279 +18356,26 @@ def _generated_dungeon_boss_level(location: LocationData) -> int:
     return max(5, min(NPC_MAX_LEVEL, 5 + danger * 2))
 
 
-def _world_kind_is_settlement(kind: str) -> bool:
-    return str(kind or "").strip().lower() in {"settlement", "town", "village", "city", "hamlet", "base"}
 
 
-def _world_location_allows_world_map_departure(world: WorldData, name: str) -> bool:
-    location = world.locations.get(str(name or "").strip())
-    if location is None:
-        return False
-    if _world_location_is_world_map_exit(location):
-        return True
-    return not _world_location_blocks_world_map_departure(location)
 
 
-def _dungeon_subnode_target_count(location: LocationData) -> int:
-    extra = location.extra if isinstance(location.extra, dict) else {}
-    for key in ("subnode_count", "dungeon_subnode_count", "room_count", "dungeon_room_count", "scale_count"):
-        if extra.get(key) not in (None, ""):
-            return max(DUNGEON_SUBNODE_MIN_COUNT, min(DUNGEON_SUBNODE_MAX_COUNT, _safe_int(extra.get(key), DUNGEON_SUBNODE_MIN_COUNT)))
-    scale = _dungeon_scale_label(location)
-    scale_counts = {
-        "tiny": 5,
-        "small": 7,
-        "normal": 10,
-        "medium": 11,
-        "large": 15,
-        "huge": 20,
-        "labyrinth": 18,
-    }
-    if scale in scale_counts:
-        return scale_counts[scale]
-    danger = _safe_int(extra.get("danger_level", extra.get("danger")), 0)
-    text = "\n".join(str(value or "") for value in (location.name, location.description, extra.get("location_kind"), extra.get("scale"), extra.get("size"))).casefold()
-    danger_step = danger if danger <= 9 else danger // 5
-    base = 6 + max(0, min(9, danger_step))
-    if any(word in text for word in ("labyrinth", "maze", "迷宮", "迷路", "巨大", "広大", "大規模")):
-        base += 5
-    elif any(word in text for word in ("ruin", "mine", "遺跡", "鉱山", "廃坑")):
-        base += 2
-    elif any(word in text for word in ("small", "shallow", "小さ", "浅い")):
-        base -= 2
-    rng = random.Random(f"dungeon-subnode-count|{location.name}|{location.description}|{danger}")
-    base += rng.randint(0, 2)
-    return max(DUNGEON_SUBNODE_MIN_COUNT, min(DUNGEON_SUBNODE_MAX_COUNT, base))
 
 
-def _dungeon_scale_label(location: LocationData) -> str:
-    extra = location.extra if isinstance(location.extra, dict) else {}
-    raw = str(extra.get("scale") or extra.get("size") or extra.get("dungeon_scale") or extra.get("rank") or "").strip().casefold()
-    if raw:
-        if any(word in raw for word in ("tiny", "very small", "miniscule", "極小")):
-            return "tiny"
-        if any(word in raw for word in ("small", "minor", "小", "浅")):
-            return "small"
-        if any(word in raw for word in ("large", "big", "major", "大", "広")):
-            return "large"
-        if any(word in raw for word in ("huge", "vast", "giant", "massive", "巨大", "広大")):
-            return "huge"
-        if any(word in raw for word in ("labyrinth", "maze", "迷宮", "迷路")):
-            return "labyrinth"
-        if any(word in raw for word in ("normal", "medium", "standard", "普通", "中")):
-            return "normal"
-    text = f"{location.name}\n{location.description}".casefold()
-    if any(word in text for word in ("labyrinth", "maze", "迷宮", "迷路")):
-        return "labyrinth"
-    if any(word in text for word in ("huge", "vast", "massive", "巨大", "広大")):
-        return "huge"
-    if any(word in text for word in ("large", "big", "大き", "広い")):
-        return "large"
-    if any(word in text for word in ("small", "shallow", "小さ", "浅い")):
-        return "small"
-    return ""
 
 
-def _protected_dungeon_subnodes(graph: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
-    protected: dict[str, dict[str, Any]] = {}
-    for node_id, node in nodes.items():
-        if not isinstance(node, dict):
-            continue
-        node_id_text = str(node_id)
-        kind = str(node.get("kind") or "").strip()
-        if node_id_text.startswith("quest:") or kind == "quest_objective" or bool(node.get("quest_objective")):
-            protected[node_id_text] = dict(node)
-    return protected
 
 
-def _fallback_dungeon_subnode_layout(location: LocationData, target_count: int) -> dict[str, Any]:
-    target_count = max(DUNGEON_SUBNODE_MIN_COUNT, min(DUNGEON_SUBNODE_MAX_COUNT, int(target_count or DUNGEON_SUBNODE_MIN_COUNT)))
-    rng = random.Random(f"dungeon-subnodes|{location.name}|{location.description}|{target_count}")
-    catalog = list(DUNGEON_SUBNODE_KIND_CATALOG)
-    rng.shuffle(catalog)
-    interior_count = max(3, target_count - 2)
-    main_count = max(3, min(interior_count, interior_count // 2 + 1))
-    side_count = max(0, interior_count - main_count)
-    x_step = max(120, min(170, 900 // max(4, main_count + 1)))
-    nodes: list[dict[str, Any]] = [
-        {
-            "id": DUNGEON_ENTRY_SUBNODE_ID,
-            "name": "入口",
-            "kind": "entrance",
-            "description": "外と内部をつなぐ出入口。",
-            "x": 80,
-            "y": 240,
-            "world_map_exit": True,
-        }
-    ]
-    main_ids: list[str] = []
-    for index in range(main_count):
-        kind, name, description = catalog[index % len(catalog)]
-        node_id = f"main_{index + 1:02d}"
-        main_ids.append(node_id)
-        nodes.append(
-            {
-                "id": node_id,
-                "name": name,
-                "kind": kind,
-                "description": description,
-                "x": 220 + index * x_step,
-                "y": 220 + (index % 2) * 44,
-            }
-        )
-    side_ids: list[str] = []
-    for index in range(side_count):
-        kind, name, description = catalog[(main_count + index) % len(catalog)]
-        node_id = f"side_{index + 1:02d}"
-        side_ids.append(node_id)
-        parent_index = index % max(1, main_count)
-        y_lane = 80 if index % 2 == 0 else 390
-        nodes.append(
-            {
-                "id": node_id,
-                "name": name,
-                "kind": kind,
-                "description": description,
-                "x": 220 + parent_index * x_step + (60 if index % 3 == 0 else 0),
-                "y": y_lane + (index // 2 % 2) * 34,
-            }
-        )
-    deepest_x = 220 + main_count * x_step
-    nodes.append(
-        {
-            "id": DUNGEON_DEEPEST_SUBNODE_ID,
-            "name": "最奥部",
-            "kind": "deepest",
-            "description": "ダンジョンの中核に近い場所。",
-            "x": deepest_x,
-            "y": 240,
-            "world_map_exit": False,
-        }
-    )
-    edges: list[dict[str, Any]] = []
-
-    def add_edge(a: str, b: str, kind: str = "path") -> None:
-        if not a or not b or a == b:
-            return
-        if any({edge.get("from"), edge.get("to")} == {a, b} for edge in edges):
-            return
-        edges.append({"from": a, "to": b, "kind": kind})
-
-    add_edge(DUNGEON_ENTRY_SUBNODE_ID, main_ids[0])
-    for a, b in zip(main_ids, main_ids[1:]):
-        add_edge(a, b)
-    add_edge(main_ids[-1], DUNGEON_DEEPEST_SUBNODE_ID)
-    for index, node_id in enumerate(side_ids):
-        parent = main_ids[index % len(main_ids)]
-        add_edge(parent, node_id, "branch")
-        if index % 2 == 0 and index + 1 < len(main_ids):
-            add_edge(node_id, main_ids[index % len(main_ids) + 1], "loop")
-        elif index > 0:
-            add_edge(node_id, side_ids[index - 1], "narrow_path")
-    for index in range(0, len(main_ids) - 2, 2):
-        if rng.random() < 0.7:
-            add_edge(main_ids[index], main_ids[index + 2], "shortcut")
-    if side_ids and rng.random() < 0.8:
-        add_edge(DUNGEON_ENTRY_SUBNODE_ID, side_ids[0], "side_path")
-    return {"nodes": nodes[:target_count], "edges": edges, "summary": "fallback maze dungeon layout"}
 
 
-def _merge_dungeon_subnode_layout(fallback: dict[str, Any], llm_layout: dict[str, Any], target_count: int) -> dict[str, Any]:
-    result = {
-        "nodes": [dict(node) for node in _as_list(fallback.get("nodes")) if isinstance(node, dict)],
-        "edges": [dict(edge) for edge in _as_list(fallback.get("edges")) if isinstance(edge, dict)],
-        "summary": str(fallback.get("summary") or ""),
-    }
-    if not isinstance(llm_layout, dict):
-        return result
-    llm_nodes = [node for node in _as_list(llm_layout.get("nodes") or llm_layout.get("subnodes")) if isinstance(node, dict)]
-    if not llm_nodes:
-        return result
-    fallback_interior = [
-        node
-        for node in result["nodes"]
-        if str(node.get("id") or "") not in {DUNGEON_ENTRY_SUBNODE_ID, DUNGEON_DEEPEST_SUBNODE_ID}
-    ]
-    llm_interior = [
-        node
-        for node in llm_nodes
-        if str(node.get("id") or node.get("role") or "").strip() not in {DUNGEON_ENTRY_SUBNODE_ID, DUNGEON_DEEPEST_SUBNODE_ID, "entrance", "deepest"}
-    ]
-    for fallback_node, llm_node in zip(fallback_interior, llm_interior):
-        name = str(llm_node.get("name") or llm_node.get("title") or "").strip()
-        kind = str(llm_node.get("kind") or llm_node.get("type") or llm_node.get("category") or "").strip()
-        description = str(llm_node.get("description") or llm_node.get("summary") or "").strip()
-        if name:
-            fallback_node["name"] = _short_text(name, 48)
-        if kind:
-            fallback_node["kind"] = _safe_subnode_kind(kind)
-        if description:
-            fallback_node["description"] = _short_text(description, 180)
-        for key in ("resource_hint", "encounter_hint", "loot_hint"):
-            value = str(llm_node.get(key) or "").strip()
-            if value:
-                fallback_node[key] = _short_text(value, 120)
-    summary = str(llm_layout.get("summary") or llm_layout.get("layout_summary") or "").strip()
-    if summary:
-        result["summary"] = _short_text(summary, 240)
-    return result
 
 
-def _safe_subnode_kind(value: str) -> str:
-    key = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
-    key = re.sub(r"[^a-z0-9_\u3040-\u30ff\u3400-\u9fff]+", "_", key).strip("_")
-    return key or "room"
 
 
-def _ensure_dungeon_graph_connected(graph: dict[str, Any]) -> None:
-    nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
-    if DUNGEON_ENTRY_SUBNODE_ID not in nodes:
-        return
-    edges = [edge for edge in graph.get("edges", []) if isinstance(edge, dict) and not edge.get("external")]
-    connected = {DUNGEON_ENTRY_SUBNODE_ID}
-    changed = True
-    while changed:
-        changed = False
-        for edge in edges:
-            a = str(edge.get("from") or "")
-            b = str(edge.get("to") or "")
-            if a in connected and b in nodes and b not in connected:
-                connected.add(b)
-                changed = True
-            if b in connected and a in nodes and a not in connected:
-                connected.add(a)
-                changed = True
-    anchor = DUNGEON_ENTRY_SUBNODE_ID
-    for node_id in list(nodes):
-        if node_id in connected:
-            anchor = node_id
-            continue
-        graph.setdefault("edges", []).append({"from": anchor, "to": node_id, "kind": "path"})
-        connected.add(node_id)
-        anchor = node_id
 
 
-def _dungeon_branch_parent(graph: dict[str, Any], index: int) -> str:
-    nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
-    candidates = [node_id for node_id in nodes if str(node_id).startswith("main_")]
-    if not candidates:
-        candidates = [node_id for node_id in ("main_02", "main_01", "side_01", DUNGEON_DEEPEST_SUBNODE_ID, DUNGEON_ENTRY_SUBNODE_ID) if node_id in nodes]
-    if not candidates:
-        return next(iter(nodes), DUNGEON_ENTRY_SUBNODE_ID)
-    return str(candidates[index % len(candidates)])
 
 
-def _world_location_blocks_world_map_departure(location: LocationData) -> bool:
-    kind = str(location.extra.get("location_kind") or "").strip().lower()
-    danger = _clamp_world_danger(location.extra.get("danger_level", location.extra.get("danger")))
-    if kind in {"dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair"}:
-        return True
-    if kind in {"wilderness", "forest", "swamp", "mountain", "wilds"} and danger >= 10:
-        return True
-    if location.flags.get("dangerous") or location.flags.get("dungeon"):
-        return True
-    return False
 
 
 def _subnode_map_hides_unvisited(location: LocationData) -> bool:
@@ -20435,51 +18384,6 @@ def _subnode_map_hides_unvisited(location: LocationData) -> bool:
     return _is_dungeon_location(location) or _world_location_blocks_world_map_departure(location)
 
 
-def _world_location_is_world_map_exit(location: LocationData) -> bool:
-    for key in (
-        "world_map_departure_allowed",
-        "world_map_exit",
-        "fast_travel_exit",
-        "dungeon_entrance",
-        "entrance",
-        "exit",
-        "safe_exit",
-    ):
-        if _as_bool(location.flags.get(key)) or _as_bool(location.extra.get(key)):
-            return True
-    text = "\n".join(
-        str(value or "")
-        for value in (
-            location.name,
-            location.description,
-            location.area,
-            location.extra.get("location_kind"),
-            location.extra.get("kind"),
-            location.extra.get("type"),
-            location.extra.get("category"),
-        )
-    ).lower()
-    return any(
-        marker in text
-        for marker in (
-            "entrance",
-            "exit",
-            "gate",
-            "foyer",
-            "checkpoint",
-            "camp",
-            "safe room",
-            "入口",
-            "入り口",
-            "出入口",
-            "出口",
-            "門",
-            "前庭",
-            "退避",
-            "野営",
-            "キャンプ",
-        )
-    )
 
 
 def _settlement_crime_risk_multiplier(settlement: LocationData) -> float:
@@ -20545,67 +18449,12 @@ def _crime_delta_from_payload(value: Any) -> int:
     return total
 
 
-def _fallback_world_location_kind(rng: random.Random, index: int) -> str:
-    if index == 0:
-        return "settlement"
-    return rng.choice(
-        (
-            "wilderness",
-            "landmark",
-            "dungeon",
-            "settlement",
-            "road",
-            "crossroad",
-            "coast",
-            "mountain",
-            "river",
-            "plain",
-            "wilderness",
-        )
-    )
 
 
-def _fallback_world_location_name(kind: str, index: int) -> str:
-    suffix_by_kind = {
-        "road": "街道",
-        "crossroad": "分岐路",
-        "coast": "海岸",
-        "mountain": "山脈",
-        "river": "河",
-        "plain": "平原",
-        "settlement": "の街",
-        "dungeon": "迷宮",
-        "wilderness": "原野",
-        "landmark": "遺標",
-    }
-    safe_index = max(1, int(index))
-    prefix = FANTASY_LOCATION_PREFIXES[(safe_index - 1) % len(FANTASY_LOCATION_PREFIXES)]
-    stem = FANTASY_LOCATION_STEMS[((safe_index - 1) // len(FANTASY_LOCATION_PREFIXES)) % len(FANTASY_LOCATION_STEMS)]
-    suffix = suffix_by_kind.get(str(kind or "").strip().lower(), "地点")
-    return f"{prefix}{stem}{suffix}"
 
 
-def _fallback_world_location_description(kind: str, danger: int) -> str:
-    labels = {
-        "settlement": "人々が暮らす拠点。道や周辺地形とつながっている。",
-        "dungeon": "危険な探索地。内部はサブノードとして扱われる。",
-        "wilderness": "安全地帯の間に広がる野外地形。",
-        "landmark": "道中の目印になる特徴的な場所。",
-        "road": "別の場所へ続く街道。",
-        "crossroad": "複数の道が交わる分岐路。",
-        "coast": "海に面した開けた地形。",
-        "mountain": "険しい山や峠道を含む地形。",
-        "river": "川沿いや渡し場を含む地形。",
-        "plain": "見通しのよい平原や草原。",
-    }
-    return f"{labels.get(kind, '世界地図上の地点。')} 危険度 {danger}。"
 
 
-def _world_location_kind_guidance() -> list[dict[str, str]]:
-    return [
-        {"id": kind, "label": WORLD_LOCATION_KIND_LABELS.get(kind, kind)}
-        for kind in WORLD_LOCATION_KIND_OPTIONS
-    ]
 
 
 def _unique_world_location_name(world: WorldData, base: str) -> str:
@@ -20693,8 +18542,6 @@ def _teleport_movement_requested(response: dict[str, Any]) -> bool:
     return any(word in text for word in ("teleport", "portal", "warp", "gate", "転移", "瞬間移動", "ポータル"))
 
 
-def _quest_start_choices(quests: list[QuestData]) -> list[str]:
-    return []
 
 
 def _is_settlement_location(location: LocationData) -> bool:
@@ -21469,195 +19316,20 @@ def _canonical_facility_name(keyword: str) -> str:
     return text
 
 
-def _quest_response_narration(response: dict[str, Any] | None) -> str:
-    if not isinstance(response, dict):
-        return ""
-    return str(response.get("narration") or response.get("text") or response.get("narr") or "").strip()
 
 
-def _quest_event_needs_resolve(event: Any) -> bool:
-    if not event:
-        return False
-    if isinstance(event, list):
-        return any(_quest_event_needs_resolve(item) for item in event)
-    if not isinstance(event, dict):
-        text = str(event).strip()
-        lowered = text.lower()
-        return any(word in lowered or word in text for word in ("unresolved", "pending", "needs_resolution", "未解決", "保留", "判定待ち"))
-
-    explicit_keys = (
-        "requires_resolution",
-        "needs_resolution",
-        "unresolved",
-        "pending",
-        "choice_required",
-        "combat_required",
-    )
-    for key in explicit_keys:
-        if key in event:
-            return _as_bool(event.get(key))
-
-    status = str(event.get("status") or event.get("state") or "").strip().lower()
-    if status in {"unresolved", "pending", "open", "needs_resolution", "active", "未解決", "保留", "継続中"}:
-        return True
-    if status in {"resolved", "complete", "completed", "done", "解決", "完了"}:
-        return False
-
-    if any(key in event for key in ("result", "outcome", "resolved_result", "summary")):
-        return False
-    return True
 
 
-def _quest_payload_has_reward(payload: Any) -> bool:
-    if isinstance(payload, list):
-        return any(_quest_payload_has_reward(item) for item in payload)
-    if not isinstance(payload, dict):
-        return False
-    reward_keys = {
-        "reward",
-        "rewards",
-        "item_rewards",
-        "items",
-        "receive_items",
-        "gain_items",
-        "gold_delta",
-        "player_gold_delta",
-        "receive_gold",
-        "gain_gold",
-        "reward_gold",
-        "exp",
-        "xp",
-        "reward_exp",
-        "player_exp_delta",
-        "experience_delta",
-    }
-    for key in reward_keys:
-        value = payload.get(key)
-        if value in (None, "", [], {}):
-            continue
-        if key in {"gold_delta", "player_gold_delta", "receive_gold", "gain_gold", "reward_gold", "exp", "xp", "reward_exp", "player_exp_delta", "experience_delta"}:
-            if _safe_int(value, 0) <= 0:
-                continue
-        return True
-    for value in payload.values():
-        if isinstance(value, (dict, list)) and _quest_payload_has_reward(value):
-            return True
-    return False
 
 
-def _quest_explicit_finish_status(referee: dict[str, Any] | None, event_resolution: dict[str, Any] | None) -> str:
-    return ""
-    for payload in (event_resolution or {}, referee or {}):
-        status = str(
-            payload.get("quest_status")
-            or payload.get("quest_outcome")
-            or ""
-        ).strip().lower()
-        if status in {"completed", "complete", "success", "succeeded", "cleared", "達成", "成功", "完了", "解決"}:
-            return "completed"
-        if status in {"failed", "failure", "fail", "失敗"}:
-            return "failed"
-        if status in {"abandoned", "withdrawn", "retreated", "cancelled", "canceled", "撤退", "放棄", "中止"}:
-            return "abandoned"
-        if _as_bool(payload.get("quest_finished") or payload.get("quest_completed") or payload.get("complete_quest") or payload.get("completed_quest")):
-            return "completed"
-        if _as_bool(payload.get("quest_failed")):
-            return "failed"
-        if _as_bool(payload.get("quest_abandoned")):
-            return "abandoned"
-    return ""
 
 
-def _quest_completion_text(
-    quest: QuestData,
-    action: str,
-    referee: dict[str, Any],
-    event_resolution: dict[str, Any] | None,
-    narration: str,
-    location: str,
-) -> str:
-    parts: list[str] = [
-        str(quest.extra.get("objective") or ""),
-        str(quest.extra.get("quest_progress") or ""),
-        action,
-        narration,
-        location,
-    ]
-    for payload in (referee, event_resolution or {}):
-        if not isinstance(payload, dict):
-            continue
-        for key in ("quest_progress", "quest_update", "event", "reward", "rewards"):
-            value = payload.get(key)
-            if value not in (None, "", [], {}):
-                if isinstance(value, (dict, list)):
-                    parts.append(json.dumps(value, ensure_ascii=False, default=str))
-                else:
-                    parts.append(str(value))
-    return "\n".join(part for part in parts if part)
 
 
-def _infer_quest_finish_status(
-    quest: QuestData,
-    action: str,
-    referee: dict[str, Any],
-    event_resolution: dict[str, Any] | None,
-    narration: str,
-    location: str,
-) -> str:
-    return ""
-    explicit = _quest_explicit_finish_status(referee, event_resolution)
-    if explicit:
-        return explicit
-    if _is_quest_abandon_action(action):
-        return "abandoned"
-
-    text = _quest_completion_text(quest, action, referee, event_resolution, narration, location)
-    lowered = text.lower()
-    quest_text = f"{quest.name}\n{quest.overview}\n{quest.extra.get('objective') or ''}"
-    quest_lowered = quest_text.lower()
-
-    rescue_quest = any(word in quest_lowered or word in quest_text for word in ("rescue", "save", "救出", "救助", "助け", "娘", "行方不明", "連れ去"))
-    rescued = any(word in lowered or word in text for word in ("rescued", "saved", "救出した", "救助した", "保護した", "無事に保護", "解放した", "拘束を解除した"))
-    returned = any(word in lowered or word in text for word in ("returned", "brought back", "帰還した", "連れて帰った", "連れ帰った", "連れ帰り", "連れ戻した", "戻った"))
-    reported = any(word in lowered or word in text for word in ("reported", "reported to", "quest giver", "client", "報告した", "報告を終え", "依頼主へ報告", "依頼人へ報告", "ギルドへ報告"))
-    completed = any(word in lowered or word in text for word in ("quest completed", "quest complete", "cleared quest", "依頼を達成", "依頼達成", "クエスト達成", "達成した", "完了した", "完遂した", "解決した"))
-    reward_claimed = any(word in lowered or word in text for word in ("reward received", "received reward", "報酬を受け取", "報酬を受領", "報酬が支払"))
-    reward_seen = _quest_payload_has_reward(referee) or _quest_payload_has_reward(event_resolution)
-
-    if reward_seen and (completed or reward_claimed):
-        return "completed"
-    if rescue_quest and rescued and returned and (reported or completed or reward_claimed):
-        return "completed"
-    if completed and (reported or reward_claimed):
-        return "completed"
-    return ""
 
 
-def _quest_finish_status(action: str, referee: dict[str, Any], event_resolution: dict[str, Any] | None) -> str:
-    return ""
-    for payload in (event_resolution or {}, referee or {}):
-        status = str(payload.get("quest_status") or payload.get("quest_outcome") or "").strip().lower()
-        if status in {"completed", "complete", "success", "succeeded", "達成", "成功"}:
-            return "completed"
-        if status in {"failed", "failure", "fail", "失敗"}:
-            return "failed"
-        if status in {"abandoned", "withdrawn", "retreated", "cancelled", "canceled", "撤退", "放棄", "中止"}:
-            return "abandoned"
-        if _as_bool(payload.get("quest_completed") or payload.get("complete_quest") or payload.get("completed_quest")):
-            return "completed"
-        if _as_bool(payload.get("quest_failed")):
-            return "failed"
-        if _as_bool(payload.get("quest_abandoned")):
-            return "abandoned"
-    action_text = str(action or "").lower()
-    if any(word in action_text for word in ("撤退", "放棄", "諦め", "やめる", "retreat", "abandon", "withdraw", "give up")):
-        return "abandoned"
-    return ""
 
 
-def _is_quest_abandon_action(action: str) -> bool:
-    text = str(action or "").lower()
-    return any(word in text for word in ("撤退", "放棄", "諦め", "やめる", "retreat", "abandon", "withdraw", "give up"))
 
 
 def _is_craft_action_text(action: str) -> bool:
@@ -22905,115 +20577,12 @@ def _character_ai_context(character: CharacterData, *, details: bool = True) -> 
     return _drop_empty(data)
 
 
-def _quest_ai_context(
-    quest: QuestData,
-    *,
-    include_log: bool = True,
-    include_extra: bool = True,
-) -> dict[str, Any]:
-    data: dict[str, Any] = {
-        "name": quest.name,
-        "overview": _short_text(quest.overview, 900),
-        "status": quest.status,
-        "quest_type": quest.extra.get("quest_type"),
-        "quest_stage": quest.extra.get("quest_stage"),
-        "deadline_hours": quest.extra.get("deadline_hours"),
-        "neighboring_settlement": quest.neighboring_settlement,
-        "choices": [str(item) for item in quest.choices[:6]],
-        "reward": _compact_value(quest.extra.get("reward", {}), max_chars=600),
-    }
-    if include_log and quest.log:
-        data["recent_log"] = _compact_value(_quest_ai_public_value(quest.log[-6:]), max_chars=1400)
-    if include_extra and quest.extra:
-        data["details"] = _compact_value(_quest_ai_public_value(quest.extra), max_chars=2400)
-    return _drop_empty(data)
 
 
-def _quest_ai_public_value(value: Any, *, key: str = "") -> Any:
-    key_text = str(key or "")
-    if key_text in {"uuid", "item_uuid", "item_uuids", "accepted_item_uuid"} or key_text.endswith("_uuid"):
-        return None
-    if isinstance(value, str):
-        return _hide_internal_quest_tokens(value)
-    if isinstance(value, (int, float, bool)) or value is None:
-        return value
-    if isinstance(value, list):
-        result = [
-            _quest_ai_public_value(item)
-            for item in value
-        ]
-        return [item for item in result if item is not None]
-    if isinstance(value, dict):
-        if key_text == "objective_entities":
-            return _quest_objective_entities_ai_view(value)
-        result: dict[str, Any] = {}
-        for child_key, child_value in value.items():
-            child_key_text = str(child_key)
-            if child_key_text in {"uuid", "item_uuid", "item_uuids", "accepted_item_uuid"} or child_key_text.endswith("_uuid"):
-                continue
-            public_value = _quest_ai_public_value(child_value, key=child_key_text)
-            if public_value is not None:
-                result[child_key_text] = public_value
-        return result
-    return _hide_internal_quest_tokens(str(value))
 
 
-def _quest_objective_entities_ai_view(pack: dict[str, Any]) -> dict[str, Any]:
-    def public_entries(group: str, prefix: str) -> list[dict[str, Any]]:
-        entries: list[dict[str, Any]] = []
-        for index, entry in enumerate(_as_list(pack.get(group)), start=1):
-            if not isinstance(entry, dict):
-                continue
-            role = str(entry.get("role") or "").strip()
-            label = str(entry.get("role_label") or entry.get("display_alias") or INTERNAL_QUEST_TOKEN_LABELS.get(role, role) or prefix)
-            entries.append(
-                _drop_empty(
-                    {
-                        "ref": f"{prefix}_{index}",
-                        "name": _hide_internal_quest_tokens(entry.get("name")),
-                        "display_alias": _hide_internal_quest_tokens(entry.get("display_alias") or label),
-                        "role_label": _hide_internal_quest_tokens(label),
-                        "role": INTERNAL_QUEST_TOKEN_LABELS.get(role, role),
-                        "status": str(entry.get("status") or ""),
-                        "location": str(entry.get("location") or ""),
-                        "subnode_id": str(entry.get("subnode_id") or ""),
-                    }
-                )
-            )
-        return entries
-
-    return _drop_empty(
-        {
-            "version": pack.get("version"),
-            "quest_type": pack.get("quest_type"),
-            "location": pack.get("location"),
-            "subnode_id": pack.get("subnode_id"),
-            "status": pack.get("status"),
-            "npcs": public_entries("npcs", "objective_npc"),
-            "items": public_entries("items", "objective_item"),
-            "markers": public_entries("markers", "objective_marker"),
-            "requirements": public_entries("requirements", "objective_requirement"),
-            "flags": _quest_ai_public_value(pack.get("flags", {})),
-        }
-    )
 
 
-def _hide_internal_quest_tokens(value: Any) -> str:
-    text = str(value or "")
-    if not text:
-        return ""
-    text = re.sub(r"(?i)\s*\bUUID\s*[:=]\s*[0-9a-f-]{8,}\b", "", text)
-    text = re.sub(
-        r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
-        "対象",
-        text,
-    )
-    text = re.sub(r"(?i)\b[0-9a-f]{24,36}\b", "対象", text)
-    text = re.sub(r"(?i)\s*\bUUID\s*[:=]\s*対象\b", "", text)
-    text = re.sub(r"\s*[\(（]\s*対象\s*[\)）]", "", text)
-    for token, label in INTERNAL_QUEST_TOKEN_LABELS.items():
-        text = re.sub(rf"\b{re.escape(token)}\b", label, text)
-    return text
 
 
 def _compact_value(value: Any, *, max_chars: int = 1000, list_limit: int = 12, dict_limit: int = 16) -> Any:
@@ -23082,26 +20651,6 @@ def _strip_response_metadata(response: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in response.items() if not key.startswith("_")}
 
 
-def _quest_from_raw(item: Any, index: int) -> QuestData:
-    if isinstance(item, dict):
-        data = dict(item)
-        data["name"] = str(data.get("name") or data.get("quest_name") or data.get("title") or f"Quest {index + 1}")
-        data["overview"] = str(data.get("overview") or data.get("description") or data.get("summary") or "")
-        quest = QuestData.from_dict(data, default_name=f"Quest {index + 1}")
-        quest_type = _normalise_quest_type_id(
-            data.get("quest_type")
-            or data.get("objective_type")
-            or data.get("type")
-            or data.get("kind")
-            or quest.extra.get("quest_type")
-            or quest.extra.get("objective_type")
-        )
-        if not quest_type:
-            quest_type = _quest_type(quest, data)
-        quest.extra["quest_type"] = quest_type
-        quest.extra["objective_type"] = quest_type
-        return quest
-    return QuestData(name=f"Quest {index + 1}", overview=str(item))
 
 
 def _character_from_raw(item: Any, index: int, category: str) -> CharacterData:
