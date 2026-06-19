@@ -169,6 +169,20 @@ class FixtureLlmBackend(BaseLlmBackend):
                 "message": "この行動を通常のナレーションへ渡せます。",
                 "suggested_action": "",
             }
+        elif manager_name == "input_gatekeeper":
+            action = _extract_action(user_text) or user_text
+            impossible = (
+                "50000" in action
+                or "instant kill" in action.lower()
+                or "impossible miracle" in action.lower()
+            )
+            content = {
+                "content_violation": False,
+                "action_possible": not impossible,
+                "reason": "The action is implausible in the current world state." if impossible else "The action can proceed.",
+                "message": "That cannot be done from the current situation." if impossible else "The action can proceed.",
+                "suggested_action": "" if not impossible else "Choose an action grounded in the current scene.",
+            }
         elif manager_name == "check_action_feasibility":
             action = _extract_action(user_text) or user_text
             impossible = (

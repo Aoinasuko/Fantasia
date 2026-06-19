@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -42,4 +43,12 @@ class JsonStore:
         payload = {"messages": messages, "response": response}
         with path.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=2)
+        return path
+
+    def append_llm_metric(self, metric: dict[str, Any]) -> Path:
+        path = self.output_dir / "manager_metrics.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {"timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"), **metric}
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
         return path

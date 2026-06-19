@@ -92,6 +92,8 @@ class ManagerSchema:
             lines.append(
                 "- 状態付与が必要な場合は status_effects/player_status_effects/character_status_effects に、"
                 "name, target, effect, duration, permanent, long_term, stage, remove_condition を持つオブジェクトを返してください。"
+                "行動不能系の状態は表示名を「行動不能」にせず、攻撃手段に合う具体名と説明にし、"
+                "機械的判定用に tags に incapacitated を入れ、prevents_action/prevents_attack/prevents_escape/prevents_movement を true にしてください。"
                 "長期・永続状態は permanent=true または long_term=true にしてください。"
             )
         if any(field.name == "npc_action" for field in self.fields):
@@ -449,6 +451,23 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "content_violation": False,
             "reason": "プレイヤー入力として処理可能です。",
             "message": "この行動を通常のナレーションへ渡せます。",
+            "suggested_action": "",
+        },
+    ),
+    "input_gatekeeper": ManagerSchema(
+        manager_name="input_gatekeeper",
+        fields=(
+            FieldRule("content_violation", (bool,)),
+            FieldRule("action_possible", (bool,), aliases=("possible", "allowed", "feasible")),
+            FieldRule("reason", (str,)),
+            FieldRule("message", (str,)),
+            FieldRule("suggested_action", (str,), required=False, non_empty=False),
+        ),
+        example={
+            "content_violation": False,
+            "action_possible": True,
+            "reason": "The action can be passed to the normal game managers in the current scene.",
+            "message": "The action can proceed.",
             "suggested_action": "",
         },
     ),
@@ -1133,26 +1152,32 @@ SCHEMAS: dict[str, ManagerSchema] = {
             *VISUAL_FIELDS,
         ),
         example={
-            "npc_action": "accept_surrender",
-            "intent": "mercy",
+            "npc_action": "restrain",
+            "intent": "capture",
             "target": "Player",
-            "narration": "影は攻撃の構えを解き、あなたが武器を捨てるのを待った。",
+            "narration": "影は踏み込まず、足元の闇を糸のように伸ばしてあなたの脚を縫い止めた。",
             "encounter_update": {
                 "opponent_status": "guarded",
                 "player_status": "disarmed",
                 "player_status_effects": [
                     {
-                        "name": "威圧に呑まれた",
-                        "effect": "敵の威圧で足が止まり、次の2ターンは逃走や回避の判断が遅れる。",
+                        "name": "影縛り",
+                        "description": "影の糸に足元を縫い止められ、攻撃・逃走・移動ができない。",
+                        "effect": "影による拘束。攻撃・逃走・移動を妨げる。",
                         "duration": 2,
+                        "tags": ["incapacitated"],
+                        "prevents_action": True,
+                        "prevents_attack": True,
+                        "prevents_escape": True,
+                        "prevents_movement": True,
                     }
                 ],
             },
-            "combat_judgement": {"offensive": False, "weakness_multiplier": 0.0, "reason": "降伏受諾のためHPダメージなし。"},
-            "effects": [{"name": "戦闘停止", "duration": 1}],
-            "finished": True,
-            "should_end_encounter": True,
-            "choices": ["事情を説明する", "その場を離れる"],
+            "combat_judgement": {"offensive": False, "weakness_multiplier": 0.0, "reason": "拘束のみでHPダメージなし。"},
+            "effects": [{"name": "拘束姿勢", "duration": 1}],
+            "finished": False,
+            "should_end_encounter": False,
+            "choices": ["拘束を解こうともがく", "事情を説明する"],
         },
     ),
     "referee_npc_rewrite": ManagerSchema(
@@ -1179,7 +1204,8 @@ SCHEMAS: dict[str, ManagerSchema] = {
                     "player": [
                         {
                             "name": "監視下",
-                            "effect": "敵に見張られている。急な攻撃や逃走は疑われやすい。",
+                            "description": "敵に見張られている。急な攻撃や逃走は疑われやすい。",
+                            "effect": "監視による行動圧力。会話や慎重な移動は可能。",
                             "remove_condition": "会話で安全を得る、またはその場を離れる。",
                         }
                     ]

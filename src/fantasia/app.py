@@ -283,6 +283,10 @@ class FantasiaApp(tk.Tk):
         self.character_trait_entries: list[dict[str, object]] = []
         self.character_entry_tooltip: tk.Toplevel | None = None
         self.character_entry_tooltip_label: tk.Label | None = None
+        self.game_button_help_tooltip: tk.Toplevel | None = None
+        self.game_button_help_label: tk.Label | None = None
+        self.screen_tutorial_dialog_open = False
+        self.game_tutorial_page_index = 0
 
         self._build_menu()
         self._build_ui()
@@ -348,6 +352,7 @@ class FantasiaApp(tk.Tk):
         self.ui_text_speed_var = tk.StringVar(value=str(self.config_data.ui_setting.get("text_speed", 0.02)))
         self.ui_language_var = tk.StringVar(value=_language_label(self.config_data.language))
         self.ui_generate_images_var = tk.BooleanVar(value=_image_generation_enabled_config(self.config_data))
+        self.ui_show_button_help_var = tk.BooleanVar(value=bool(self.config_data.ui_setting.get("show_game_button_help", True)))
         self.debug_allow_any_action_var = tk.BooleanVar(value=self.config_data.allow_any_action_concept)
         self.world_name_var = tk.StringVar(value="Misty Frontier")
         self.player_var = tk.StringVar(value="Nana")
@@ -443,6 +448,8 @@ class FantasiaApp(tk.Tk):
             self._refresh_character_setup_screen()
         self.screens[name].tkraise()
         self.current_screen_name = name
+        if name in {"world_create", "character_setup"}:
+            self.after(150, lambda screen_name=name: self._maybe_open_screen_tutorial(screen_name))
         if name == "game":
             self._refresh_status_panel()
             self._render_stage()
@@ -1180,9 +1187,12 @@ class FantasiaApp(tk.Tk):
         ttk.Entry(frame, textvariable=self.ui_font_size_var, width=12).grid(row=3, column=1, sticky="ew", pady=3, padx=(0, 24))
         tk.Label(frame, text=_ui_text(self.config_data, "settings_text_speed"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=4, column=0, sticky="w", padx=(0, 8), pady=3)
         ttk.Entry(frame, textvariable=self.ui_text_speed_var, width=12).grid(row=4, column=1, sticky="ew", pady=3, padx=(0, 24))
-        tk.Frame(frame, bg=APP_BUTTON_BORDER, height=2).grid(row=5, column=0, columnspan=4, sticky="ew", pady=(12, 12))
-        tk.Label(frame, text=_ui_text(self.config_data, "settings_generate_images"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=6, column=0, sticky="w", padx=(0, 8), pady=3)
-        self._settings_checkbutton(frame, self.ui_generate_images_var).grid(row=6, column=1, sticky="w", pady=3)
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_show_button_help"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=5, column=0, sticky="w", padx=(0, 8), pady=3)
+        self._settings_checkbutton(frame, self.ui_show_button_help_var).grid(row=5, column=1, sticky="w", pady=3)
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_show_button_help_hint"), bg=APP_PANEL_BG, fg="#d8d4cf", anchor="w", font=self.ui_fonts.normal(-4)).grid(row=6, column=0, columnspan=4, sticky="w", pady=(0, 8))
+        tk.Frame(frame, bg=APP_BUTTON_BORDER, height=2).grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 12))
+        tk.Label(frame, text=_ui_text(self.config_data, "settings_generate_images"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(-2)).grid(row=8, column=0, sticky="w", padx=(0, 8), pady=3)
+        self._settings_checkbutton(frame, self.ui_generate_images_var).grid(row=8, column=1, sticky="w", pady=3)
         self._settings_action_row(frame, 21, self._apply_ui_setting)
 
     def _build_settings_debug_category(self) -> None:
@@ -1692,11 +1702,23 @@ class FantasiaApp(tk.Tk):
         for column, button in enumerate((self.inventory_btn, self.craft_btn, self.loot_btn, self.world_map_btn, self.subnode_map_btn)):
             button.grid(row=0, column=column, padx=(0, 10), pady=0)
 
+        self.tutorial_btn = self._tool_icon_button(right_tools, "tutorial", _ui_text(self.config_data, "game_tutorial"), self._open_game_tutorial)
         self.save_btn = self._tool_icon_button(right_tools, "save", _ui_text(self.config_data, "game_save"), self._save_game)
         self.setting_btn = self._tool_icon_button(right_tools, "setting", _ui_text(self.config_data, "game_setting"), self._open_game_submenu)
-        for column, button in enumerate((self.save_btn, self.setting_btn)):
+        for column, button in enumerate((self.tutorial_btn, self.save_btn, self.setting_btn)):
             button.grid(row=0, column=column, padx=(10, 0), pady=0)
-        self.task_buttons.extend([self.inventory_btn, self.craft_btn, self.loot_btn, self.world_map_btn, self.subnode_map_btn, self.save_btn, self.setting_btn])
+        self.task_buttons.extend([self.inventory_btn, self.craft_btn, self.loot_btn, self.world_map_btn, self.subnode_map_btn, self.tutorial_btn, self.save_btn, self.setting_btn])
+        for button, title_key, help_key in (
+            (self.inventory_btn, "game_inventory", "game_inventory_help"),
+            (self.craft_btn, "game_craft", "game_craft_help"),
+            (self.loot_btn, "game_loot", "game_loot_help"),
+            (self.world_map_btn, "game_world_map", "game_world_map_help"),
+            (self.subnode_map_btn, "game_subnode_map", "game_subnode_map_help"),
+            (self.tutorial_btn, "game_tutorial", "game_tutorial_help"),
+            (self.save_btn, "game_save", "game_save_help"),
+            (self.setting_btn, "game_setting", "game_setting_help"),
+        ):
+            self._bind_game_button_help(button, title_key, help_key)
 
         self._refresh_choices()
         self._refresh_status_panel()
@@ -1779,6 +1801,53 @@ class FantasiaApp(tk.Tk):
         self.tool_icon_images[key] = photo
         return photo
 
+    def _bind_game_button_help(self, widget: tk.Widget, title_key: str, help_key: str) -> None:
+        widget.bind("<Enter>", lambda event, title=title_key, help_text=help_key: self._show_game_button_help(title, help_text, event), add="+")
+        widget.bind("<Motion>", lambda event, title=title_key, help_text=help_key: self._show_game_button_help(title, help_text, event), add="+")
+        widget.bind("<Leave>", self._hide_game_button_help, add="+")
+
+    def _game_button_help_enabled(self) -> bool:
+        try:
+            return bool(self.ui_show_button_help_var.get())
+        except tk.TclError:
+            return bool(self.config_data.ui_setting.get("show_game_button_help", True))
+
+    def _ensure_game_button_help_tooltip(self) -> tuple[tk.Toplevel, tk.Label]:
+        if self.game_button_help_tooltip is None or not self.game_button_help_tooltip.winfo_exists():
+            tooltip = tk.Toplevel(self)
+            tooltip.withdraw()
+            tooltip.overrideredirect(True)
+            tooltip.configure(bg=APP_BUTTON_BORDER)
+            label = tk.Label(
+                tooltip,
+                bg=APP_PANEL_BG,
+                fg="#f2f2f2",
+                justify="left",
+                anchor="w",
+                bd=0,
+                padx=12,
+                pady=8,
+                wraplength=340,
+                font=self.ui_fonts.normal(-3),
+            )
+            label.pack(padx=2, pady=2)
+            self.game_button_help_tooltip = tooltip
+            self.game_button_help_label = label
+        return self.game_button_help_tooltip, self.game_button_help_label
+
+    def _show_game_button_help(self, title_key: str, help_key: str, event) -> None:
+        if not self._game_button_help_enabled():
+            self._hide_game_button_help()
+            return
+        tooltip, label = self._ensure_game_button_help_tooltip()
+        label.configure(text=f"{_ui_text(self.config_data, title_key)}\n{_ui_text(self.config_data, help_key)}")
+        tooltip.geometry(f"+{event.x_root + 18}+{event.y_root + 14}")
+        tooltip.deiconify()
+
+    def _hide_game_button_help(self, _event=None) -> None:
+        if self.game_button_help_tooltip is not None and self.game_button_help_tooltip.winfo_exists():
+            self.game_button_help_tooltip.withdraw()
+
     def _open_game_submenu(self) -> None:
         dialog = self._create_modal_dialog(_ui_text(self.config_data, "game_setting"), 320, 230)
         dialog.title(_ui_text(self.config_data, "game_setting"))
@@ -1804,6 +1873,136 @@ class FantasiaApp(tk.Tk):
     def _open_settings_from_game_submenu(self, dialog: tk.Toplevel) -> None:
         dialog.destroy()
         self._open_settings_screen()
+
+    def _game_tutorial_pages(self) -> list[tuple[str, str]]:
+        return [
+            (_ui_text(self.config_data, "tutorial_page_start_title"), _ui_text(self.config_data, "tutorial_page_start_body")),
+            (_ui_text(self.config_data, "tutorial_page_maps_title"), _ui_text(self.config_data, "tutorial_page_maps_body")),
+            (_ui_text(self.config_data, "tutorial_page_items_title"), _ui_text(self.config_data, "tutorial_page_items_body")),
+            (_ui_text(self.config_data, "tutorial_page_quests_title"), _ui_text(self.config_data, "tutorial_page_quests_body")),
+        ]
+
+    def _open_game_tutorial(self) -> None:
+        self._hide_game_button_help()
+        pages = self._game_tutorial_pages()
+        if not pages:
+            return
+        self.game_tutorial_page_index = max(0, min(self.game_tutorial_page_index, len(pages) - 1))
+        dialog = self._create_modal_dialog(_ui_text(self.config_data, "game_tutorial_title"), 760, 520)
+        dialog.columnconfigure(0, weight=1)
+        dialog.rowconfigure(1, weight=1)
+        title_var = tk.StringVar()
+        body_var = tk.StringVar()
+        page_var = tk.StringVar()
+
+        tk.Label(
+            dialog,
+            textvariable=title_var,
+            bg=APP_DEEP_BG,
+            fg="#f4d27a",
+            anchor="w",
+            font=self.ui_fonts.bold(5),
+        ).grid(row=0, column=0, sticky="ew", padx=28, pady=(24, 10))
+        tk.Label(
+            dialog,
+            textvariable=body_var,
+            bg=APP_PANEL_BG,
+            fg="#f2f2f2",
+            justify="left",
+            anchor="nw",
+            wraplength=660,
+            font=self.ui_fonts.normal(0),
+            padx=18,
+            pady=16,
+            highlightbackground=APP_BUTTON_BORDER,
+            highlightthickness=1,
+        ).grid(row=1, column=0, sticky="nsew", padx=28, pady=(0, 14))
+
+        footer = tk.Frame(dialog, bg=APP_DEEP_BG)
+        footer.grid(row=2, column=0, sticky="ew", padx=28, pady=(0, 22))
+        footer.columnconfigure(1, weight=1)
+
+        prev_btn = self._instant_button(footer, _ui_text(self.config_data, "game_tutorial_prev"), lambda: show_page(self.game_tutorial_page_index - 1))
+        prev_btn.grid(row=0, column=0, sticky="w", ipadx=16, ipady=6)
+        tk.Label(footer, textvariable=page_var, bg=APP_DEEP_BG, fg="#d8d4cf", font=self.ui_fonts.normal(-2)).grid(row=0, column=1)
+        next_btn = self._instant_button(footer, _ui_text(self.config_data, "game_tutorial_next"), lambda: show_page(self.game_tutorial_page_index + 1))
+        next_btn.grid(row=0, column=2, sticky="e", padx=(8, 0), ipadx=16, ipady=6)
+        close_btn = self._instant_button(footer, _ui_text(self.config_data, "settings_close"), dialog.destroy)
+        close_btn.grid(row=0, column=3, sticky="e", padx=(8, 0), ipadx=16, ipady=6)
+
+        def show_page(index: int) -> None:
+            index = max(0, min(index, len(pages) - 1))
+            self.game_tutorial_page_index = index
+            title, body = pages[index]
+            title_var.set(title)
+            body_var.set(body)
+            page_var.set(_ui_text(self.config_data, "game_tutorial_page").format(page=index + 1, total=len(pages)))
+            prev_btn.configure(state="normal" if index > 0 else "disabled")
+            next_btn.configure(state="normal" if index < len(pages) - 1 else "disabled")
+
+        show_page(self.game_tutorial_page_index)
+
+    def _maybe_open_screen_tutorial(self, screen_name: str) -> None:
+        if self.current_screen_name != screen_name or self.screen_tutorial_dialog_open:
+            return
+        tutorial_map = {
+            "world_create": (
+                "world_create_tutorial_shown",
+                "world_create_tutorial_title",
+                "world_create_tutorial_body",
+            ),
+            "character_setup": (
+                "character_setup_tutorial_shown",
+                "character_setup_tutorial_title",
+                "character_setup_tutorial_body",
+            ),
+        }
+        tutorial = tutorial_map.get(screen_name)
+        if tutorial is None:
+            return
+        flag, title_key, body_key = tutorial
+        if bool(self.config_data.ui_setting.get(flag, False)):
+            return
+        self._open_screen_tutorial(flag, title_key, body_key)
+
+    def _open_screen_tutorial(self, flag: str, title_key: str, body_key: str) -> None:
+        self.screen_tutorial_dialog_open = True
+        dialog = self._create_modal_dialog(_ui_text(self.config_data, title_key), 700, 460)
+        dialog.columnconfigure(0, weight=1)
+        dialog.rowconfigure(1, weight=1)
+        tk.Label(
+            dialog,
+            text=_ui_text(self.config_data, title_key),
+            bg=APP_DEEP_BG,
+            fg="#f4d27a",
+            anchor="w",
+            font=self.ui_fonts.bold(5),
+        ).grid(row=0, column=0, sticky="ew", padx=28, pady=(24, 10))
+        tk.Label(
+            dialog,
+            text=_ui_text(self.config_data, body_key),
+            bg=APP_PANEL_BG,
+            fg="#f2f2f2",
+            justify="left",
+            anchor="nw",
+            wraplength=620,
+            font=self.ui_fonts.normal(-1),
+            padx=18,
+            pady=16,
+            highlightbackground=APP_BUTTON_BORDER,
+            highlightthickness=1,
+        ).grid(row=1, column=0, sticky="nsew", padx=28, pady=(0, 14))
+        actions = tk.Frame(dialog, bg=APP_DEEP_BG)
+        actions.grid(row=2, column=0, sticky="ew", padx=28, pady=(0, 22))
+        actions.columnconfigure(0, weight=1)
+
+        def close() -> None:
+            self.screen_tutorial_dialog_open = False
+            self._set_ui_setting_value(flag, True)
+            dialog.destroy()
+
+        self._instant_button(actions, _ui_text(self.config_data, "settings_close"), close).grid(row=0, column=1, sticky="e", ipadx=24, ipady=7)
+        dialog.protocol("WM_DELETE_WINDOW", close)
 
     def _instant_text(
         self,
@@ -2556,12 +2755,25 @@ class FantasiaApp(tk.Tk):
             hp = str(item.get("hp") or "")
             sp = str(item.get("sp") or "")
             compact_party = is_party_panel and row_height <= 88
-            hp_y = top + (10 if compact_party else 14)
-            sp_y = top + (27 if compact_party else 34)
-            name_y = top + (44 if compact_party else (58 if sp else 38))
-            subtitle_y = top + (62 if compact_party else name_y + 24)
-            name_y = min(name_y, max(top + 12, bottom - 28))
-            subtitle_y = min(subtitle_y, max(top + 24, bottom - 12))
+            if is_party_panel:
+                hp_y = top + (10 if compact_party else 14)
+                sp_y = top + (27 if compact_party else 34)
+                name_y = top + (44 if compact_party else (58 if sp else 38))
+                subtitle_y = top + (62 if compact_party else name_y + 24)
+                name_y = min(name_y, max(top + 12, bottom - 28))
+                subtitle_y = min(subtitle_y, max(top + 24, bottom - 12))
+            else:
+                compact_npc = row_height <= 88
+                hp_y = top + (8 if compact_npc else 12)
+                sp_y = top + (23 if compact_npc else 29)
+                if hp or sp:
+                    name_y = top + (39 if compact_npc else 48)
+                    subtitle_y = top + (57 if compact_npc else 70)
+                else:
+                    name_y = top + (18 if compact_npc else 24)
+                    subtitle_y = top + (39 if compact_npc else 48)
+                name_y = min(max(name_y, top + 8), max(top + 8, bottom - 30))
+                subtitle_y = min(max(subtitle_y, name_y + (14 if compact_npc else 16)), max(top + 10, bottom - 18))
             text_width = max(80, width - text_x - 12)
             hp_font = self.ui_fonts.bold(-5 if compact_party else -4)
             sp_font = self.ui_fonts.bold(-5 if compact_party else -4)
@@ -2636,6 +2848,8 @@ class FantasiaApp(tk.Tk):
         encounter = item.get("encounter") if isinstance(item.get("encounter"), dict) else {}
         if kind in {"player", "character", "companion"}:
             character = self.engine.state.world_data.characters.get(name)
+            if character and kind != "player":
+                self.engine._ensure_character_runtime_data(character)
             data = character.to_dict() if character else {}
             if kind == "companion":
                 companion = self._companion_character_dict()
@@ -2716,6 +2930,7 @@ class FantasiaApp(tk.Tk):
                 return
             if not self._character_is_present_at(character, current_location):
                 return
+            self.engine._ensure_character_runtime_data(character)
             items.append(
                 {
                     "name": character.name,
@@ -4482,6 +4697,16 @@ class FantasiaApp(tk.Tk):
         self.config_data = load_config()
         dialog.destroy()
 
+    def _set_ui_setting_value(self, key: str, value: object) -> None:
+        raw = json.loads(json.dumps(self.config_data.raw, ensure_ascii=False))
+        ui_setting = raw.setdefault("ui_setting", {})
+        ui_setting[key] = value
+        try:
+            CONFIG_PATH.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            self.config_data = load_config()
+        except Exception as exc:
+            self._show_error(exc)
+
     def _load_image_settings_vars(self) -> None:
         image_config = self.config_data.image_backend
         sdxl_config = self.config_data.sdxl
@@ -4510,6 +4735,7 @@ class FantasiaApp(tk.Tk):
         self.ui_text_speed_var.set(str(self.config_data.ui_setting.get("text_speed", 0.02)))
         self.ui_language_var.set(_language_label(self.config_data.language))
         self.ui_generate_images_var.set(_image_generation_enabled_config(self.config_data))
+        self.ui_show_button_help_var.set(bool(self.config_data.ui_setting.get("show_game_button_help", True)))
         if hasattr(self, "ui_font_combo"):
             self.ui_font_combo.configure(values=_font_options(self, self.config_data.language))
 
@@ -4575,10 +4801,13 @@ class FantasiaApp(tk.Tk):
         ui_setting["text_speed"] = text_speed
         ui_setting["language"] = _language_code(self.ui_language_var.get())
         ui_setting["generate_images"] = bool(self.ui_generate_images_var.get())
+        ui_setting["show_game_button_help"] = bool(self.ui_show_button_help_var.get())
         try:
             CONFIG_PATH.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             self.config_data = load_config()
             self.ui_fonts = configure_ui_fonts(self, self.config_data)
+            if not bool(self.config_data.ui_setting.get("show_game_button_help", True)):
+                self._hide_game_button_help()
             if not _image_generation_enabled_config(self.config_data) and self.visual_task_after_id:
                 try:
                     self.after_cancel(self.visual_task_after_id)
@@ -7181,6 +7410,7 @@ UI_TEXT["en"].update(
         "world_progress_content_check": "Checking world premise",
         "world_progress_overview": "Generating world overview",
         "world_progress_locations": "Generating locations",
+        "world_progress_dungeon_subnodes": "Finalizing dungeons",
         "world_progress_story": "Generating story",
         "world_progress_settlement": "Generating starting settlement",
         "world_progress_characters": "Generating NPCs",
@@ -7430,6 +7660,7 @@ UI_TEXT["ja"].update(
         "world_progress_content_check": "内容確認中",
         "world_progress_overview": "世界概要を生成中",
         "world_progress_locations": "ロケーション生成中",
+        "world_progress_dungeon_subnodes": "ダンジョン仕上げ中",
         "world_progress_story": "ストーリー生成中",
         "world_progress_settlement": "初期拠点を生成中",
         "world_progress_characters": "NPC生成中",
@@ -7902,6 +8133,126 @@ UI_TEXT["ja"].update(
 )
 
 
+UI_TEXT["en"].update(
+    {
+        "settings_show_button_help": "Show Button Help",
+        "settings_show_button_help_hint": "When enabled, hovering the lower game buttons shows the button name and a short explanation.",
+        "game_tutorial": "Tutorial",
+        "game_tutorial_title": "Tutorial",
+        "game_tutorial_prev": "Previous",
+        "game_tutorial_next": "Next",
+        "game_tutorial_page": "{page}/{total}",
+        "game_inventory_help": "Check, use, equip, or move items you are carrying.",
+        "game_craft_help": "Combine materials or equipment to create or improve items.",
+        "game_loot_help": "Open nearby containers or loot found in the current place.",
+        "game_world_map_help": "View visited locations and travel along known routes.",
+        "game_subnode_map_help": "View the internal map of the current town, facility, or dungeon.",
+        "game_tutorial_help": "Open beginner guide pages for what to do next.",
+        "game_save_help": "Save the current adventure.",
+        "game_setting_help": "Open the submenu for continuing, ending the game, or changing settings.",
+        "world_create_tutorial_title": "World Generation Guide",
+        "world_create_tutorial_body": (
+            "World Name: the name shown in saves and world selection.\n\n"
+            "Premise: describe the world tone, important rules, and what kind of adventure you want.\n\n"
+            "Initial Locations: choose how many world map locations are generated first. More locations take longer.\n\n"
+            "Crime Risk in Towns: controls how strongly towns react to crimes.\n\n"
+            "Enemy Strength in Battle: adjusts combat difficulty.\n\n"
+            "Press Generate World when ready. After the world is complete, character creation opens."
+        ),
+        "character_setup_tutorial_title": "Character Creation Guide",
+        "character_setup_tutorial_body": (
+            "Set your name, gender, backstory, appearance, and age. The portrait area on the left is a preview, and portrait generation is optional.\n\n"
+            "BP is spent only on the six stats. Strength helps physical force, Dexterity helps tools and crafting, Endurance increases toughness, Intelligence helps knowledge and magic, Judgment helps perception and will, and Charm helps social actions.\n\n"
+            "Skills and traits are edited one at a time by pressing their name buttons. They do not consume BP.\n\n"
+            "When everything looks right, press Start Adventure at the lower right."
+        ),
+        "tutorial_page_start_title": "First Steps",
+        "tutorial_page_start_body": (
+            "Read the log first. It describes the current scene and what just happened.\n\n"
+            "The choice buttons are safe suggestions from the game. You can also type a free action in the input field, such as asking an NPC a question or inspecting an object.\n\n"
+            "If an action does not fit the world or the situation, the game can reject it without spending progress."
+        ),
+        "tutorial_page_maps_title": "Movement And Maps",
+        "tutorial_page_maps_body": (
+            "In towns, use the town map or choices to move between facilities.\n\n"
+            "World Map shows places you have visited or learned about. Area Map shows subnodes inside the current location, such as dungeon rooms or town facilities.\n\n"
+            "Dangerous places often require adjacent movement inside the area map, so check your route before pushing deeper."
+        ),
+        "tutorial_page_items_title": "Items And Saving",
+        "tutorial_page_items_body": (
+            "Inventory opens your carried items. Loot opens nearby containers or items on the scene. Craft combines materials and can improve equipment.\n\n"
+            "Your carried inventory has a limit, so use storage, shops, and crafting to keep it organized.\n\n"
+            "Use Save often, especially before entering a dangerous area or starting a quest."
+        ),
+        "tutorial_page_quests_title": "Quests And Combat",
+        "tutorial_page_quests_body": (
+            "Guild quests are taken from the guild quest board. Active quests show in the information panel with their remaining time.\n\n"
+            "Combat uses HP, SP, attack, defense, skills, conditions, and NPC behavior. Some enemies may attack, flee, surrender, capture, or negotiate depending on the world and their personality.\n\n"
+            "If you are unsure what to do, look around, talk to nearby NPCs, check the map, or return to town."
+        ),
+    }
+)
+UI_TEXT["ja"].update(
+    {
+        "settings_show_button_help": "ボタン説明を表示する",
+        "settings_show_button_help_hint": "ONにすると、ゲーム画面下部のボタンにカーソルを合わせた時に名称と短い説明を表示します。",
+        "game_tutorial": "チュートリアル",
+        "game_tutorial_title": "チュートリアル",
+        "game_tutorial_prev": "前へ",
+        "game_tutorial_next": "次へ",
+        "game_tutorial_page": "{page}/{total}",
+        "game_inventory_help": "持っているアイテムの確認、使用、装備、移動を行います。",
+        "game_craft_help": "素材や装備を組み合わせて、アイテム作成や武具強化を行います。",
+        "game_loot_help": "今いる場所の箱や落ちている物を確認します。",
+        "game_world_map_help": "訪れた場所や知っている経路を確認し、既知の道を移動します。",
+        "game_subnode_map_help": "街、施設、ダンジョン内部のマップを確認します。",
+        "game_tutorial_help": "次に何をすればよいかを確認できる初心者向けガイドを開きます。",
+        "game_save_help": "現在の冒険を保存します。",
+        "game_setting_help": "ゲーム継続、終了、設定を選ぶサブメニューを開きます。",
+        "world_create_tutorial_title": "ワールド生成の説明",
+        "world_create_tutorial_body": (
+            "世界名: セーブやワールド選択に表示される名前です。\n\n"
+            "前提: 世界観、重要なルール、遊びたい冒険の方向性を書きます。\n\n"
+            "初期ロケーション数: 最初に生成するワールドマップの場所数です。多いほど生成に時間がかかります。\n\n"
+            "街中での犯罪行為のリスク: 街が犯罪行為にどれくらい厳しく反応するかを決めます。\n\n"
+            "戦闘時の敵の強さ: 戦闘難易度を調整します。\n\n"
+            "準備ができたらワールド生成を押してください。生成が終わるとキャラクター作成へ進みます。"
+        ),
+        "character_setup_tutorial_title": "キャラクター作成の説明",
+        "character_setup_tutorial_body": (
+            "名前、性別、出自、外見、年齢を設定します。左側は立ち絵プレビューで、画像生成は任意です。\n\n"
+            "BPは6大ステータスにだけ使います。筋力は力仕事や物理攻撃、器用は道具やクラフト、耐久は打たれ強さ、知力は知識や魔法、判断は観察や意志、魅力は会話や交渉に関わります。\n\n"
+            "スキルと体質は名前のボタンを押して1つずつ編集します。BPは消費しません。\n\n"
+            "内容が決まったら右下の「冒険を始める」を押してください。"
+        ),
+        "tutorial_page_start_title": "まず最初に",
+        "tutorial_page_start_body": (
+            "まずはログを読みます。今いる場面と、直前に何が起きたかが書かれています。\n\n"
+            "選択肢ボタンはゲームが提案する安全な行動です。入力欄には、NPCに質問する、物を調べるなどの自由行動も書けます。\n\n"
+            "世界観や状況に合わない行動は、進行せずに拒否されることがあります。"
+        ),
+        "tutorial_page_maps_title": "移動とマップ",
+        "tutorial_page_maps_body": (
+            "街では街の地図や選択肢から施設へ移動します。\n\n"
+            "ワールドマップは訪れた場所や知っている経路を表示します。サブノードマップは、ダンジョンの部屋や街の施設など、現在地内部の地図です。\n\n"
+            "危険な場所では内部マップを隣接移動することが多いので、奥へ進む前に経路を確認してください。"
+        ),
+        "tutorial_page_items_title": "アイテムと保存",
+        "tutorial_page_items_body": (
+            "所持品では持っているアイテムを確認します。漁るでは今いる場面の箱や落ちている物を確認します。クラフトでは素材を組み合わせたり装備を強化できます。\n\n"
+            "持ち歩けるアイテム数には上限があります。保管箱、店、クラフトを使って整理しましょう。\n\n"
+            "危険地帯へ入る前やクエスト開始前は、こまめに保存すると安心です。"
+        ),
+        "tutorial_page_quests_title": "依頼と戦闘",
+        "tutorial_page_quests_body": (
+            "ギルドの依頼は、ギルド内の依頼掲示板から受けます。受注中の依頼と残り時間は情報欄に表示されます。\n\n"
+            "戦闘ではHP、SP、攻撃力、防御力、スキル、状態、NPCの性格が関わります。敵は世界観や性格によって、攻撃、逃亡、降伏、捕獲、交渉などを選ぶことがあります。\n\n"
+            "迷った時は、周囲を見回す、近くのNPCに話す、マップを確認する、街へ戻る、などを試してください。"
+        ),
+    }
+)
+
+
 def _ui_text(config_data, key: str) -> str:
     language = getattr(config_data, "language", "ja")
     table = UI_TEXT.get(language, UI_TEXT["ja"])
@@ -8076,6 +8427,7 @@ def _world_generation_progress_text(config_data, payload: dict[str, object]) -> 
         "content_check": "world_progress_content_check",
         "world_overview": "world_progress_overview",
         "location_graph": "world_progress_locations",
+        "dungeon_subnodes": "world_progress_dungeon_subnodes",
         "story": "world_progress_story",
         "settlement": "world_progress_settlement",
         "characters": "world_progress_characters",
@@ -8084,7 +8436,7 @@ def _world_generation_progress_text(config_data, payload: dict[str, object]) -> 
         "completed": "world_progress_completed",
     }
     label = _ui_text(config_data, key_by_phase.get(phase, "world_progress_working"))
-    if phase in {"location_graph", "characters"} and item_total:
+    if phase in {"location_graph", "dungeon_subnodes", "characters"} and item_total:
         if str(getattr(config_data, "language", "ja")).lower().startswith("en"):
             label = f"{label} ({item_current}/{item_total})"
         else:
@@ -8099,12 +8451,13 @@ def _world_generation_phase_rank(phase: str) -> int:
         "content_check": 0,
         "world_overview": 1,
         "location_graph": 2,
-        "story": 3,
-        "settlement": 4,
-        "characters": 5,
-        "quests": 6,
-        "initial_narration": 7,
-        "completed": 8,
+        "dungeon_subnodes": 3,
+        "story": 4,
+        "settlement": 5,
+        "characters": 6,
+        "quests": 7,
+        "initial_narration": 8,
+        "completed": 9,
     }
     return order.get(str(phase or ""), 0)
 
