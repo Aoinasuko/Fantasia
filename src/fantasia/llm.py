@@ -1143,7 +1143,152 @@ class FixtureLlmBackend(BaseLlmBackend):
                 "location": "灯守りの宿",
                 "choices": ["灯りへ近づく", "宿へ戻る"],
             }
+        content = _fixture_intent_tool_response(manager_name, content)
         return LlmResult(content=content, backend=self.name)
+
+
+def _fixture_intent_tool_response(manager_name: str, content: Any) -> Any:
+    if not isinstance(content, dict):
+        return content
+    if manager_name not in {
+        "master_ai_facilitator",
+        "field_event_evaluator",
+        "quest_starter",
+        "quest_referee_with_free_action",
+        "quest_referee_event_resolve",
+        "conversation_starter",
+        "conversation_facilitator",
+        "conversation_resolver",
+    }:
+        return content
+
+    tools: list[dict[str, Any]] = []
+
+    def add_tool(name: str, arguments: Any) -> None:
+        if arguments in (None, "", [], {}):
+            return
+        tools.append({"name": name, "arguments": arguments if isinstance(arguments, dict) else {"value": arguments}})
+
+    if content.get("location"):
+        add_tool("move_player", {"location": content.get("location")})
+    if content.get("quest_progress"):
+        add_tool("quest_progress", {"progress": content.get("quest_progress")})
+    if content.get("quest_update"):
+        add_tool("quest_update", {"quest_update": content.get("quest_update")})
+    if content.get("event"):
+        add_tool("quest_event", {"event": content.get("event")})
+    if content.get("discovered_location"):
+        add_tool("discover_location", {"location": content.get("discovered_location")})
+    if content.get("quest"):
+        add_tool("generate_quest", {"quest": content.get("quest")})
+    if content.get("quests"):
+        add_tool("generate_quest", {"quests": content.get("quests")})
+    if content.get("npcs"):
+        add_tool("spawn_npc", {"npcs": content.get("npcs")})
+    if content.get("enemies") or content.get("opponents"):
+        add_tool("spawn_enemy", {"enemies": content.get("enemies") or content.get("opponents")})
+    if content.get("boss_npc"):
+        add_tool("spawn_boss", {"boss_npc": content.get("boss_npc")})
+    if content.get("new_npc_requests"):
+        add_tool("request_npc_generation", {"requests": content.get("new_npc_requests")})
+    if content.get("relationship_change") or content.get("memory_updates"):
+        world_args: dict[str, Any] = {}
+        if content.get("relationship_change"):
+            world_args["relationship_change"] = content.get("relationship_change")
+        if content.get("memory_updates"):
+            world_args["memory_updates"] = content.get("memory_updates")
+        add_tool("world_state_effects", world_args)
+    if content.get("game_over"):
+        add_tool(
+            "game_over",
+            {
+                "game_over": content.get("game_over"),
+                "game_over_reason": content.get("game_over_reason") or content.get("reason") or "",
+                "game_over_narration": content.get("game_over_narration") or content.get("narration") or "",
+            },
+        )
+    time_args: dict[str, Any] = {}
+    for key in (
+        "time_passed_hours",
+        "time_passed_days",
+        "advance_time_hours",
+        "long_time_passage_hours",
+        "time_skip_hours",
+        "spend_time_hours",
+        "time_reason",
+    ):
+        if key in content:
+            time_args[key] = content[key]
+    if time_args:
+        add_tool("time_passage", time_args)
+
+    hunger_args: dict[str, Any] = {}
+    for key in (
+        "hunger_delta",
+        "player_hunger_delta",
+    ):
+        if key in content:
+            hunger_args[key] = content[key]
+    if hunger_args:
+        add_tool("hunger_delta", hunger_args)
+
+    gold_args: dict[str, Any] = {}
+    for key in (
+        "gold_delta",
+        "receive_gold",
+        "gain_gold",
+        "spend_gold",
+        "pay_gold",
+    ):
+        if key in content:
+            gold_args[key] = content[key]
+    if gold_args:
+        add_tool("gold_delta", gold_args)
+
+    exp_args: dict[str, Any] = {}
+    for key in (
+        "player_exp_delta",
+        "exp_delta",
+        "exp",
+        "xp",
+        "target",
+        "target_name",
+        "character_name",
+        "npc_name",
+        "target_uuid",
+    ):
+        if key in content:
+            exp_args[key] = content[key]
+    if exp_args:
+        add_tool("exp_delta", exp_args)
+
+    sanitized: dict[str, Any] = {
+        "intent": content.get("intent") or {"kind": manager_name, "summary": str(content.get("think") or content.get("summary") or "")},
+        "narration": str(content.get("narration") or content.get("text") or content.get("message") or ""),
+        "choices": list(content.get("choices") or []),
+        "tools": tools,
+    }
+    for key in (
+        "content_violation",
+        "think",
+        "process",
+        "finished",
+        "speaker",
+        "topic",
+        "mood",
+        "quest_name",
+        "objective",
+        "destination_location",
+        "objective_subnode_name",
+        "summary",
+        "recipients",
+        "reason",
+        "message",
+        "event_occurred",
+    ):
+        if key in content:
+            sanitized[key] = content[key]
+    return sanitized
 
 
 class LlamaCppCompletionBackend(BaseLlmBackend):

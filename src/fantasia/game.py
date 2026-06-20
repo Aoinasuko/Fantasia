@@ -60,6 +60,13 @@ from .items import (
 from .json_response import JsonResponseError, retry_prompt, sanitize_retry_response, schema_instruction, validate_manager_response
 from .json_store import JsonStore
 from .llm import BaseLlmBackend
+from .llm_tool import (
+    apply_common_response_tools,
+    apply_npc_action_tool as apply_llm_npc_action_tool,
+    requested_location_from_tools,
+    tool_effect_payload,
+    tool_prompt_instruction,
+)
 from .npc_templates import (
     ENEMY_NPC_TEMPLATE_CATEGORIES,
     FRIENDLY_NPC_TEMPLATE_CATEGORIES,
@@ -73,6 +80,7 @@ from .npc_templates import (
     used_npc_template_ids,
 )
 from .paths import GENERATED_DIR
+from .player_action import ActionCommandType, resolve_player_input as resolve_player_action_input
 from .prompt_templates import PromptTemplateStore
 from .quests import (
     INTERNAL_QUEST_TOKEN_LABELS,
@@ -3373,22 +3381,6 @@ class GameEngine:
             self.save_game()
         return event
 
-    def _apply_response_progress_effects(
-        self,
-        response: dict[str, Any],
-        source: str,
-        *,
-        encounter: dict[str, Any] | None = None,
-    ) -> list[str]:
-        lines: list[str] = []
-        lines.extend(self._apply_response_gold_effects(response, source))
-        lines.extend(self._apply_response_time_effects(response, source))
-        lines.extend(self._apply_response_hunger_effects(response, source))
-        lines.extend(self._apply_response_exp_effects(response, source))
-        lines.extend(self._apply_equipment_regen_effects(source))
-        lines.extend(self._apply_response_game_over_effects(response, source, encounter=encounter))
-        return lines
-
     def _apply_response_game_over_effects(
         self,
         response: dict[str, Any],
@@ -3458,17 +3450,34 @@ class GameEngine:
                     return result
         return {}
 
-    def _apply_equipment_regen_effects(self, source: str) -> list[str]:
+    def _apply_equipment_regen_effects(
+        self,
+        source: str,
+        *,
+        hours: int = 1,
+        encounter: dict[str, Any] | None = None,
+    ) -> list[str]:
         summary = self.player_equipment_summary()
         lines: list[str] = []
+        multiplier = max(1, int(hours or 1))
         hp_regen = _safe_int(summary.get("hp_regen"), 0)
         sp_regen = _safe_int(summary.get("sp_regen"), 0)
         if hp_regen:
-            event = self._apply_player_hp_delta(hp_regen, source=f"{source}:equipment", reason="equipment regen")
+            event = self._apply_player_hp_delta(
+                hp_regen * multiplier,
+                source=f"{source}:equipment",
+                reason="equipment regen",
+                encounter=encounter,
+            )
             if event.get("line"):
                 lines.append(str(event["line"]))
         if sp_regen:
-            event = self._apply_player_sp_delta(sp_regen, source=f"{source}:equipment", reason="equipment regen")
+            event = self._apply_player_sp_delta(
+                sp_regen * multiplier,
+                source=f"{source}:equipment",
+                reason="equipment regen",
+                encounter=encounter,
+            )
             if event.get("line"):
                 lines.append(str(event["line"]))
         return lines
@@ -3638,6 +3647,12 @@ class GameEngine:
         )
         if hunger_event.get("line"):
             companion_lines.append(str(hunger_event["line"]))
+        companion_lines.extend(
+            self._apply_equipment_regen_effects(
+                f"{source}:time_passage",
+                hours=requested_hours,
+            )
+        )
         reason_text = f" {reason}" if reason else ""
         line = f"> [時間] {old_label} -> {new_label} (+{requested_hours}時間){reason_text}"
         event = {
@@ -3859,16 +3874,35 @@ class GameEngine:
             self.save_game()
         return event
 
-    def _apply_response_exp_effects(self, response: dict[str, Any], source: str) -> list[str]:
+    def _apply_response_exp_effects(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        default_character: CharacterData | None = None,
+        encounter: dict[str, Any] | None = None,
+    ) -> list[str]:
         if not isinstance(response, dict):
             return []
         amount = self._response_player_exp_delta(response)
         if not amount:
             return []
-        event = self._apply_player_exp(amount, source=source, reason=self._response_exp_reason(response))
+        target = self._response_exp_target(response, default_character=default_character, encounter=encounter)
+        reason = self._response_exp_reason(response)
+        if target is not None and not target.flags.get("is_player") and target.name != self.state.player_name:
+            event = self._apply_character_exp(target, amount, source=source, reason=reason, encounter=encounter)
+        else:
+            event = self._apply_player_exp(amount, source=source, reason=reason, encounter=encounter)
         return [str(line) for line in event.get("lines", [])]
 
-    def _apply_player_exp(self, amount: Any, *, source: str, reason: str = "") -> dict[str, Any]:
+    def _apply_player_exp(
+        self,
+        amount: Any,
+        *,
+        source: str,
+        reason: str = "",
+        encounter: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         gained = max(0, self._hp_number(amount, 0))
         if gained <= 0:
             return {"changed": False, "amount": 0}
@@ -3897,8 +3931,8 @@ class GameEngine:
         if level_ups:
             new_max_hp = max(old_max_hp + 1, self._calculated_player_max_hp(level=level))
             new_max_sp = max(old_max_sp + 1, self._calculated_player_max_sp(level=level, max_hp=new_max_hp))
-            self._set_player_hp(old_current_hp + max(0, new_max_hp - old_max_hp), max_hp=new_max_hp)
-            self._set_player_sp(old_current_sp + max(0, new_max_sp - old_max_sp), max_sp=new_max_sp)
+            self._set_player_hp(old_current_hp + max(0, new_max_hp - old_max_hp), max_hp=new_max_hp, encounter=encounter)
+            self._set_player_sp(old_current_sp + max(0, new_max_sp - old_max_sp), max_sp=new_max_sp, encounter=encounter)
         else:
             self._sync_player_progress_to_character()
 
@@ -3927,6 +3961,173 @@ class GameEngine:
         }
         self.state.world_data.extra.setdefault("exp_events", []).append(_strip_response_metadata(event))
         return event
+
+    def _apply_character_exp(
+        self,
+        character: CharacterData,
+        amount: Any,
+        *,
+        source: str,
+        reason: str = "",
+        encounter: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        gained = max(0, self._hp_number(amount, 0))
+        if gained <= 0:
+            return {"changed": False, "amount": 0}
+        self._ensure_character_runtime_data(character)
+        original_level = max(1, min(PLAYER_MAX_LEVEL, _safe_int(character.level, 1)))
+        old_exp = max(0, _safe_int(character.extra.get("exp") or character.extra.get("experience"), 0))
+        level = original_level
+        max_exp_bar = self._exp_to_next(PLAYER_MAX_LEVEL)
+        if level >= PLAYER_MAX_LEVEL and old_exp >= max_exp_bar:
+            return {"changed": False, "amount": gained, "level": level, "exp": old_exp, "reason": "max_level"}
+        exp = min(max_exp_bar, old_exp + gained) if level >= PLAYER_MAX_LEVEL else old_exp + gained
+        old_max_hp = max(1, _safe_int(character.max_hp, _character_calculated_max_hp(character)))
+        old_current_hp = max(0, min(old_max_hp, _safe_int(character.current_hp, old_max_hp)))
+        old_max_sp = max(1, _safe_int(character.max_sp, _character_calculated_max_sp(character, max_hp=old_max_hp)))
+        old_current_sp = max(0, min(old_max_sp, _safe_int(character.current_sp, old_max_sp)))
+        level_ups: list[dict[str, Any]] = []
+        while level < PLAYER_MAX_LEVEL and exp >= self._exp_to_next(level):
+            exp -= self._exp_to_next(level)
+            level += 1
+            level_ups.append({"level": level, "attribute_gains": self._raise_random_character_attributes(character)})
+        if level >= PLAYER_MAX_LEVEL:
+            level = PLAYER_MAX_LEVEL
+            exp = min(exp, max_exp_bar)
+        character.level = level
+        character.extra["level"] = level
+        character.extra["exp"] = exp
+        character.extra["experience"] = exp
+        character.extra["next_exp"] = self._exp_to_next(level)
+        new_max_hp = old_max_hp
+        new_max_sp = old_max_sp
+        if level_ups:
+            attrs = _character_runtime_attributes(character)
+            new_max_hp = max(old_max_hp + 1, 8 + level * 3 + attrs["con"] * 2 + attrs["str"] // 2 + attrs["will"] // 3)
+            new_max_hp = max(10, new_max_hp)
+            new_max_sp = max(old_max_sp + 1, int(new_max_hp * 0.45) + attrs["magic"] + attrs["will"] + level * 2)
+            new_max_sp = max(6, new_max_sp)
+            character.max_hp = new_max_hp
+            character.max_sp = new_max_sp
+            character.current_hp = max(0, min(new_max_hp, old_current_hp + max(0, new_max_hp - old_max_hp)))
+            character.current_sp = max(0, min(new_max_sp, old_current_sp + max(0, new_max_sp - old_max_sp)))
+        character.extra["current_hp"] = character.current_hp
+        character.extra["max_hp"] = character.max_hp
+        character.extra["current_sp"] = character.current_sp
+        character.extra["max_sp"] = character.max_sp
+        self._sync_companion_party_entry(character)
+        if encounter is not None:
+            self._sync_encounter_character_after_exp(encounter, character)
+
+        lines = [f"> [EXP] {character.name}: +{gained} ({old_exp}/{self._exp_to_next(original_level)} -> {exp}/{self._exp_to_next(level)})"]
+        display_level = original_level
+        for item in level_ups:
+            gains = item.get("attribute_gains") or {}
+            gain_text = ", ".join(f"{key.upper()}+{value}" for key, value in gains.items()) or "ability unchanged"
+            lines.append(f"> [Level Up] {character.name}: Lv {display_level} -> {item.get('level')} / {gain_text}")
+            display_level = int(item.get("level") or display_level)
+        if level_ups:
+            lines.append(f"> [Stats] {character.name}: HP {old_max_hp}->{new_max_hp} / SP {old_max_sp}->{new_max_sp}")
+        event = {
+            "source": source,
+            "reason": reason,
+            "location": character.location or self.state.current_location,
+            "day": self.state.day,
+            "target": character.name,
+            "target_uuid": character.uuid,
+            "amount": gained,
+            "old_level": original_level,
+            "new_level": level,
+            "old_exp": old_exp,
+            "new_exp": exp,
+            "level_ups": level_ups,
+            "lines": lines,
+            "changed": True,
+        }
+        self.state.world_data.extra.setdefault("exp_events", []).append(_strip_response_metadata(event))
+        return event
+
+    def _response_exp_target(
+        self,
+        response: dict[str, Any],
+        *,
+        default_character: CharacterData | None = None,
+        encounter: dict[str, Any] | None = None,
+    ) -> CharacterData | None:
+        target_uuid = str(response.get("target_uuid") or response.get("uuid") or response.get("character_uuid") or "").strip()
+        target_name = str(
+            response.get("target")
+            or response.get("target_name")
+            or response.get("character")
+            or response.get("character_name")
+            or response.get("npc")
+            or response.get("npc_name")
+            or ""
+        ).strip()
+        if not target_name and not target_uuid:
+            return None
+        if target_name.casefold() in {"player", "pc", "self", "主人公", "プレイヤー", self.state.player_name.casefold()}:
+            return self.state.world_data.characters.get(self.state.player_name)
+        character = self._character_from_reference(target_name, target_uuid)
+        if character:
+            return character
+        if (
+            default_character is not None
+            and (
+                (target_name and target_name in {default_character.name, str(default_character.uuid or "")})
+                or (target_uuid and target_uuid == str(default_character.uuid or ""))
+            )
+        ):
+            return default_character
+        if encounter is not None:
+            opponent = self._encounter_opponent(encounter)
+            if isinstance(opponent, CharacterData) and target_name and target_name == opponent.name:
+                return opponent
+        return None
+
+    def _raise_random_character_attributes(self, character: CharacterData) -> dict[str, int]:
+        attrs = _character_runtime_attributes(character)
+        keys = ["str", "dex", "con", "int", "wis", "cha"]
+        count = random.randint(1, 3)
+        selected = random.sample(keys, k=min(count, len(keys)))
+        gains: dict[str, int] = {}
+        for key in selected:
+            attrs[key] = _safe_int(attrs.get(key), 10) + 1
+            gains[key] = gains.get(key, 0) + 1
+        attrs["magic"] = max(_safe_int(attrs.get("magic"), attrs.get("int", 10)), attrs.get("int", 10))
+        attrs["will"] = max(_safe_int(attrs.get("will"), attrs.get("wis", 10)), attrs.get("wis", 10))
+        character.attributes.update(attrs)
+        character.extra["attributes"] = dict(attrs)
+        ability = character.extra.setdefault("ability", {})
+        if isinstance(ability, dict):
+            ability["attributes"] = dict(attrs)
+        return gains
+
+    def _sync_encounter_character_after_exp(self, encounter: dict[str, Any], character: CharacterData) -> None:
+        active_uuid = str(encounter.get("active_opponent_uuid") or encounter.get("opponent_uuid") or "")
+        active_name = str(encounter.get("active_opponent_name") or encounter.get("opponent_name") or "")
+        opponents = encounter.get("opponents") if isinstance(encounter.get("opponents"), list) else []
+        in_encounter = bool(
+            (active_uuid and active_uuid == str(character.uuid or ""))
+            or (active_name and active_name == character.name)
+            or any(
+                isinstance(item, dict)
+                and (
+                    str(item.get("uuid") or "") == str(character.uuid or "")
+                    or str(item.get("name") or "") == character.name
+                )
+                for item in opponents
+            )
+        )
+        if not in_encounter:
+            return
+        self._sync_encounter_opponent_entry(encounter, character)
+        if (active_uuid and active_uuid == str(character.uuid or "")) or (active_name and active_name == character.name):
+            encounter["opponent_hp"] = character.current_hp
+            encounter["opponent_max_hp"] = character.max_hp
+            encounter["opponent_sp"] = character.current_sp
+            encounter["opponent_max_sp"] = character.max_sp
+            encounter["opponent_level"] = character.level
 
     def _response_player_exp_delta(self, payload: Any) -> int:
         if isinstance(payload, list):
@@ -9699,7 +9900,12 @@ class GameEngine:
         elif reward:
             payload["item_rewards"] = _as_list(reward)
         reward_event = self._apply_response_rewards(payload, "quest_reward")
-        lines = self._apply_response_progress_effects(payload, "quest_reward")
+        lines: list[str] = []
+        lines.extend(self._apply_response_gold_effects(payload, "quest_reward"))
+        lines.extend(self._apply_response_hunger_effects(payload, "quest_reward"))
+        lines.extend(self._apply_response_exp_effects(payload, "quest_reward"))
+        lines.extend(self._apply_response_time_effects(payload, "quest_reward"))
+        lines.extend(self._apply_response_game_over_effects(payload, "quest_reward"))
         if lines:
             self.state.display_log.extend(lines)
         quest.flags["reward_granted"] = True
@@ -10709,193 +10915,19 @@ class GameEngine:
         return any(normalized == str(choice).strip() for choice in self.state.choices if str(choice).strip())
 
     def _resolve_player_input(self, action: str, input_type: str) -> str:
-        action_text = action.strip() or "周囲を見る"
-        before_context = self._input_dedupe_context()
-        if self._is_repeated_player_input(action_text, input_type, before_context):
-            return self.state.log_text(16)
-
-        def finish(result: str) -> str:
-            self._remember_resolved_input(action_text, input_type, before_context)
-            return result
-
-        timeout_event = self._fail_expired_active_quest(source="quest_deadline", append_log=True)
-        if timeout_event:
-            self.save_game()
-            return finish(self.state.log_text(16))
-
-        if self._is_generated_choice_input(action_text, input_type):
-            input_gate = {
-                "content_violation": False,
-                "action_possible": True,
-                "reason": "generated_choice",
-                "message": "",
-            }
-            self.state.world_data.history.append(
-                {
-                    "manager": "input_gatekeeper",
-                    "action": action_text,
-                    "input_type": input_type,
-                    "skipped": True,
-                    "reason": "generated_choice",
-                }
-            )
-        else:
-            input_gate = self._input_gatekeeper(
-                action_text,
-                input_type,
-                check_feasibility=not self.allow_any_action_concept,
-            )
-        illegal_check = input_gate
-        if _as_bool(illegal_check.get("content_violation")):
-            message = str(illegal_check.get("message") or illegal_check.get("reason") or "その行動は処理されませんでした。")
-            self._append_turn(
-                action_text,
-                message,
-                self.state.current_location,
-                self.state.choices,
-                input_type=input_type,
-            )
-            self.state.world_data.history.append(
-                {
-                    "manager": "input_gatekeeper",
-                    "action": action_text,
-                    "input_type": input_type,
-                    "response": _strip_response_metadata(illegal_check),
-                }
-            )
-            self.save_game()
-            return self.state.log_text(16)
-
-        if not self.allow_any_action_concept:
-            feasibility_check = input_gate
-            if not _as_bool(feasibility_check.get("action_possible")):
-                message = str(
-                    feasibility_check.get("message")
-                    or feasibility_check.get("reason")
-                    or "その行動は、現在の状況では実現できない。"
-                )
-                self._append_turn(
-                    action_text,
-                    message,
-                    self.state.current_location,
-                    self.state.choices,
-                    input_type=input_type,
-                )
-                self.state.world_data.history.append(
-                    {
-                        "manager": "input_gatekeeper",
-                        "action": action_text,
-                        "input_type": input_type,
-                        "allowed": False,
-                        "response": _strip_response_metadata(feasibility_check),
-                    }
-                )
-                self.save_game()
-                return self.state.log_text(16)
-
-        block_reason = self._player_incapacitated_action_block(action_text)
-        if block_reason:
-            return finish(self._resolve_blocked_player_action(action_text, input_type, block_reason))
-
-        guard_result = self._maybe_start_guard_encounter(action_text, input_type)
-        if guard_result:
-            return finish(guard_result)
-
-        active_encounter = self._active_encounter()
-        if active_encounter:
-            return finish(self._resolve_encounter_input(action_text, input_type, active_encounter))
-
-        home_result = self._resolve_home_action(action_text, input_type)
-        if home_result is not None:
-            return finish(home_result)
-
-        if _is_attack_action(action_text):
-            if _is_surprise_attack_action(action_text):
-                return finish(self._resolve_player_attack(action_text, input_type))
-            return finish(self._start_encounter_from_attack(action_text, input_type))
-
-        craft_result = self._resolve_craft_action(action_text, input_type)
-        if craft_result is not None:
-            return finish(craft_result)
-
-        trade_negotiation_target = self._trade_negotiation_target(action_text)
-        if trade_negotiation_target:
-            return finish(self._resolve_trade_negotiation_action(action_text, input_type, trade_negotiation_target))
-
-        facility_result = self._create_facility_from_action(action_text, input_type)
-        if facility_result is not None:
-            return finish(facility_result)
-
-        quest_to_start = self._find_quest_to_start(action_text)
-        if quest_to_start:
-            return finish(self._start_quest(action_text, input_type, quest_to_start))
-
-        if self.state.active_quest:
-            active_quest = self._find_quest_by_name(self.state.active_quest)
-            if active_quest:
-                action_roll = self._action_roll_for_input(action_text, input_type, "quest")
-                return finish(self._resolve_active_quest_action(action_text, input_type, active_quest, action_roll=action_roll))
-            self.state.active_quest = ""
-
-        active_conversation = self._active_conversation_character()
-        if active_conversation:
-            action_roll = self._action_roll_for_input(action_text, input_type, "conversation")
-            return finish(self._continue_conversation(action_text, input_type, active_conversation, action_roll=action_roll))
-
-        conversation_target = self._find_conversation_target(action_text)
-        if conversation_target:
-            return finish(self._start_conversation(action_text, input_type, conversation_target))
-
-        action_roll: dict[str, Any] | None = None
-        exploration_action = _is_exploration_action(action_text)
-        if exploration_action:
-            action_roll = self._action_roll_for_input(action_text, input_type, "exploration")
-        if exploration_action and self._should_run_field_event_evaluator(action_text, input_type):
-            field_event_trigger = self._roll_field_event_trigger(action_text, input_type, action_roll)
-            if not _as_bool(field_event_trigger.get("triggered")):
-                self.state.world_data.history.append(
-                    {
-                        "manager": "field_event_local_roll",
-                        "action": action_text,
-                        "input_type": input_type,
-                        "action_roll": action_roll,
-                        "field_event_trigger": field_event_trigger,
-                        "event_occurred": False,
-                        "called_llm": False,
-                    }
-                )
-            else:
-                field_event = self._field_event_evaluator(
-                    action_text,
-                    input_type,
-                    action_roll=action_roll,
-                    field_event_trigger=field_event_trigger,
-                )
-                if _as_bool(field_event.get("event_occurred")):
-                    return finish(
-                        self._apply_field_event(
-                            action_text,
-                            input_type,
-                            field_event,
-                            action_roll=action_roll,
-                            field_event_trigger=field_event_trigger,
-                        )
-                    )
-                self.state.world_data.history.append(
-                    {
-                        "manager": "field_event_evaluator",
-                        "action": action_text,
-                        "input_type": input_type,
-                        "action_roll": action_roll,
-                        "field_event_trigger": field_event_trigger,
-                        "event_occurred": False,
-                        "response": _strip_response_metadata(field_event),
-                    }
-                )
-
-        if action_roll is None:
-            action_roll = self._action_roll_for_input(action_text, input_type, "action")
-        return finish(self._resolve_master_ai_turn(action_text, input_type, action_roll=action_roll))
+        return resolve_player_action_input(
+            self,
+            action,
+            input_type,
+            as_bool=_as_bool,
+            is_attack_action=_is_attack_action,
+            is_surprise_attack_action=_is_surprise_attack_action,
+            is_exploration_action=_is_exploration_action,
+            is_skill_action=_is_skill_action,
+            is_quest_abandon_action=_is_quest_abandon_action,
+            is_quest_report_action=_quest_completion_report_action,
+            strip_response_metadata=_strip_response_metadata,
+        )
 
     def _input_dedupe_context(self) -> dict[str, Any]:
         active_encounter = self._active_encounter()
@@ -10949,6 +10981,7 @@ class GameEngine:
     def _resolve_master_ai_turn(self, action: str, input_type: str, action_roll: dict[str, Any] | None = None) -> str:
         previous_location = self.state.current_location
         response = self._master_ai_facilitator(action, input_type, action_roll=action_roll)
+        tool_payload = tool_effect_payload(response)
         content_violation = _as_bool(response.get("content_violation"))
         narration = str(
             response.get("narration")
@@ -10957,10 +10990,10 @@ class GameEngine:
             or response.get("reason")
             or "進行は静かに保留された。"
         )
-        location = str(response.get("location") or self.state.current_location)
+        location = requested_location_from_tools(response, self.state.current_location)
         movement_result = {"location": location, "narration_lines": [], "status_lines": []}
         if not content_violation:
-            movement_result = self._normalize_world_response_location(action, input_type, response, location)
+            movement_result = self._normalize_world_response_location(action, input_type, tool_payload, location)
             location = str(movement_result.get("location") or location)
             movement_narration = [str(line) for line in movement_result.get("narration_lines", []) if str(line).strip()]
             if movement_narration:
@@ -10999,10 +11032,11 @@ class GameEngine:
             action,
             input_type,
             "master_ai_facilitator",
-            response,
+            tool_payload,
             location,
             narration,
             choices,
+            allow_text_inference=False,
         )
         if transition_response:
             history_entry["combat_transition"] = _strip_response_metadata(transition_response)
@@ -11023,22 +11057,31 @@ class GameEngine:
         self._append_turn(action, narration, location, choices, input_type=input_type)
         self._set_player_presence(location)
         self._append_action_roll_log(action_roll)
-        status_lines = [] if content_violation else self._apply_response_status_effects(response, "master_ai_facilitator", default_target="player")
-        if not content_violation:
-            status_lines.extend(str(line) for line in movement_result.get("status_lines", []) if str(line).strip())
-            status_lines.extend(self._apply_response_hp_effects(response, "master_ai_facilitator"))
-            status_lines.extend(self._apply_response_sp_effects(response, "master_ai_facilitator"))
-            status_lines.extend(self._apply_response_progress_effects(response, "master_ai_facilitator"))
-            status_lines.extend(self._apply_response_world_state_effects(response, "master_ai_facilitator", default_location=location))
-            status_lines.extend(self._apply_crime_risk(action, response, "master_ai_facilitator", location=location))
-        if status_lines:
-            self.state.display_log.extend(status_lines)
-            history_entry["status_effects_applied"] = status_lines
-        self._apply_visual_intent(response, "master_ai_facilitator", location, previous_location)
-        if not content_violation:
-            reward_event = self._apply_response_rewards(response, "master_ai_facilitator")
-            if reward_event["items"] or reward_event.get("skipped_items") or reward_event["lost_items"] or reward_event["gold"]:
-                history_entry["rewards"] = reward_event
+        tool_result = apply_common_response_tools(
+            self,
+            response,
+            source="master_ai_facilitator",
+            action=action,
+            input_type=input_type,
+            location=location,
+            previous_location=previous_location,
+            movement_result=movement_result,
+            default_target="player",
+            content_violation=content_violation,
+        )
+        if tool_result.status_lines:
+            history_entry["status_effects_applied"] = tool_result.status_lines
+        if tool_result.results:
+            history_entry["llm_tools"] = tool_result.to_record()
+        reward_event = tool_result.reward_event
+        if reward_event and (
+            reward_event.get("items")
+            or reward_event.get("skipped_items")
+            or reward_event.get("lost_items")
+            or reward_event.get("gold")
+            or reward_event.get("equipment")
+        ):
+            history_entry["rewards"] = reward_event
         self.save_game()
         return self.state.log_text(16)
 
@@ -11050,8 +11093,7 @@ class GameEngine:
         location: str,
     ) -> list[CharacterData]:
         requests = _dedupe_npc_requests(
-            _npc_generation_requests(facilitator_response)
-            + _infer_npc_generation_requests(facilitator_response, action, location, self.state.world_data)
+            _npc_generation_requests(tool_effect_payload(facilitator_response))
         )
         requests = _filter_npc_generation_requests(requests, self.state.world_data, location, self.state.player_name)
         if not requests:
@@ -11375,6 +11417,7 @@ class GameEngine:
                 "content": "\n".join(user_lines),
             },
         ]
+        messages.append({"role": "system", "content": tool_prompt_instruction()})
         messages.append({"role": "system", "content": self._movement_choice_rule_prompt(include_context=False)})
         return self._chat_json(
             "master_ai_facilitator",
@@ -11432,31 +11475,33 @@ class GameEngine:
             "- Markdownや説明文を付けず、JSONオブジェクトだけを返してください。",
             "- 必須キー: content_violation:boolean, think:string, narration:string, process:array|object|string, finished:boolean。",
             "- think と process は短く。process は後続要約用なので、通常行動では1-2項目で十分です。",
-            "- 任意キーは必要な時だけ返してください: location, choices, recipients, new_npc_requests, reason, message。",
+            "- 任意キーは必要な時だけ返してください: choices, recipients, reason, message。状態変更は必ず tools に入れてください。",
             "- choices の配列の中身は文字列にしてください。",
         ]
         if has_action_roll:
             lines.append("- game_side_action_roll が渡されている場合は、その成功/失敗/強制結果を結果描写と状態更新に反映してください。")
         if has_movement_options or dangerous_movement:
-            lines.append("- 移動選択肢は world_data.movement_options.allowed_moves にある行き先だけにしてください。移動した場合のみ location を返してください。")
+            lines.append("- 移動する場合だけ tools に move_player を入れてください。行き先は world_data.movement_options.allowed_moves にある場所だけです。")
             if has_active_quest:
-                lines.append("- クエスト目標への経路や周辺部屋を明かす場合だけ subnode_map_reveal / unlock_subnode_route を返せます。")
+                lines.append("- クエスト目標への経路や周辺部屋を明かす場合だけ tools の world_state_effects に subnode_map_reveal / unlock_subnode_route を入れてください。")
         if wants_person:
-            lines.append("- NPC対象がいる場合だけ recipients, relationship_change/affinity_change, npc_movements, new_npc_requests を使ってください。既存NPCを再生成しないでください。")
+            lines.append("- NPC対象がいる場合だけ recipients を使い、好感度・NPC移動は tools の world_state_effects、新規NPC候補は request_npc_generation に入れてください。既存NPCを再生成しないでください。")
         if wants_items:
-            lines.append("- アイテムや金銭が増減する場合だけ item_rewards/items/rewards/gold/lost_items/remove_items/given_items/equip_item を返してください。")
+            lines.append("- アイテムが増減する場合だけ tools の rewards を使い、所持金だけが増減する場合は gold_delta を使ってください。")
         if wants_status:
-            lines.append("- HP/SP/空腹/状態異常が変わる場合だけ hp_delta/heal_hp/damage_hp/sp_delta/consume_sp/hunger_delta/status_effects/remove_status_effects を返してください。")
+            lines.append("- HP/SP/空腹/状態異常が変わる場合だけ tools の hp_effects/sp_effects/hunger_delta/status_effects に入れてください。")
         if wants_time:
-            lines.append("- 明確に時間が経過する場合だけ time_passed_hours/advance_time_hours/spend_time_hours を返してください。短い確認行動では省略できます。")
+            lines.append("- 明確に時間が経過する場合だけ tools の time_passage に hours/days/reason を入れてください。")
         if wants_home:
-            lines.append("- 家や拠点の建築・家具改善を素材で試みる時だけ home_construction を返してください。")
+            lines.append("- 家や拠点の建築・家具改善を素材で試みる時だけ tools の world_state_effects に home_construction を入れてください。")
         if wants_map:
-            lines.append("- ワールド地図や道順が新しく分かる時だけ map_reveal/unlock_world_map_route/subnode_map_reveal を返してください。")
+            lines.append("- ワールド地図や道順が新しく分かる時だけ tools の world_state_effects に map_reveal/unlock_world_map_route/subnode_map_reveal を入れてください。")
         if wants_game_over:
-            lines.append("- 確実にゲームオーバーになる結果だけ game_over/game_over_reason を返してください。")
+            lines.append("- 確実にゲームオーバーになる結果だけ tools の game_over に reason/narration を入れてください。")
+        lines.append(tool_prompt_instruction())
         lines.append(
-            '例: {"content_violation": false, "think": "行動を処理する。", "narration": "短い描写", "process": [], "finished": false, "choices": ["周囲を見る"]}'
+            '例: {"content_violation": false, "intent": {"kind": "look", "summary": "周囲を見る"}, '
+            '"narration": "短い描写", "process": [], "finished": false, "choices": ["周囲を見る"], "tools": []}'
         )
         return "\n".join(lines)
 
@@ -11866,12 +11911,7 @@ class GameEngine:
         npc_response: dict[str, Any],
         rewrite_response: dict[str, Any],
     ) -> dict[str, Any]:
-        action = _npc_action_tool_kind(npc_response, rewrite_response)
-        if action == "surrender":
-            return self._npc_surrender_from_encounter(encounter)
-        if action == "flee":
-            return self._npc_flee_from_encounter(encounter)
-        return {"acted": False, "lines": []}
+        return apply_llm_npc_action_tool(self, encounter, npc_response, rewrite_response)
 
     def _npc_surrender_from_encounter(self, encounter: dict[str, Any]) -> dict[str, Any]:
         opponent = self._encounter_opponent(encounter)
@@ -12192,7 +12232,11 @@ class GameEngine:
                 )
                 status_lines.extend(self._apply_response_hp_effects(npc_response, "referee_npc", encounter=encounter))
                 status_lines.extend(self._apply_response_sp_effects(npc_response, "referee_npc", encounter=encounter))
-                status_lines.extend(self._apply_response_progress_effects(npc_response, "referee_npc", encounter=encounter))
+                status_lines.extend(self._apply_response_gold_effects(npc_response, "referee_npc"))
+                status_lines.extend(self._apply_response_hunger_effects(npc_response, "referee_npc"))
+                status_lines.extend(self._apply_response_exp_effects(npc_response, "referee_npc", encounter=encounter))
+                status_lines.extend(self._apply_response_time_effects(npc_response, "referee_npc"))
+                status_lines.extend(self._apply_response_game_over_effects(npc_response, "referee_npc", encounter=encounter))
                 status_lines.extend(
                     self._apply_response_world_state_effects(
                         npc_response,
@@ -12230,7 +12274,11 @@ class GameEngine:
                 )
                 status_lines.extend(self._apply_response_hp_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
                 status_lines.extend(self._apply_response_sp_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
-                status_lines.extend(self._apply_response_progress_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
+                status_lines.extend(self._apply_response_gold_effects(rewrite_response, "referee_npc_rewrite"))
+                status_lines.extend(self._apply_response_hunger_effects(rewrite_response, "referee_npc_rewrite"))
+                status_lines.extend(self._apply_response_exp_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
+                status_lines.extend(self._apply_response_time_effects(rewrite_response, "referee_npc_rewrite"))
+                status_lines.extend(self._apply_response_game_over_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
                 status_lines.extend(
                     self._apply_response_world_state_effects(
                         rewrite_response,
@@ -12306,6 +12354,7 @@ class GameEngine:
 
         if not self._is_game_over() and not _as_bool(terminal_outcome.get("ended")):
             status_lines.extend(self._tick_encounter_status_effects(encounter))
+            status_lines.extend(self._apply_equipment_regen_effects("combat_turn", encounter=encounter))
             terminal_outcome = self._apply_encounter_outcome(encounter)
             status_lines.extend(self._apply_quest_encounter_outcome(encounter, terminal_outcome))
             if terminal_outcome.get("narration"):
@@ -12373,7 +12422,11 @@ class GameEngine:
         status_lines = list(encounter.pop("pending_resource_lines", []))
         status_lines.extend(self._apply_response_hp_effects(player_response, player_manager, encounter=encounter))
         status_lines.extend(self._apply_response_sp_effects(player_response, player_manager, encounter=encounter))
-        status_lines.extend(self._apply_response_progress_effects(player_response, player_manager, encounter=encounter))
+        status_lines.extend(self._apply_response_gold_effects(player_response, player_manager))
+        status_lines.extend(self._apply_response_hunger_effects(player_response, player_manager))
+        status_lines.extend(self._apply_response_exp_effects(player_response, player_manager, encounter=encounter))
+        status_lines.extend(self._apply_response_time_effects(player_response, player_manager))
+        status_lines.extend(self._apply_response_game_over_effects(player_response, player_manager, encounter=encounter))
         opponent = self._encounter_opponent(encounter)
         status_lines.extend(
             self._apply_response_world_state_effects(
@@ -12415,7 +12468,11 @@ class GameEngine:
         )
         status_lines.extend(self._apply_response_hp_effects(npc_response, "referee_npc", encounter=encounter))
         status_lines.extend(self._apply_response_sp_effects(npc_response, "referee_npc", encounter=encounter))
-        status_lines.extend(self._apply_response_progress_effects(npc_response, "referee_npc", encounter=encounter))
+        status_lines.extend(self._apply_response_gold_effects(npc_response, "referee_npc"))
+        status_lines.extend(self._apply_response_hunger_effects(npc_response, "referee_npc"))
+        status_lines.extend(self._apply_response_exp_effects(npc_response, "referee_npc", encounter=encounter))
+        status_lines.extend(self._apply_response_time_effects(npc_response, "referee_npc"))
+        status_lines.extend(self._apply_response_game_over_effects(npc_response, "referee_npc", encounter=encounter))
         status_lines.extend(
             self._apply_response_world_state_effects(
                 npc_response,
@@ -12453,7 +12510,11 @@ class GameEngine:
         )
         status_lines.extend(self._apply_response_hp_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
         status_lines.extend(self._apply_response_sp_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
-        status_lines.extend(self._apply_response_progress_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
+        status_lines.extend(self._apply_response_gold_effects(rewrite_response, "referee_npc_rewrite"))
+        status_lines.extend(self._apply_response_hunger_effects(rewrite_response, "referee_npc_rewrite"))
+        status_lines.extend(self._apply_response_exp_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
+        status_lines.extend(self._apply_response_time_effects(rewrite_response, "referee_npc_rewrite"))
+        status_lines.extend(self._apply_response_game_over_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
         status_lines.extend(
             self._apply_response_world_state_effects(
                 rewrite_response,
@@ -12480,6 +12541,7 @@ class GameEngine:
             encounter["player_status"] = str(encounter.get("player_status") or "surrender_accepted")
             status_lines.append("> [Combat] Player surrender/capture resolved; combat ended.")
         status_lines.extend(self._tick_encounter_status_effects(encounter))
+        status_lines.extend(self._apply_equipment_regen_effects("combat_turn", encounter=encounter))
         outcome = self._apply_encounter_outcome(encounter)
         status_lines.extend(self._apply_quest_encounter_outcome(encounter, outcome))
         if (
@@ -13171,13 +13233,15 @@ class GameEngine:
         location: str,
         narration: str,
         choices: list[str],
+        *,
+        allow_text_inference: bool = True,
     ) -> tuple[str, list[str], dict[str, Any]]:
         if self._active_encounter():
             return narration, choices, {}
         explicit = _as_bool(response.get("combat_started") or response.get("start_combat") or response.get("battle_started"))
         trigger_text = _combat_trigger_text(action, response, narration, choices)
         candidates = self._hostile_characters_at(location)
-        if not explicit and not _text_implies_combat_started(trigger_text):
+        if not explicit and (not allow_text_inference or not _text_implies_combat_started(trigger_text)):
             return narration, choices, {}
         context = self._hostile_encounter_context(location, candidates, narration)
         messages = [
@@ -15651,14 +15715,14 @@ class GameEngine:
             self.save_game()
             return self.state.log_text(16)
 
+        location = requested_location_from_tools(response, self.state.current_location)
         self.state.flags["active_conversation"] = {
             "character": character.name,
-            "location": str(response.get("location") or self.state.current_location),
+            "location": location,
             "topic": str(response.get("topic") or ""),
         }
         self.state.flags["screen_mode"] = "conversation"
         narration = str(response.get("narration") or response.get("text") or f"{character.name}との会話を始めた。")
-        location = str(response.get("location") or self.state.current_location)
         self._set_character_presence(character, location)
         choices = _as_str_list(response.get("choices"))
         self._record_conversation(character, "conversation_starter", action, input_type, response)
@@ -15673,16 +15737,19 @@ class GameEngine:
             }
         )
         self._append_turn(action, narration, location, choices, input_type=input_type)
-        status_lines = self._apply_response_status_effects(response, "conversation_starter", default_target=character.name, context_character=character)
-        status_lines.extend(self._apply_response_hp_effects(response, "conversation_starter"))
-        status_lines.extend(self._apply_response_sp_effects(response, "conversation_starter"))
-        status_lines.extend(self._apply_response_progress_effects(response, "conversation_starter"))
-        status_lines.extend(self._apply_response_world_state_effects(response, "conversation_starter", default_character=character, default_location=location))
-        status_lines.extend(self._apply_crime_risk(action, response, "conversation_starter", location=location))
-        if status_lines:
-            self.state.display_log.extend(status_lines)
-        self._apply_visual_intent(response, "conversation_starter", location, previous_location)
-        self._apply_response_rewards(response, "conversation_starter")
+        tool_result = apply_common_response_tools(
+            self,
+            response,
+            source="conversation_starter",
+            action=action,
+            input_type=input_type,
+            location=location,
+            previous_location=previous_location,
+            default_target=character.name,
+            default_character=character,
+        )
+        if tool_result.results:
+            self.state.world_data.history[-1]["llm_tools"] = tool_result.to_record()
         self.save_game()
         return self.state.log_text(16)
 
@@ -15738,6 +15805,7 @@ class GameEngine:
             },
         ]
         messages.append({"role": "system", "content": self._conversation_character_reference_rule(character)})
+        messages.append({"role": "system", "content": tool_prompt_instruction()})
         return self._chat_json(
             "conversation_starter",
             messages,
@@ -15765,11 +15833,18 @@ class GameEngine:
         if resolver_response:
             narration_parts.append(str(resolver_response.get("narration") or resolver_response.get("text") or ""))
         narration = "\n".join(part for part in narration_parts if part).strip() or "会話は静かに続いた。"
-        location = str((resolver_response or {}).get("location") or response.get("location") or self.state.current_location)
+        resolver_payload = tool_effect_payload(resolver_response) if resolver_response else {}
+        response_payload = tool_effect_payload(response)
+        location = str(
+            resolver_payload.get("location")
+            or response_payload.get("location")
+            or self.state.current_location
+        )
         self._set_character_presence(character, location)
         choices = _as_str_list((resolver_response or {}).get("choices") or response.get("choices"))
 
         self._record_conversation(character, "conversation_facilitator", action, input_type, response)
+        facilitator_history_index = len(self.state.world_data.history)
         self.state.world_data.history.append(
             {
                 "manager": "conversation_facilitator",
@@ -15782,9 +15857,11 @@ class GameEngine:
                 "response": _strip_response_metadata(response),
             }
         )
+        resolver_history_index: int | None = None
         if resolver_response:
             self._record_conversation(character, "conversation_resolver", action, input_type, resolver_response)
             self._apply_conversation_resolution(character, resolver_response)
+            resolver_history_index = len(self.state.world_data.history)
             self.state.world_data.history.append(
                 {
                     "manager": "conversation_resolver",
@@ -15802,28 +15879,35 @@ class GameEngine:
 
         self._append_turn(action, narration, location, choices, input_type=input_type)
         self._append_action_roll_log(action_roll)
-        visual_response = resolver_response or response
-        status_lines = [] if content_violation else self._apply_response_status_effects(response, "conversation_facilitator", default_target=character.name, context_character=character)
         if not content_violation:
-            status_lines.extend(self._apply_response_hp_effects(response, "conversation_facilitator"))
-            status_lines.extend(self._apply_response_sp_effects(response, "conversation_facilitator"))
-            status_lines.extend(self._apply_response_progress_effects(response, "conversation_facilitator"))
-            status_lines.extend(self._apply_response_world_state_effects(response, "conversation_facilitator", default_character=character, default_location=location))
-            status_lines.extend(self._apply_crime_risk(action, response, "conversation_facilitator", location=location))
+            facilitator_tools = apply_common_response_tools(
+                self,
+                response,
+                source="conversation_facilitator",
+                action=action,
+                input_type=input_type,
+                location=location,
+                previous_location=previous_location,
+                default_target=character.name,
+                default_character=character,
+            )
+            if facilitator_tools.results:
+                self.state.world_data.history[facilitator_history_index]["llm_tools"] = facilitator_tools.to_record()
         if resolver_response:
-            status_lines.extend(self._apply_response_status_effects(resolver_response, "conversation_resolver", default_target=character.name, context_character=character))
-            status_lines.extend(self._apply_response_hp_effects(resolver_response, "conversation_resolver"))
-            status_lines.extend(self._apply_response_sp_effects(resolver_response, "conversation_resolver"))
-            status_lines.extend(self._apply_response_progress_effects(resolver_response, "conversation_resolver"))
-            status_lines.extend(self._apply_response_world_state_effects(resolver_response, "conversation_resolver", default_character=character, default_location=location))
-            status_lines.extend(self._apply_crime_risk(action, resolver_response, "conversation_resolver", location=location))
-        if status_lines:
-            self.state.display_log.extend(status_lines)
-        self._apply_visual_intent(visual_response, "conversation_resolver" if resolver_response else "conversation_facilitator", location, previous_location)
-        if not content_violation:
-            self._apply_response_rewards(response, "conversation_facilitator")
-            if resolver_response:
-                self._apply_response_rewards(resolver_response, "conversation_resolver")
+            resolver_tools = apply_common_response_tools(
+                self,
+                resolver_response,
+                source="conversation_resolver",
+                action=action,
+                input_type=input_type,
+                location=location,
+                previous_location=previous_location,
+                default_target=character.name,
+                default_character=character,
+            )
+            if resolver_tools.results:
+                target_index = resolver_history_index if resolver_history_index is not None else len(self.state.world_data.history) - 1
+                self.state.world_data.history[target_index]["llm_tools"] = resolver_tools.to_record()
         self.save_game()
         return self.state.log_text(16)
 
@@ -15868,6 +15952,7 @@ class GameEngine:
             },
         ]
         messages.append({"role": "system", "content": self._conversation_character_reference_rule(character)})
+        messages.append({"role": "system", "content": tool_prompt_instruction()})
         return self._chat_json(
             "conversation_facilitator",
             messages,
@@ -15908,6 +15993,7 @@ class GameEngine:
             },
         ]
         messages.append({"role": "system", "content": self._conversation_character_reference_rule(character)})
+        messages.append({"role": "system", "content": tool_prompt_instruction()})
         return self._chat_json(
             "conversation_resolver",
             messages,
@@ -15917,12 +16003,13 @@ class GameEngine:
         )
 
     def _apply_conversation_resolution(self, character: CharacterData, response: dict[str, Any]) -> None:
+        tool_payload = tool_effect_payload(response)
         summary = str(response.get("summary") or "")
         if summary:
             character.extra.setdefault("conversation_summaries", []).append(summary)
-        if response.get("relationship_change"):
-            character.extra.setdefault("relationship_changes", []).append(response.get("relationship_change"))
-        for item in _as_list(response.get("memory_updates")):
+        if tool_payload.get("relationship_change"):
+            character.extra.setdefault("relationship_changes", []).append(tool_payload.get("relationship_change"))
+        for item in _as_list(tool_payload.get("memory_updates")):
             character.extra.setdefault("memory_updates", []).append(item)
         self.state.world_data.extra.setdefault("conversation_summaries", []).append(
             {
@@ -16196,6 +16283,7 @@ class GameEngine:
                 ),
             }
         )
+        messages.append({"role": "system", "content": tool_prompt_instruction()})
         messages.append({"role": "system", "content": self._movement_choice_rule_prompt()})
         return self._chat_json(
             "field_event_evaluator",
@@ -16214,17 +16302,18 @@ class GameEngine:
         field_event_trigger: dict[str, Any] | None = None,
     ) -> str:
         previous_location = self.state.current_location
-        location = str(response.get("location") or self.state.current_location)
+        tool_payload = tool_effect_payload(response)
+        location = requested_location_from_tools(response, self.state.current_location)
         narration = str(response.get("narration") or response.get("text") or "探索中に何かが起きた。")
-        movement_result = self._normalize_world_response_location(action, input_type, response, location)
+        movement_result = self._normalize_world_response_location(action, input_type, tool_payload, location)
         location = str(movement_result.get("location") or location)
         movement_narration = [str(line) for line in movement_result.get("narration_lines", []) if str(line).strip()]
         if movement_narration:
             narration = "\n".join([narration, *movement_narration]).strip()
-        discovered_location = self._apply_discovered_location(response, action=action)
-        generated_quests = self._apply_field_event_quests(response, location)
-        generated_actors = self._apply_field_event_actors(response, location)
-        boss_event = self._ensure_generated_dungeon_boss(discovered_location, action, response)
+        discovered_location = self._apply_discovered_location(tool_payload, action=action)
+        generated_quests = self._apply_field_event_quests(tool_payload, location)
+        generated_actors = self._apply_field_event_actors(tool_payload, location)
+        boss_event = self._ensure_generated_dungeon_boss(discovered_location, action, tool_payload)
         if boss_event:
             generated_actors.append(boss_event)
         choices = self._augment_location_choices(_as_str_list(response.get("choices")), location)
@@ -16240,7 +16329,7 @@ class GameEngine:
             "generated_actors": generated_actors,
             "action_roll": action_roll,
             "field_event_trigger": field_event_trigger,
-            "event": response.get("event"),
+            "event": tool_payload.get("event"),
             "response": _strip_response_metadata(response),
         }
         self.state.world_data.extra.setdefault("field_events", []).append(event_record)
@@ -16263,10 +16352,11 @@ class GameEngine:
             action,
             input_type,
             "field_event_evaluator",
-            response,
+            tool_payload,
             location,
             narration,
             choices,
+            allow_text_inference=False,
         )
         if transition_response:
             event_record["combat_transition"] = _strip_response_metadata(transition_response)
@@ -16288,19 +16378,23 @@ class GameEngine:
         self._append_turn(action, narration, location, choices, input_type=input_type)
         self._set_player_presence(location)
         self._append_action_roll_log(action_roll)
-        status_lines = self._apply_response_status_effects(response, "field_event_evaluator", default_target="player")
-        status_lines.extend(str(line) for line in movement_result.get("status_lines", []) if str(line).strip())
-        status_lines.extend(self._apply_response_hp_effects(response, "field_event_evaluator"))
-        status_lines.extend(self._apply_response_sp_effects(response, "field_event_evaluator"))
-        status_lines.extend(self._apply_response_progress_effects(response, "field_event_evaluator"))
-        status_lines.extend(self._apply_response_world_state_effects(response, "field_event_evaluator", default_location=location))
-        status_lines.extend(self._apply_crime_risk(action, response, "field_event_evaluator", location=location))
-        if status_lines:
-            self.state.display_log.extend(status_lines)
-            event_record["status_effects_applied"] = status_lines
-        self._apply_visual_intent(response, "field_event_evaluator", location, previous_location)
-        reward_event = self._apply_response_rewards(response, "field_event_evaluator")
-        if reward_event["items"] or reward_event["lost_items"] or reward_event["gold"]:
+        tool_result = apply_common_response_tools(
+            self,
+            response,
+            source="field_event_evaluator",
+            action=action,
+            input_type=input_type,
+            location=location,
+            previous_location=previous_location,
+            movement_result=movement_result,
+            default_target="player",
+        )
+        if tool_result.status_lines:
+            event_record["status_effects_applied"] = tool_result.status_lines
+        if tool_result.results:
+            event_record["llm_tools"] = tool_result.to_record()
+        reward_event = tool_result.reward_event
+        if reward_event and (reward_event.get("items") or reward_event.get("lost_items") or reward_event.get("gold")):
             event_record["rewards"] = reward_event
         self.save_game()
         return self.state.log_text(16)
@@ -16804,6 +16898,7 @@ class GameEngine:
         previous_location = self.state.current_location
         quest_destination = self._ensure_quest_destination(quest)
         response = self._quest_starter(quest)
+        tool_payload = tool_effect_payload(response)
         quest_destination = self._ensure_quest_destination(quest, response)
         quest.status = "active"
         self.state.active_quest = quest.name
@@ -16814,7 +16909,7 @@ class GameEngine:
         objective_lines = self._ensure_quest_objective_entities(quest, quest_destination, response)
 
         narration = str(response.get("narration") or response.get("text") or f"クエスト「{quest.name}」を開始した。")
-        location = self._quest_starter_location(action, response)
+        location = self._quest_starter_location(action, tool_payload)
         choices = self._augment_location_choices(
             _as_str_list(response.get("choices")) + self._quest_destination_choices(quest_destination, location),
             location,
@@ -16836,18 +16931,25 @@ class GameEngine:
         )
         self.state.flags["screen_mode"] = "exploration"
         self._append_turn(action, narration, location, choices, input_type=input_type)
-        status_lines = self._apply_response_status_effects(response, "quest_starter", default_target="player")
-        status_lines.extend(self._apply_response_hp_effects(response, "quest_starter"))
-        status_lines.extend(self._apply_response_sp_effects(response, "quest_starter"))
-        status_lines.extend(self._apply_response_progress_effects(response, "quest_starter"))
-        status_lines.extend(self._apply_response_world_state_effects(response, "quest_starter", default_location=location))
-        status_lines.extend(self._apply_crime_risk(action, response, "quest_starter", location=location))
+        tool_result = apply_common_response_tools(
+            self,
+            response,
+            source="quest_starter",
+            action=action,
+            input_type=input_type,
+            location=location,
+            previous_location=previous_location,
+            default_target="player",
+            append_display=False,
+        )
+        status_lines = list(tool_result.status_lines)
         status_lines.extend(state_lines)
         status_lines.extend(objective_lines)
         if status_lines:
             status_lines = [_hide_internal_quest_tokens(line) for line in status_lines if str(line).strip()]
             self.state.display_log.extend(status_lines)
-        self._apply_visual_intent(response, "quest_starter", location, previous_location)
+        if tool_result.results:
+            quest.log[-1]["llm_tools"] = tool_result.to_record()
         self.save_game()
         return self.state.log_text(16)
 
@@ -18247,36 +18349,18 @@ class GameEngine:
         action: str,
         referee: dict[str, Any] | None,
         event_resolution: dict[str, Any] | None,
+        *,
+        explicit_movement: bool = False,
     ) -> dict[str, Any]:
+        if not explicit_movement:
+            return {}
         destination = quest.extra.get("destination")
         if not isinstance(destination, dict):
             return {}
         location_name = str(destination.get("location") or "").strip()
         if not location_name or location_name not in self.state.world_data.locations:
             return {}
-        objective_name = str(destination.get("objective_subnode_name") or "").strip()
-        objective_id = str(destination.get("objective_subnode_id") or "").strip()
-        text_parts = [action]
-        for payload in (referee, event_resolution):
-            if isinstance(payload, dict):
-                text_parts.extend(
-                    str(payload.get(key) or "")
-                    for key in ("location", "narration", "quest_progress")
-                )
-                text_parts.extend(_as_str_list(payload.get("choices")))
-        text = "\n".join(part for part in text_parts if part)
-        if location_name and location_name in text:
-            return destination
-        if objective_name and objective_name in text:
-            return destination
-        if objective_id and objective_id in text:
-            return destination
-        lowered = text.casefold()
-        if any(word in lowered for word in ("目的地", "現地", "target site", "destination")) and any(
-            word in lowered for word in ("向か", "行", "移動", "出発", "go", "travel", "move", "head")
-        ):
-            return destination
-        return {}
+        return destination
 
     def _quest_starter_location(self, action: str, response: dict[str, Any]) -> str:
         current = self.state.current_location or self.state.world_data.starting_location
@@ -18339,6 +18423,7 @@ class GameEngine:
                 ),
             }
         )
+        messages.append({"role": "system", "content": tool_prompt_instruction()})
         messages.append({"role": "system", "content": self._movement_choice_rule_prompt()})
         return self._chat_json(
             "quest_starter",
@@ -18354,8 +18439,12 @@ class GameEngine:
         input_type: str,
         quest: QuestData,
         action_roll: dict[str, Any] | None = None,
+        action_command_type: str = "",
+        player_action_type: str = "",
     ) -> str:
         previous_location = self.state.current_location
+        current_location = self.state.current_location or self.state.world_data.starting_location
+        quest_movement_explicit = action_command_type == ActionCommandType.QUEST_GO_TO_DESTINATION.value
         timeout_event = self._fail_quest_if_deadline_expired(quest, source="quest_deadline", append_log=True)
         if timeout_event:
             self.save_game()
@@ -18372,29 +18461,57 @@ class GameEngine:
             self._apply_visual_intent({}, "quest_abandoned", location, previous_location)
             self.save_game()
             return self.state.log_text(16)
-        referee = self._quest_referee_with_free_action(action, input_type, quest, action_roll=action_roll)
+        referee = self._quest_referee_with_free_action(
+            action,
+            input_type,
+            quest,
+            action_roll=action_roll,
+            action_command_type=action_command_type,
+        )
         if action_roll:
             referee.setdefault("game_side_action_roll", action_roll)
         event_resolution: dict[str, Any] | None = None
-        event_payload = referee.get("event")
+        referee_tools = tool_effect_payload(referee)
+        event_payload = referee_tools.get("event")
         if _quest_event_needs_resolve(event_payload):
             event_resolution = self._quest_referee_event_resolve(action, quest, referee)
+        event_tools = tool_effect_payload(event_resolution) if event_resolution else {}
 
         narration_parts = [_quest_response_narration(referee)]
         if event_resolution:
             narration_parts.append(_quest_response_narration(event_resolution))
         narration = "\n".join(part for part in narration_parts if part).strip() or "クエストは静かに進行した。"
 
-        raw_location = str(
-            (event_resolution or {}).get("location")
-            or referee.get("location")
-            or self.state.current_location
+        quest_destination = self._quest_destination_for_action(
+            quest,
+            action,
+            referee,
+            event_resolution,
+            explicit_movement=quest_movement_explicit,
         )
-        quest_destination = self._quest_destination_for_action(quest, action, referee, event_resolution)
-        if quest_destination:
-            raw_location = str(quest_destination.get("location") or raw_location)
-        movement_response = event_resolution or referee
-        movement_result = self._normalize_world_response_location(action, input_type, movement_response, raw_location)
+        if quest_movement_explicit:
+            raw_location = str(
+                event_tools.get("location")
+                or referee_tools.get("location")
+                or self.state.current_location
+            )
+            if quest_destination:
+                raw_location = str(quest_destination.get("location") or raw_location)
+            movement_response = dict(event_tools or referee_tools)
+            if quest_destination:
+                movement_response["location"] = raw_location
+                movement_response.setdefault("destination_location", raw_location)
+            movement_result = self._normalize_world_response_location(action, input_type, movement_response, raw_location)
+        else:
+            raw_location = current_location
+            movement_response = {}
+            movement_result = {
+                "location": raw_location,
+                "moved": False,
+                "denied": False,
+                "narration_lines": [],
+                "status_lines": [],
+            }
         location = str(movement_result.get("location") or raw_location)
         if quest.status == "failed":
             self.state.flags["screen_mode"] = "exploration"
@@ -18411,10 +18528,9 @@ class GameEngine:
         movement_narration = [str(line) for line in movement_result.get("narration_lines", []) if str(line).strip()]
         if movement_narration:
             narration = "\n".join([narration, *movement_narration]).strip()
-        choices = self._augment_location_choices(
-            _as_str_list((event_resolution or {}).get("choices") or referee.get("choices")),
-            location,
-        )
+        choices = _exploration_choices(_as_str_list((event_resolution or {}).get("choices") or referee.get("choices")))
+        if not choices:
+            choices = self._location_default_choices(location)
         finished = False
         finish_status = ""
         objective_pack = self._quest_objective_pack(quest)
@@ -18424,7 +18540,8 @@ class GameEngine:
             or objective_pack.get("markers")
             or objective_pack.get("requirements")
         )
-        if has_objective_entities and not finished and self._quest_objective_completion_allowed(quest, action, location, event_resolution or referee):
+        objective_response = event_tools or referee_tools
+        if has_objective_entities and not finished and self._quest_objective_completion_allowed(quest, action, location, objective_response):
             if _quest_completion_report_action(action):
                 finished = True
                 finish_status = "completed"
@@ -18437,6 +18554,8 @@ class GameEngine:
                 "manager": "quest_referee_with_free_action",
                 "action": action,
                 "input_type": input_type,
+                "action_command_type": action_command_type,
+                "player_action_type": player_action_type,
                 "action_roll": action_roll,
                 "response": _strip_response_metadata(referee),
             }
@@ -18446,16 +18565,17 @@ class GameEngine:
                 {
                     "manager": "quest_referee_event_resolve",
                     "action": action,
+                    "action_command_type": action_command_type,
                     "response": _strip_response_metadata(event_resolution),
                 }
             )
             quest.extra["last_event_resolution"] = _strip_response_metadata(event_resolution)
         elif event_payload:
             quest.extra["last_event"] = _strip_response_metadata(event_payload) if isinstance(event_payload, dict) else event_payload
-        if referee.get("quest_progress"):
-            quest.extra["quest_progress"] = str(referee.get("quest_progress"))
-        if (event_resolution or {}).get("quest_update"):
-            quest.extra["quest_update"] = (event_resolution or {}).get("quest_update")
+        if referee_tools.get("quest_progress"):
+            quest.extra["quest_progress"] = str(referee_tools.get("quest_progress"))
+        if event_tools.get("quest_update"):
+            quest.extra["quest_update"] = event_tools.get("quest_update")
         if finished:
             if not choices:
                 choices = self._location_default_choices(location)
@@ -18466,6 +18586,8 @@ class GameEngine:
                 "quest": quest.name,
                 "action": action,
                 "input_type": input_type,
+                "action_command_type": action_command_type,
+                "player_action_type": player_action_type,
                 "action_roll": action_roll,
                 "response": _strip_response_metadata(referee),
             }
@@ -18476,11 +18598,12 @@ class GameEngine:
                     "manager": "quest_referee_event_resolve",
                     "quest": quest.name,
                     "action": action,
+                    "action_command_type": action_command_type,
                     "response": _strip_response_metadata(event_resolution),
                 }
             )
 
-        visual_response = event_resolution or referee
+        visual_response = event_tools or referee_tools
         combat_source = "quest_referee_event_resolve" if event_resolution else "quest_referee_with_free_action"
         narration, choices, transition_response = self._maybe_start_combat_from_response(
             action,
@@ -18490,6 +18613,7 @@ class GameEngine:
             location,
             narration,
             choices,
+            allow_text_inference=False,
         )
         if transition_response:
             quest.extra["last_combat_transition"] = _strip_response_metadata(transition_response)
@@ -18510,30 +18634,42 @@ class GameEngine:
         choices = [_hide_internal_quest_tokens(choice) for choice in choices]
         self._append_turn(action, narration, location, choices, input_type=input_type)
         self._append_action_roll_log(action_roll)
-        status_lines = self._apply_response_status_effects(referee, "quest_referee_with_free_action", default_target="player")
-        status_lines.extend(str(line) for line in movement_result.get("status_lines", []) if str(line).strip())
+        tool_result = apply_common_response_tools(
+            self,
+            referee,
+            source="quest_referee_with_free_action",
+            action=action,
+            input_type=input_type,
+            location=location,
+            previous_location=previous_location,
+            movement_result=movement_result,
+            default_target="player",
+            append_display=False,
+        )
+        status_lines = list(tool_result.status_lines)
         status_lines.extend(objective_lines)
         if completion_blocked_line:
             status_lines.append(completion_blocked_line)
-        status_lines.extend(self._apply_response_hp_effects(referee, "quest_referee_with_free_action"))
-        status_lines.extend(self._apply_response_sp_effects(referee, "quest_referee_with_free_action"))
-        status_lines.extend(self._apply_response_progress_effects(referee, "quest_referee_with_free_action"))
-        status_lines.extend(self._apply_response_world_state_effects(referee, "quest_referee_with_free_action", default_location=location))
-        status_lines.extend(self._apply_crime_risk(action, referee, "quest_referee_with_free_action", location=location))
+        if tool_result.results:
+            quest.extra["last_referee_tools"] = tool_result.to_record()
         if event_resolution:
-            status_lines.extend(self._apply_response_status_effects(event_resolution, "quest_referee_event_resolve", default_target="player"))
-            status_lines.extend(self._apply_response_hp_effects(event_resolution, "quest_referee_event_resolve"))
-            status_lines.extend(self._apply_response_sp_effects(event_resolution, "quest_referee_event_resolve"))
-            status_lines.extend(self._apply_response_progress_effects(event_resolution, "quest_referee_event_resolve"))
-            status_lines.extend(self._apply_response_world_state_effects(event_resolution, "quest_referee_event_resolve", default_location=location))
-            status_lines.extend(self._apply_crime_risk(action, event_resolution, "quest_referee_event_resolve", location=location))
+            event_tool_result = apply_common_response_tools(
+                self,
+                event_resolution,
+                source="quest_referee_event_resolve",
+                action=action,
+                input_type=input_type,
+                location=location,
+                previous_location=previous_location,
+                default_target="player",
+                append_display=False,
+            )
+            status_lines.extend(event_tool_result.status_lines)
+            if event_tool_result.results:
+                quest.extra["last_event_tools"] = event_tool_result.to_record()
         if status_lines:
             status_lines = [_hide_internal_quest_tokens(line) for line in status_lines if str(line).strip()]
             self.state.display_log.extend(status_lines)
-        self._apply_visual_intent(visual_response, "quest_referee_event_resolve" if event_resolution else "quest_referee_with_free_action", location, previous_location)
-        self._apply_response_rewards(referee, "quest_referee_with_free_action")
-        if event_resolution:
-            self._apply_response_rewards(event_resolution, "quest_referee_event_resolve")
         if finished:
             self._finish_quest(quest, finish_status, "quest_referee_event_resolve" if event_resolution else "quest_referee_with_free_action", event_resolution or referee)
         self.save_game()
@@ -18545,6 +18681,7 @@ class GameEngine:
         input_type: str,
         quest: QuestData,
         action_roll: dict[str, Any] | None = None,
+        action_command_type: str = "",
     ) -> dict[str, Any]:
         world_payload = _ai_json(self._focused_world_ai_context(include_recent_log=False))
         quest_payload = _ai_json(_quest_ai_context(quest))
@@ -18577,12 +18714,25 @@ class GameEngine:
                     f"クエストデータ: {quest_payload}\n"
                     f"quest_destination: {destination_payload}\n"
                     f"入力種別: {input_type}\n"
+                    f"action_command_type: {action_command_type}\n"
                     f"プレイヤー行動: {action}\n"
                     f"game_side_action_roll: {action_roll_payload}\n"
                     "この行動がクエストをどう進めるか判定してください。"
                 ),
             },
         ]
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "Action command rule: choices are display-only labels for the player and must never be used "
+                    "as evidence for movement, quest reporting, reward grants, combat start, or quest completion. "
+                    "The game only honors quest destination movement when action_command_type is exactly "
+                    "'quest_go_to_destination'. For all other action_command_type values, keep location at the "
+                    "current player location even if the narration mentions another place."
+                ),
+            }
+        )
         messages.append(
             {
                 "role": "system",
@@ -18607,6 +18757,7 @@ class GameEngine:
                 ),
             }
         )
+        messages.append({"role": "system", "content": tool_prompt_instruction()})
         messages.append({"role": "system", "content": self._movement_choice_rule_prompt()})
         return self._chat_json(
             "quest_referee_with_free_action",
@@ -18671,6 +18822,7 @@ class GameEngine:
                 ),
             }
         )
+        messages.append({"role": "system", "content": tool_prompt_instruction()})
         messages.append({"role": "system", "content": self._movement_choice_rule_prompt()})
         return self._chat_json(
             "quest_referee_event_resolve",
@@ -22159,6 +22311,7 @@ def _contains_any_action_roll_keyword(text: str, lowered: str) -> bool:
         "mine",
         "brew",
         "探索",
+        "調査",
         "探す",
         "調べ",
         "開錠",

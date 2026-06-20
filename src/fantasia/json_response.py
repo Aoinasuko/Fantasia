@@ -168,7 +168,31 @@ class ManagerSchema:
                 "game_over=true と game_over_reason/game_over_narration を返してください。"
                 "ゲームオーバー時に「リスタート」「再開」など存在しない選択肢を作らないでください。"
             )
-        lines.append(json.dumps(self.example, ensure_ascii=False, indent=2))
+        example = dict(self.example)
+        if any(field.name == "tools" for field in self.fields):
+            for key in (
+                "location",
+                "hp_delta",
+                "sp_delta",
+                "rewards",
+                "item_rewards",
+                "status_effects",
+                "relationship_change",
+                "memory_updates",
+                "npc_movements",
+                "map_reveal",
+                "discovered_location",
+                "quest_update",
+                "quest_progress",
+                "event",
+                "combat_started",
+                "new_npc_requests",
+                "game_over",
+            ):
+                example.pop(key, None)
+            example.setdefault("intent", {"kind": "narrate", "summary": "display the result"})
+            example.setdefault("tools", [])
+        lines.append(json.dumps(example, ensure_ascii=False, indent=2))
         return "\n".join(lines)
 
 
@@ -192,6 +216,12 @@ REWARD_FIELDS = (
 
 
 VISUAL_FIELDS: tuple[FieldRule, ...] = ()
+
+
+INTENT_TOOL_FIELDS = (
+    FieldRule("intent", (dict, str), required=False, non_empty=False, string_items=False),
+    FieldRule("tools", (list,), non_empty=False, string_items=False),
+)
 
 
 STATUS_EFFECT_FIELDS = (
@@ -716,14 +746,11 @@ SCHEMAS: dict[str, ManagerSchema] = {
         fields=(
             FieldRule("narration", (str,), aliases=("text", "narr")),
             FieldRule("choices", (list,)),
+            *INTENT_TOOL_FIELDS,
             FieldRule("quest_name", (str,), required=False),
             FieldRule("objective", (str,), required=False),
-            FieldRule("location", (str,), required=False),
             FieldRule("destination_location", (str,), required=False),
             FieldRule("objective_subnode_name", (str,), required=False),
-            *STATUS_EFFECT_FIELDS,
-            *REWARD_FIELDS,
-            *VISUAL_FIELDS,
         ),
         example={
             "quest_name": "消えた隊商",
@@ -771,14 +798,8 @@ SCHEMAS: dict[str, ManagerSchema] = {
         fields=(
             FieldRule("narration", (str,), aliases=("text", "narr")),
             FieldRule("choices", (list,)),
-            FieldRule("location", (str,), required=False),
-            FieldRule("quest_progress", (str,), required=False),
-            FieldRule("event", (dict, list), required=False, non_empty=False, string_items=False),
+            *INTENT_TOOL_FIELDS,
             FieldRule("finished", (bool,), required=False, non_empty=False),
-            FieldRule("quest_status", (str,), required=False, non_empty=False),
-            *STATUS_EFFECT_FIELDS,
-            *REWARD_FIELDS,
-            *VISUAL_FIELDS,
         ),
         example={
             "narration": "馬丁は隊商の馬車が森の方へ曲がったと証言した。",
@@ -794,13 +815,8 @@ SCHEMAS: dict[str, ManagerSchema] = {
         fields=(
             FieldRule("narration", (str,), aliases=("text", "narr")),
             FieldRule("choices", (list,)),
-            FieldRule("location", (str,), required=False),
-            FieldRule("quest_update", (dict, list), required=False, non_empty=False, string_items=False),
+            *INTENT_TOOL_FIELDS,
             FieldRule("finished", (bool,), required=False, non_empty=False),
-            FieldRule("quest_status", (str,), required=False, non_empty=False),
-            *STATUS_EFFECT_FIELDS,
-            *REWARD_FIELDS,
-            *VISUAL_FIELDS,
         ),
         example={
             "narration": "手がかりは地図の赤い印と一致した。",
@@ -830,19 +846,8 @@ SCHEMAS: dict[str, ManagerSchema] = {
         fields=(
             FieldRule("event_occurred", (bool,)),
             FieldRule("narration", (str,), aliases=("text",)),
-            FieldRule("location", (str,)),
             FieldRule("choices", (list,)),
-            FieldRule("event", (dict, list), required=False, non_empty=False, string_items=False),
-            FieldRule("discovered_location", (dict, str), required=False, non_empty=False, string_items=False),
-            FieldRule("quest", (dict, list), required=False, non_empty=False, string_items=False),
-            FieldRule("quests", (list,), required=False, non_empty=False, string_items=False),
-            FieldRule("npcs", (list,), required=False, non_empty=False, string_items=False),
-            FieldRule("enemies", (list,), required=False, non_empty=False, string_items=False),
-            FieldRule("opponents", (list,), required=False, non_empty=False, string_items=False),
-            FieldRule("boss_npc", (dict, list), required=False, non_empty=False, string_items=False),
-            *STATUS_EFFECT_FIELDS,
-            *REWARD_FIELDS,
-            *VISUAL_FIELDS,
+            *INTENT_TOOL_FIELDS,
         ),
         example={
             "event_occurred": True,
@@ -883,19 +888,16 @@ SCHEMAS: dict[str, ManagerSchema] = {
         manager_name="master_ai_facilitator",
         fields=(
             FieldRule("content_violation", (bool,)),
-            FieldRule("think", (str,)),
+            FieldRule("intent", (dict, str), string_items=False),
             FieldRule("narration", (str,), aliases=("text",)),
             FieldRule("process", (list, dict, str), non_empty=False, string_items=False),
             FieldRule("finished", (bool,)),
-            FieldRule("location", (str,), required=False),
             FieldRule("choices", (list,), required=False),
+            FieldRule("tools", (list,), non_empty=False, string_items=False),
+            FieldRule("think", (str,), required=False, non_empty=False),
             FieldRule("recipients", (list,), required=False, non_empty=False),
-            FieldRule("new_npc_requests", (list, dict), required=False, non_empty=False, string_items=False),
             FieldRule("reason", (str,), required=False, non_empty=False),
             FieldRule("message", (str,), required=False, non_empty=False),
-            *STATUS_EFFECT_FIELDS,
-            *REWARD_FIELDS,
-            *VISUAL_FIELDS,
         ),
         example={
             "content_violation": False,
@@ -1030,14 +1032,11 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("narration", (str,), aliases=("text",)),
             FieldRule("speaker", (str,)),
             FieldRule("choices", (list,)),
-            FieldRule("location", (str,), required=False),
+            *INTENT_TOOL_FIELDS,
             FieldRule("topic", (str,), required=False),
             FieldRule("mood", (str,), required=False),
             FieldRule("content_violation", (bool,), required=False, non_empty=False),
             FieldRule("finished", (bool,), required=False, non_empty=False),
-            *STATUS_EFFECT_FIELDS,
-            *REWARD_FIELDS,
-            *VISUAL_FIELDS,
         ),
         example={
             "speaker": "ミラ",
@@ -1055,14 +1054,10 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("narration", (str,), aliases=("text",)),
             FieldRule("speaker", (str,)),
             FieldRule("choices", (list,)),
-            FieldRule("location", (str,), required=False),
+            *INTENT_TOOL_FIELDS,
             FieldRule("topic", (str,), required=False),
-            FieldRule("relationship_change", (dict, str), required=False, non_empty=False, string_items=False),
             FieldRule("content_violation", (bool,), required=False, non_empty=False),
             FieldRule("finished", (bool,), required=False, non_empty=False),
-            *STATUS_EFFECT_FIELDS,
-            *REWARD_FIELDS,
-            *VISUAL_FIELDS,
         ),
         example={
             "speaker": "ミラ",
@@ -1080,14 +1075,9 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("narration", (str,), aliases=("text",)),
             FieldRule("summary", (str,)),
             FieldRule("choices", (list,)),
+            *INTENT_TOOL_FIELDS,
             FieldRule("speaker", (str,), required=False),
-            FieldRule("location", (str,), required=False),
-            FieldRule("relationship_change", (dict, str), required=False, non_empty=False, string_items=False),
-            FieldRule("memory_updates", (list,), required=False, non_empty=False, string_items=False),
             FieldRule("finished", (bool,), required=False, non_empty=False),
-            *STATUS_EFFECT_FIELDS,
-            *REWARD_FIELDS,
-            *VISUAL_FIELDS,
         ),
         example={
             "speaker": "ミラ",
@@ -1614,6 +1604,33 @@ def schema_instruction(manager_name: str) -> str:
     if not schema:
         return "応答はJSONオブジェクトだけにしてください。"
     instruction = schema.instruction()
+    if manager_name in {
+        "master_ai_facilitator",
+        "field_event_evaluator",
+        "quest_starter",
+        "quest_referee_with_free_action",
+        "quest_referee_event_resolve",
+        "conversation_starter",
+        "conversation_facilitator",
+        "conversation_resolver",
+    }:
+        instruction += (
+            "\nTool/intent JSON rules:\n"
+            "- Put all game-state side effects in top-level tools only. tools may be an empty array.\n"
+            "- Do not output side effects as top-level keys. Forbidden top-level side-effect keys include location, "
+            "hp_delta, sp_delta, gold_delta, hunger_delta, exp_delta, time_passed_hours, rewards, item_rewards, status_effects, relationship_change, memory_updates, "
+            "npc_movements, map_reveal, discovered_location, quest_update, quest_progress, event, combat_started, "
+            "new_npc_requests, and game_over.\n"
+            "- Top-level fields are for display and intent only: content_violation, intent, narration, process, "
+            "finished, speaker, topic, mood, quest_name, objective, choices, and tools.\n"
+            "- Each tool item must be {\"name\":\"tool_name\",\"arguments\":{...}}.\n"
+            "- Supported tool names: move_player, status_effects, hp_effects, sp_effects, gold_delta, hunger_delta, "
+            "exp_delta, time_passage, game_over, world_state_effects, crime_risk, rewards, visual_intent, start_combat, discover_location, "
+            "generate_quest, spawn_npc, spawn_enemy, spawn_boss, request_npc_generation, quest_event, "
+            "quest_progress, quest_update.\n"
+            "- Example: {\"intent\":{\"kind\":\"look\",\"summary\":\"observe the area\"},\"narration\":\"...\","
+            "\"choices\":[\"look around\"],\"tools\":[{\"name\":\"move_player\",\"arguments\":{\"location\":\"Town Gate\"}}]}\n"
+        )
     if manager_name == "check_action_feasibility":
         instruction += (
             "\ncheck_action_feasibility rules:\n"
@@ -1713,8 +1730,8 @@ def schema_instruction(manager_name: str) -> str:
             "- In dungeons or dangerous areas, movement is limited to current_subnode.adjacent_subnodes unless current_subnode.remote_travel_targets explicitly allows remote movement.\n"
             "- Do not narrate jumping from a dungeon entrance to the objective, from the deepest area back to town, or to a non-adjacent subnode unless the response uses an allowed remote target.\n"
             "- For the choices field, only offer movement/return/enter/leave choices whose target appears in the prompt's movement_options.allowed_moves. Do not offer generic choices such as 'return to town', 'return to the city', 'return to the village', 'return to base', or 'return to the inn' unless that destination is explicitly listed.\n"
-            "- If the player receives a map, route note, or clue for a dungeon interior, reveal it with subnode_map_reveal/unlock_subnode_route instead of marking the nodes visited.\n"
-            "- To reveal nearby dungeon rooms after looking around, use subnode_map_reveal={\"scope\":\"surroundings\"}. To reveal a route to the active quest objective, use subnode_map_reveal={\"quest\":\"active\"}.\n"
+            "- If the player receives a map, route note, or clue for a dungeon interior, reveal it with tools[{name: world_state_effects, arguments: {subnode_map_reveal: ...}}] instead of marking the nodes visited.\n"
+            "- To reveal nearby dungeon rooms after looking around, put subnode_map_reveal={\"scope\":\"surroundings\"} inside world_state_effects. To reveal a route to the active quest objective, put subnode_map_reveal={\"quest\":\"active\"} inside world_state_effects.\n"
         )
     if manager_name == "field_event_evaluator":
         instruction += (
@@ -1723,10 +1740,10 @@ def schema_instruction(manager_name: str) -> str:
         )
         instruction += (
             "\nfield_event_evaluator rules:\n"
-            "- If the player explicitly asks to discover, create, or move to a dungeon, discovered_location.kind must be dungeon.\n"
+            "- If the player explicitly asks to discover, create, or move to a dungeon, use the discover_location tool and set its location.kind to dungeon.\n"
             "- Do not split a dungeon, temple, cave, entrance, interior, depth, or boss room into separate world locations. Put them into one dungeon location and let the game generate subnodes.\n"
-            "- If the dungeon premise says a boss, guardian, god, goddess, ruler, lord, or named entity waits there, return boss_npc.\n"
-            "- boss_npc must be an NPC object with name, role, description, personality, look, image_generation_prompt, and hostile.\n"
+            "- If the dungeon premise says a boss, guardian, god, goddess, ruler, lord, or named entity waits there, use the spawn_boss tool.\n"
+            "- spawn_boss.arguments.boss_npc must be an NPC object with name, role, description, personality, look, image_generation_prompt, and hostile.\n"
             "- Return compact JSON only. Do not add Markdown or commentary.\n"
         )
     if manager_name == "settlement_quest_generator":
@@ -1754,7 +1771,7 @@ def schema_instruction(manager_name: str) -> str:
     if manager_name == "master_ai_facilitator":
         instruction += (
             "\nmaster_ai_facilitator home construction rules:\n"
-            "- If the player is outside a settlement and clearly tries to build or improve their own house using a specified material item, return home_construction.\n"
+            "- If the player is outside a settlement and clearly tries to build or improve their own house using a specified material item, use tools[{name: world_state_effects, arguments: {home_construction: ...}}].\n"
             "- home_construction should include usable, material_name, furniture_level_gain, narration, and reason. furniture_level_gain must be 0 to 3.\n"
             "- If the material is not suitable as building material, set usable=false and explain the refusal in narration/reason.\n"
             "- Do not create a player home only by narration. The game side creates the home when construction progress reaches 100%.\n"
