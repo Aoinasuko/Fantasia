@@ -1,0 +1,170 @@
+[
+  {
+    "id": "male_child",
+    "role": "男の子",
+    "gender": "male",
+    "age_min": 8,
+    "age_max": 12,
+    "category": "npc_common",
+    "level": 0,
+    "atk": 2,
+    "def": 2,
+    "attributes": {
+      "str": 6, 
+      "dex": 6,
+      "con": 6,
+      "int": 4,
+      "wis": 4,
+      "cha": 4
+    },
+    "attacks": [
+      {"name": "拳で殴る", "type": "physical"}
+    ],
+    "skills": [],
+    "traits": []
+  },
+  {
+    "id": "female_child",
+    "role": "女の子",
+    "gender": "female",
+    "age_min": 8,
+    "age_max": 12,
+    "category": "npc_common",
+    "level": 0,
+    "atk": 2,
+    "def": 2,
+    "attributes": {
+      "str": 4, 
+      "dex": 4,
+      "con": 6,
+      "int": 6,
+      "wis": 6,
+      "cha": 6
+    },
+    "attacks": [
+      {"name": "拳で殴る", "type": "physical"}
+    ],
+    "skills": [],
+    "traits": []
+  },
+  {
+    "id": "male_residents",
+    "role": "男性住民",
+    "gender": "male",
+    "age_min": 20,
+    "age_max": 40,
+    "category": "npc_common",
+    "level": 0,
+    "atk": 2,
+    "def": 2,
+    "attributes": {
+      "str": 8, 
+      "dex": 8,
+      "con": 8,
+      "int": 6,
+      "wis": 6,
+      "cha": 6
+    },
+    "attacks": [
+      {"name": "拳で殴る", "type": "physical"}
+    ],
+    "skills": [],
+    "traits": []
+  },
+  {
+    "id": "female_residents",
+    "role": "女性住民",
+    "gender": "female",
+    "age_min": 20,
+    "age_max": 40,
+    "category": "npc_common",
+    "level": 0,
+    "atk": 2,
+    "def": 2,
+    "attributes": {
+      "str": 6, 
+      "dex": 6,
+      "con": 8,
+      "int": 8,
+      "wis": 8,
+      "cha": 8
+    },
+    "attacks": [
+      {"name": "拳で殴る", "type": "physical"}
+    ],
+    "skills": [],
+    "traits": []
+  },
+  {
+    "id": "traveling_merchant",
+    "role": "旅商人",
+    "gender": "random",
+    "age_min": 20,
+    "age_max": 30,
+    "category": "npc_common",
+    "level": 0,
+    "atk": 2,
+    "def": 2,
+    "attributes": {
+      "str": 6, 
+      "dex": 6,
+      "con": 8,
+      "int": 8,
+      "wis": 8,
+      "cha": 8
+    },
+    "attacks": [
+      {"name": "自衛用の剣で切る", "type": "physical"}
+    ],
+    "skills": [],
+    "traits": []
+  },
+  {
+    "id": "elf_child",
+    "role": "エルフの子供",
+    "gender": "random",
+    "age_min": 8,
+    "age_max": 12,
+    "category": "npc_common",
+    "level": 0,
+    "atk": 4,
+    "def": 2,
+    "attributes": {
+      "str": 6, 
+      "dex": 8,
+      "con": 8,
+      "int": 8,
+      "wis": 8,
+      "cha": 8
+    },
+    "attacks": [
+      {"name": "自衛用の弓で矢を放つ", "type": "physical"}
+    ],
+    "skills": [],
+    "traits": []
+  },
+  {
+    "id": "elf_residents",
+    "role": "エルフの住民",
+    "gender": "random",
+    "age_min": 20,
+    "age_max": 100,
+    "category": "npc_common",
+    "level": 0,
+    "atk": 6,
+    "def": 2,
+    "attributes": {
+      "str": 6, 
+      "dex": 10,
+      "con": 8,
+      "int": 8,
+      "wis": 8,
+      "cha": 8
+    },
+    "attacks": [
+      {"name": "自衛用の弓で矢を放つ", "type": "physical"}
+    ],
+    "skills": [],
+    "traits": []
+  }
+]

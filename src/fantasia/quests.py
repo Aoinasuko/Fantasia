@@ -444,8 +444,7 @@ def _quest_payload_has_reward(payload: Any) -> bool:
         return False
     reward_keys = {
         "reward",
-        "rewards",
-        "item_rewards",
+        "item_add",
         "items",
         "receive_items",
         "gain_items",
@@ -513,7 +512,7 @@ def _quest_completion_text(
     for payload in (referee, event_resolution or {}):
         if not isinstance(payload, dict):
             continue
-        for key in ("quest_progress", "quest_update", "event", "reward", "rewards"):
+        for key in ("quest_progress", "quest_update", "event", "reward", "item_add"):
             value = payload.get(key)
             if value not in (None, "", [], {}):
                 if isinstance(value, (dict, list)):

@@ -1191,13 +1191,18 @@ def _fixture_intent_tool_response(manager_name: str, content: Any) -> Any:
         add_tool("spawn_boss", {"boss_npc": content.get("boss_npc")})
     if content.get("new_npc_requests"):
         add_tool("request_npc_generation", {"requests": content.get("new_npc_requests")})
-    if content.get("relationship_change") or content.get("memory_updates"):
-        world_args: dict[str, Any] = {}
-        if content.get("relationship_change"):
-            world_args["relationship_change"] = content.get("relationship_change")
-        if content.get("memory_updates"):
-            world_args["memory_updates"] = content.get("memory_updates")
-        add_tool("world_state_effects", world_args)
+    if content.get("item_add"):
+        add_tool("item_add", {"item_add": content.get("item_add")})
+    if content.get("item_remove"):
+        add_tool("item_remove", {"item_remove": content.get("item_remove")})
+    if content.get("item_equip"):
+        add_tool("item_equip", {"item_equip": content.get("item_equip")})
+    if content.get("item_unequip"):
+        add_tool("item_unequip", {"item_unequip": content.get("item_unequip")})
+    if content.get("relationship_change"):
+        add_tool("npc_change_relationship", {"relationship_change": content.get("relationship_change")})
+    if content.get("memory_updates"):
+        add_tool("npc_update_memory", {"memory_updates": content.get("memory_updates")})
     if content.get("game_over"):
         add_tool(
             "game_over",

@@ -74,7 +74,7 @@ class ManagerSchema:
             )
         if any(field.name in {"gold_delta", "player_gold_delta", "pay_gold", "spend_gold", "receive_gold", "gold_effect", "gold_effects"} for field in self.fields):
             lines.append(
-                "- Gold changes: use gold_delta/player_gold_delta for signed changes, receive_gold/gain_gold for rewards, and pay_gold/spend_gold/cost_gold for payments. The game clamps gold at 0."
+                "- Gold changes: use gold_delta/player_gold_delta for signed changes, receive_gold/gain_gold for income, and pay_gold/spend_gold/cost_gold for payments. The game clamps gold at 0."
             )
         if any(field.name in {"time_passed_hours", "time_passed_days", "advance_time_hours", "time_effect", "time_effects"} for field in self.fields):
             lines.append(
@@ -84,9 +84,9 @@ class ManagerSchema:
             lines.append(
                 "- Experience: return exp/reward_exp/xp or player_exp_delta when the player learned, survived, completed a quest, defeated an enemy, or otherwise earned growth. Level-up is controlled by the game."
             )
-        if any(field.name in {"equip_item", "unequip_item", "equipment_changes"} for field in self.fields):
+        if any(field.name in {"item_equip", "item_unequip"} for field in self.fields):
             lines.append(
-                "- Equipment changes: use equip_item/equip_items to equip a named item or item object, unequip_item/remove_equipment to remove equipment, or equipment_changes with action=equip/unequip and slot/item. Slots are weapon/armor_shield/armor_head/armor_body/armor_arm/armor_leg/armor_cloth/accessory_ring/accessory_amulet."
+                "- Equipment changes: use item_equip to equip a named item or item object, and item_unequip with slot/item to remove equipment. Slots are weapon/armor_shield/armor_head/armor_body/armor_arm/armor_leg/armor_cloth/accessory_ring/accessory_amulet."
             )
         if any(field.name in {"status_effects", "player_status_effects", "character_status_effects", "long_term_statuses"} for field in self.fields):
             lines.append(
@@ -108,17 +108,19 @@ class ManagerSchema:
                 "- 治療、解呪、休息、交渉などで状態が解除される場合は remove_status_effects/cure_status_effects/treated_status_effects に、"
                 "target, name, effect_id, reason, treatment を持つオブジェクトを返してください。永続状態も解除対象にできます。"
             )
-        if any(field.name in {"item_rewards", "items", "rewards", "gold", "lost_items", "stolen_items", "given_items"} for field in self.fields):
+        if any(field.name in {"item_add", "item_remove", "item_equip", "item_unequip"} for field in self.fields):
             lines.append(
-                "- アイテム報酬は可能な限り {name, category, quantity, description, value} のオブジェクトで返してください。"
-                "name には (討伐時入手)、(報酬)、drop、loot などの入手条件を書かず、入手条件は description/source/reason に分けてください。"
+                "- Item acquisition uses item_add with objects shaped like {name, category, quantity, description, value}. "
+                "Keep acquisition context such as reward/drop/loot in description, source, or reason, not in the item name."
             )
             lines.append(
-                "- 装備品は category に weapon_small/weapon_medium/weapon_large/weapon_long/weapon_range/armor_shield/armor_head/armor_body/armor_arm/armor_leg/armor_cloth/accessory_ring/accessory_amulet 等を使い、rarity は common/uncommon/rare/epic/legendary/artifact から選べます。拾った物を即装備する場合は equip_item も返してください。"
+                "- Equipment categories include weapon_small/weapon_medium/weapon_large/weapon_long/weapon_range/"
+                "armor_shield/armor_head/armor_body/armor_arm/armor_leg/armor_cloth/accessory_ring/accessory_amulet. "
+                "Rarity should be common/uncommon/rare/epic/legendary/artifact. To equip an item, use item_equip."
             )
-        if any(field.name in {"item_rewards", "items", "rewards", "gold", "lost_items", "stolen_items", "given_items"} for field in self.fields):
+        if any(field.name in {"item_add", "item_remove", "item_equip", "item_unequip"} for field in self.fields):
             lines.append(
-                "- Item loss: when the player gives, loses, spends, is robbed of, or has items confiscated, return lost_items/stolen_items/given_items/remove_items as item references. Use item_uuid or item_uuids when available so the same item can be recovered later."
+                "- Item consumption/loss/transfer uses item_remove with item_uuid, item_uuids, name, or item references."
             )
         if any(field.name in {"enemies", "opponents", "npcs", "new_npc_requests"} for field in self.fields):
             lines.append(
@@ -174,8 +176,10 @@ class ManagerSchema:
                 "location",
                 "hp_delta",
                 "sp_delta",
-                "rewards",
-                "item_rewards",
+                "item_add",
+                "item_remove",
+                "item_equip",
+                "item_unequip",
                 "status_effects",
                 "relationship_change",
                 "memory_updates",
@@ -196,22 +200,11 @@ class ManagerSchema:
         return "\n".join(lines)
 
 
-REWARD_FIELDS = (
-    FieldRule("item_rewards", (list,), required=False, non_empty=False, string_items=False),
-    FieldRule("items", (list,), required=False, non_empty=False, string_items=False),
-    FieldRule("rewards", (list, dict, str), required=False, non_empty=False, string_items=False),
-    FieldRule("gold", (int, str), required=False, non_empty=False),
-    FieldRule("lost_items", (list, dict, str), required=False, non_empty=False, string_items=False),
-    FieldRule("lose_items", (list, dict, str), required=False, non_empty=False, string_items=False),
-    FieldRule("remove_items", (list, dict, str), required=False, non_empty=False, string_items=False),
-    FieldRule("removed_items", (list, dict, str), required=False, non_empty=False, string_items=False),
-    FieldRule("consume_items", (list, dict, str), required=False, non_empty=False, string_items=False),
-    FieldRule("consumed_items", (list, dict, str), required=False, non_empty=False, string_items=False),
-    FieldRule("stolen_items", (list, dict, str), required=False, non_empty=False, string_items=False),
-    FieldRule("taken_items", (list, dict, str), required=False, non_empty=False, string_items=False),
-    FieldRule("give_items", (list, dict, str), required=False, non_empty=False, string_items=False),
-    FieldRule("given_items", (list, dict, str), required=False, non_empty=False, string_items=False),
-    FieldRule("confiscated_items", (list, dict, str), required=False, non_empty=False, string_items=False),
+ITEM_EFFECT_FIELDS = (
+    FieldRule("item_add", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("item_remove", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("item_equip", (dict, list, str), required=False, non_empty=False, string_items=False),
+    FieldRule("item_unequip", (dict, list, str), required=False, non_empty=False, string_items=False),
 )
 
 
@@ -358,12 +351,6 @@ STATUS_EFFECT_FIELDS = (
     FieldRule("exp_effect", (dict, list), required=False, non_empty=False, string_items=False),
     FieldRule("exp_effects", (dict, list), required=False, non_empty=False, string_items=False),
     FieldRule("exp_reason", (str,), required=False, non_empty=False),
-    FieldRule("equip_item", (dict, list, str), required=False, non_empty=False, string_items=False),
-    FieldRule("equip_items", (dict, list, str), required=False, non_empty=False, string_items=False),
-    FieldRule("unequip_item", (dict, list, str), required=False, non_empty=False, string_items=False),
-    FieldRule("unequip_items", (dict, list, str), required=False, non_empty=False, string_items=False),
-    FieldRule("remove_equipment", (dict, list, str), required=False, non_empty=False, string_items=False),
-    FieldRule("equipment_changes", (dict, list), required=False, non_empty=False, string_items=False),
 )
 
 
@@ -1186,7 +1173,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("effects", (list,), required=False, non_empty=False, string_items=False),
             FieldRule("finished", (bool,), required=False, non_empty=False),
             *STATUS_EFFECT_FIELDS,
-            *REWARD_FIELDS,
+            *ITEM_EFFECT_FIELDS,
             *VISUAL_FIELDS,
         ),
         example={
@@ -1225,7 +1212,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("finished", (bool,), required=False, non_empty=False),
             FieldRule("content_violation", (bool,), required=False, non_empty=False),
             *STATUS_EFFECT_FIELDS,
-            *REWARD_FIELDS,
+            *ITEM_EFFECT_FIELDS,
             *VISUAL_FIELDS,
         ),
         example={
@@ -1265,7 +1252,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("finished", (bool,), required=False, non_empty=False),
             FieldRule("should_end_encounter", (bool,), required=False, non_empty=False),
             *STATUS_EFFECT_FIELDS,
-            *REWARD_FIELDS,
+            *ITEM_EFFECT_FIELDS,
             *VISUAL_FIELDS,
         ),
         example={
@@ -1306,7 +1293,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("finished", (bool,), required=False, non_empty=False),
             FieldRule("rewrite_reason", (str,), required=False, non_empty=False),
             *STATUS_EFFECT_FIELDS,
-            *REWARD_FIELDS,
+            *ITEM_EFFECT_FIELDS,
             *VISUAL_FIELDS,
         ),
         example={
@@ -1618,14 +1605,17 @@ def schema_instruction(manager_name: str) -> str:
             "\nTool/intent JSON rules:\n"
             "- Put all game-state side effects in top-level tools only. tools may be an empty array.\n"
             "- Do not output side effects as top-level keys. Forbidden top-level side-effect keys include location, "
-            "hp_delta, sp_delta, gold_delta, hunger_delta, exp_delta, time_passed_hours, rewards, item_rewards, status_effects, relationship_change, memory_updates, "
-            "npc_movements, map_reveal, discovered_location, quest_update, quest_progress, event, combat_started, "
+            "hp_delta, sp_delta, gold_delta, hunger_delta, exp_delta, time_passed_hours, item_add, item_remove, item_equip, item_unequip, status_effects, relationship_change, memory_updates, "
+            "npc_movements, npc_move, npc_join_party, npc_remove_party, npc_dead, npc_capture_player, npc_update_memory, npc_update_description, "
+            "map_reveal, world_home_construction, world_mainnode_reveal, world_subnode_reveal, discovered_location, quest_update, quest_progress, event, combat_started, "
             "new_npc_requests, and game_over.\n"
             "- Top-level fields are for display and intent only: content_violation, intent, narration, process, "
             "finished, speaker, topic, mood, quest_name, objective, choices, and tools.\n"
             "- Each tool item must be {\"name\":\"tool_name\",\"arguments\":{...}}.\n"
             "- Supported tool names: move_player, status_effects, hp_effects, sp_effects, gold_delta, hunger_delta, "
-            "exp_delta, time_passage, game_over, world_state_effects, crime_risk, rewards, visual_intent, start_combat, discover_location, "
+            "exp_delta, time_passage, game_over, npc_change_relationship, npc_move, npc_join_party, npc_remove_party, npc_dead, "
+            "npc_capture_player, npc_update_memory, npc_update_description, world_home_construction, world_mainnode_reveal, world_subnode_reveal, "
+            "crime_risk, item_add, item_remove, item_equip, item_unequip, visual_intent, start_combat, discover_location, "
             "generate_quest, spawn_npc, spawn_enemy, spawn_boss, request_npc_generation, quest_event, "
             "quest_progress, quest_update.\n"
             "- Example: {\"intent\":{\"kind\":\"look\",\"summary\":\"observe the area\"},\"narration\":\"...\","
@@ -1730,8 +1720,8 @@ def schema_instruction(manager_name: str) -> str:
             "- In dungeons or dangerous areas, movement is limited to current_subnode.adjacent_subnodes unless current_subnode.remote_travel_targets explicitly allows remote movement.\n"
             "- Do not narrate jumping from a dungeon entrance to the objective, from the deepest area back to town, or to a non-adjacent subnode unless the response uses an allowed remote target.\n"
             "- For the choices field, only offer movement/return/enter/leave choices whose target appears in the prompt's movement_options.allowed_moves. Do not offer generic choices such as 'return to town', 'return to the city', 'return to the village', 'return to base', or 'return to the inn' unless that destination is explicitly listed.\n"
-            "- If the player receives a map, route note, or clue for a dungeon interior, reveal it with tools[{name: world_state_effects, arguments: {subnode_map_reveal: ...}}] instead of marking the nodes visited.\n"
-            "- To reveal nearby dungeon rooms after looking around, put subnode_map_reveal={\"scope\":\"surroundings\"} inside world_state_effects. To reveal a route to the active quest objective, put subnode_map_reveal={\"quest\":\"active\"} inside world_state_effects.\n"
+            "- If the player receives a map, route note, or clue for a dungeon interior, reveal it with tools[{name: world_subnode_reveal, arguments: {subnode_map_reveal: ...}}] instead of marking the nodes visited.\n"
+            "- To reveal nearby dungeon rooms after looking around, use world_subnode_reveal with subnode_map_reveal={\"scope\":\"surroundings\"}. To reveal a route to the active quest objective, use world_subnode_reveal with subnode_map_reveal={\"quest\":\"active\"}.\n"
         )
     if manager_name == "field_event_evaluator":
         instruction += (
@@ -1771,7 +1761,7 @@ def schema_instruction(manager_name: str) -> str:
     if manager_name == "master_ai_facilitator":
         instruction += (
             "\nmaster_ai_facilitator home construction rules:\n"
-            "- If the player is outside a settlement and clearly tries to build or improve their own house using a specified material item, use tools[{name: world_state_effects, arguments: {home_construction: ...}}].\n"
+            "- If the player is outside a settlement and clearly tries to build or improve their own house using a specified material item, use tools[{name: world_home_construction, arguments: {home_construction: ...}}].\n"
             "- home_construction should include usable, material_name, furniture_level_gain, narration, and reason. furniture_level_gain must be 0 to 3.\n"
             "- If the material is not suitable as building material, set usable=false and explain the refusal in narration/reason.\n"
             "- Do not create a player home only by narration. The game side creates the home when construction progress reaches 100%.\n"

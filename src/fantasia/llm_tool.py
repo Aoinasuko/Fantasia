@@ -16,9 +16,22 @@ class LlmToolName(str, Enum):
     EXP_DELTA = "exp_delta"
     TIME_PASSAGE = "time_passage"
     GAME_OVER = "game_over"
-    WORLD_STATE_EFFECTS = "world_state_effects"
+    NPC_CHANGE_RELATIONSHIP = "npc_change_relationship"
+    NPC_MOVE = "npc_move"
+    NPC_JOIN_PARTY = "npc_join_party"
+    NPC_REMOVE_PARTY = "npc_remove_party"
+    NPC_DEAD = "npc_dead"
+    NPC_CAPTURE_PLAYER = "npc_capture_player"
+    NPC_UPDATE_MEMORY = "npc_update_memory"
+    NPC_UPDATE_DESCRIPTION = "npc_update_description"
+    WORLD_HOME_CONSTRUCTION = "world_home_construction"
+    WORLD_MAINNODE_REVEAL = "world_mainnode_reveal"
+    WORLD_SUBNODE_REVEAL = "world_subnode_reveal"
     CRIME_RISK = "crime_risk"
-    REWARDS = "rewards"
+    ITEM_ADD = "item_add"
+    ITEM_REMOVE = "item_remove"
+    ITEM_EQUIP = "item_equip"
+    ITEM_UNEQUIP = "item_unequip"
     VISUAL_INTENT = "visual_intent"
     MOVEMENT_STATUS = "movement_status"
     MOVE_PLAYER = "move_player"
@@ -88,13 +101,13 @@ class LlmToolResult:
 class LlmToolBatchResult:
     results: list[LlmToolResult] = field(default_factory=list)
     status_lines: list[str] = field(default_factory=list)
-    reward_event: dict[str, Any] = field(default_factory=dict)
+    item_event: dict[str, Any] = field(default_factory=dict)
 
     def to_record(self) -> dict[str, Any]:
         return {
             "tools": [result.to_record() for result in self.results],
             "status_lines": list(self.status_lines),
-            "reward_event": self.reward_event,
+            "item_event": self.item_event,
         }
 
 
@@ -137,10 +150,45 @@ def run_llm_tool(engine: Any, call: LlmToolCall) -> LlmToolResult:
             name,
             lines=engine._apply_response_game_over_effects(response, source, encounter=call.encounter),
         )
-    if name == LlmToolName.WORLD_STATE_EFFECTS:
+    if name == LlmToolName.NPC_CHANGE_RELATIONSHIP:
         return LlmToolResult(
             name,
-            lines=engine._apply_response_world_state_effects(
+            lines=engine._apply_response_relationship_effects(response, source, default_character=call.default_character),
+        )
+    if name == LlmToolName.NPC_MOVE:
+        return LlmToolResult(
+            name,
+            lines=engine._apply_response_npc_move_effects(
+                response,
+                source,
+                default_character=call.default_character,
+                default_location=call.location,
+            ),
+        )
+    if name == LlmToolName.NPC_JOIN_PARTY:
+        return LlmToolResult(
+            name,
+            lines=engine._apply_response_npc_join_party_effects(response, source, default_character=call.default_character),
+        )
+    if name == LlmToolName.NPC_REMOVE_PARTY:
+        return LlmToolResult(
+            name,
+            lines=engine._apply_response_npc_remove_party_effects(
+                response,
+                source,
+                default_character=call.default_character,
+                default_location=call.location,
+            ),
+        )
+    if name == LlmToolName.NPC_DEAD:
+        return LlmToolResult(
+            name,
+            lines=engine._apply_response_npc_dead_effects(response, source, default_character=call.default_character),
+        )
+    if name == LlmToolName.NPC_CAPTURE_PLAYER:
+        return LlmToolResult(
+            name,
+            lines=engine._apply_response_capture_relocation_effects(
                 response,
                 source,
                 default_character=call.default_character,
@@ -148,14 +196,45 @@ def run_llm_tool(engine: Any, call: LlmToolCall) -> LlmToolResult:
                 encounter=call.encounter,
             ),
         )
+    if name == LlmToolName.NPC_UPDATE_MEMORY:
+        return LlmToolResult(
+            name,
+            lines=engine._apply_response_npc_memory_effects(response, source, default_character=call.default_character),
+        )
+    if name == LlmToolName.NPC_UPDATE_DESCRIPTION:
+        return LlmToolResult(
+            name,
+            lines=engine._apply_response_npc_description_effects(response, source, default_character=call.default_character),
+        )
+    if name == LlmToolName.WORLD_HOME_CONSTRUCTION:
+        return LlmToolResult(name, lines=engine._apply_response_home_construction_effects(response, source))
+    if name == LlmToolName.WORLD_MAINNODE_REVEAL:
+        return LlmToolResult(
+            name,
+            lines=engine._apply_response_world_mainnode_reveals(response, source, default_location=call.location),
+        )
+    if name == LlmToolName.WORLD_SUBNODE_REVEAL:
+        return LlmToolResult(
+            name,
+            lines=engine._apply_response_subnode_map_reveals(response, source, default_location=call.location),
+        )
     if name == LlmToolName.CRIME_RISK:
         return LlmToolResult(
             name,
             lines=engine._apply_crime_risk(call.action, response, source, location=call.location),
         )
-    if name == LlmToolName.REWARDS:
-        event = engine._apply_response_rewards(response, source)
-        return LlmToolResult(name, event=event, acted=_reward_event_has_changes(event))
+    if name == LlmToolName.ITEM_ADD:
+        event = engine._apply_response_item_add_effects(response, source)
+        return LlmToolResult(name, event=event, acted=_item_event_has_changes(event))
+    if name == LlmToolName.ITEM_REMOVE:
+        event = engine._apply_response_item_remove_effects(response, source)
+        return LlmToolResult(name, event=event, acted=_item_event_has_changes(event))
+    if name == LlmToolName.ITEM_EQUIP:
+        event = engine._apply_response_item_equip_effects(response, source)
+        return LlmToolResult(name, event=event, acted=_item_event_has_changes(event))
+    if name == LlmToolName.ITEM_UNEQUIP:
+        event = engine._apply_response_item_unequip_effects(response, source)
+        return LlmToolResult(name, event=event, acted=_item_event_has_changes(event))
     if name == LlmToolName.VISUAL_INTENT:
         engine._apply_visual_intent(response, source, call.location, call.previous_location)
         return LlmToolResult(name, acted=True)
@@ -238,14 +317,18 @@ def requested_location_from_tools(response: Any, fallback: str = "") -> str:
 def tool_prompt_instruction() -> str:
     return (
         "Tool JSON rule: put all game-state side effects in a top-level tools array. "
-        "Do not use top-level side-effect keys such as location, hp_delta, sp_delta, rewards, status_effects, "
-        "relationship_change, npc_movements, map_reveal, discovered_location, quest_update, or combat_started. "
+        "Do not use top-level side-effect keys such as location, hp_delta, sp_delta, item_add, item_remove, item_equip, item_unequip, status_effects, "
+        "relationship_change, npc_movements, npc_move, npc_join_party, npc_remove_party, npc_dead, "
+        "npc_capture_player, npc_update_memory, npc_update_description, map_reveal, world_home_construction, "
+        "world_mainnode_reveal, world_subnode_reveal, discovered_location, quest_update, or combat_started. "
         "Top-level fields are only content_violation, intent, narration, process, finished, speaker, topic, mood, "
         "quest_name, objective, choices, and tools. "
         "Each tool item must be {\"name\":\"tool_name\",\"arguments\":{...}}. "
         "Supported tools: move_player, status_effects, hp_effects, sp_effects, gold_delta, hunger_delta, "
-        "exp_delta, time_passage, game_over, world_state_effects, "
-        "crime_risk, rewards, visual_intent, start_combat, discover_location, generate_quest, spawn_npc, spawn_enemy, "
+        "exp_delta, time_passage, game_over, npc_change_relationship, npc_move, npc_join_party, "
+        "npc_remove_party, npc_dead, npc_capture_player, npc_update_memory, npc_update_description, "
+        "world_home_construction, world_mainnode_reveal, world_subnode_reveal, "
+        "crime_risk, item_add, item_remove, item_equip, item_unequip, visual_intent, start_combat, discover_location, generate_quest, spawn_npc, spawn_enemy, "
         "spawn_boss, request_npc_generation, quest_event, quest_progress, quest_update. "
         "Use an empty tools array when no state changes are needed."
     )
@@ -292,7 +375,7 @@ def apply_common_response_tools(
     default_character: Any = None,
     encounter: dict[str, Any] | None = None,
     content_violation: bool = False,
-    include_rewards: bool = True,
+    include_items: bool = True,
     include_visual: bool = True,
     include_crime: bool = True,
     append_display: bool = True,
@@ -324,7 +407,7 @@ def apply_common_response_tools(
                 continue
             if tool_name == LlmToolName.CRIME_RISK and not include_crime:
                 continue
-            if tool_name == LlmToolName.REWARDS and not include_rewards:
+            if tool_name in {LlmToolName.ITEM_ADD, LlmToolName.ITEM_REMOVE, LlmToolName.ITEM_EQUIP, LlmToolName.ITEM_UNEQUIP} and not include_items:
                 continue
             if tool_name == LlmToolName.VISUAL_INTENT and not include_visual:
                 continue
@@ -345,8 +428,8 @@ def apply_common_response_tools(
             result = run_llm_tool(engine, LlmToolCall(tool_name, **common, payload=tool.get("arguments") or {}))
             batch.results.append(result)
             batch.status_lines.extend(result.lines)
-            if tool_name == LlmToolName.REWARDS:
-                batch.reward_event = result.event
+            if tool_name in {LlmToolName.ITEM_ADD, LlmToolName.ITEM_REMOVE, LlmToolName.ITEM_EQUIP, LlmToolName.ITEM_UNEQUIP}:
+                _merge_item_event(batch.item_event, result.event)
 
     if batch.status_lines and append_display:
         engine.state.display_log.extend(batch.status_lines)
@@ -354,14 +437,26 @@ def apply_common_response_tools(
     return batch
 
 
-def _reward_event_has_changes(event: dict[str, Any]) -> bool:
+def _item_event_has_changes(event: dict[str, Any]) -> bool:
     return bool(
         event.get("items")
         or event.get("skipped_items")
         or event.get("lost_items")
-        or event.get("gold")
         or event.get("equipment")
     )
+
+
+def _merge_item_event(target: dict[str, Any], event: dict[str, Any]) -> None:
+    if not event:
+        return
+    if event.get("source") and not target.get("source"):
+        target["source"] = event.get("source")
+    for key in ("items", "skipped_items", "lost_items", "equipment"):
+        values = event.get(key)
+        if isinstance(values, list):
+            target.setdefault(key, []).extend(values)
+        elif values not in (None, "", [], {}):
+            target.setdefault(key, []).append(values)
 
 
 _TOOL_ALIASES = {
@@ -389,13 +484,41 @@ _TOOL_ALIASES = {
     "time_passed": LlmToolName.TIME_PASSAGE,
     "game_over": LlmToolName.GAME_OVER,
     "bad_end": LlmToolName.GAME_OVER,
-    "world_state": LlmToolName.WORLD_STATE_EFFECTS,
-    "world_state_effect": LlmToolName.WORLD_STATE_EFFECTS,
-    "world_state_effects": LlmToolName.WORLD_STATE_EFFECTS,
+    "npc_change_relationship": LlmToolName.NPC_CHANGE_RELATIONSHIP,
+    "npc_relationship": LlmToolName.NPC_CHANGE_RELATIONSHIP,
+    "relationship_change": LlmToolName.NPC_CHANGE_RELATIONSHIP,
+    "affinity_change": LlmToolName.NPC_CHANGE_RELATIONSHIP,
+    "npc_move": LlmToolName.NPC_MOVE,
+    "npc_movement": LlmToolName.NPC_MOVE,
+    "move_npc": LlmToolName.NPC_MOVE,
+    "npc_join_party": LlmToolName.NPC_JOIN_PARTY,
+    "join_party": LlmToolName.NPC_JOIN_PARTY,
+    "npc_remove_party": LlmToolName.NPC_REMOVE_PARTY,
+    "remove_party": LlmToolName.NPC_REMOVE_PARTY,
+    "npc_leave_party": LlmToolName.NPC_REMOVE_PARTY,
+    "npc_dead": LlmToolName.NPC_DEAD,
+    "npc_death": LlmToolName.NPC_DEAD,
+    "kill_npc": LlmToolName.NPC_DEAD,
+    "npc_capture_player": LlmToolName.NPC_CAPTURE_PLAYER,
+    "capture_player": LlmToolName.NPC_CAPTURE_PLAYER,
+    "npc_update_memory": LlmToolName.NPC_UPDATE_MEMORY,
+    "memory_update": LlmToolName.NPC_UPDATE_MEMORY,
+    "memory_updates": LlmToolName.NPC_UPDATE_MEMORY,
+    "npc_update_description": LlmToolName.NPC_UPDATE_DESCRIPTION,
+    "npc_description_update": LlmToolName.NPC_UPDATE_DESCRIPTION,
+    "world_home_construction": LlmToolName.WORLD_HOME_CONSTRUCTION,
+    "home_construction": LlmToolName.WORLD_HOME_CONSTRUCTION,
+    "world_mainnode_reveal": LlmToolName.WORLD_MAINNODE_REVEAL,
+    "mainnode_reveal": LlmToolName.WORLD_MAINNODE_REVEAL,
+    "world_subnode_reveal": LlmToolName.WORLD_SUBNODE_REVEAL,
+    "subnode_reveal": LlmToolName.WORLD_SUBNODE_REVEAL,
+    "subnode_map_reveal": LlmToolName.WORLD_SUBNODE_REVEAL,
     "crime": LlmToolName.CRIME_RISK,
     "crime_risk": LlmToolName.CRIME_RISK,
-    "reward": LlmToolName.REWARDS,
-    "rewards": LlmToolName.REWARDS,
+    "item_add": LlmToolName.ITEM_ADD,
+    "item_remove": LlmToolName.ITEM_REMOVE,
+    "item_equip": LlmToolName.ITEM_EQUIP,
+    "item_unequip": LlmToolName.ITEM_UNEQUIP,
     "visual": LlmToolName.VISUAL_INTENT,
     "visual_intent": LlmToolName.VISUAL_INTENT,
     "move": LlmToolName.MOVE_PLAYER,
@@ -534,15 +657,65 @@ def _merge_tool_payload(payload: dict[str, Any], tool_name: LlmToolName, args: d
         payload["game_over"] = args.get("game_over", args.get("value", True))
         _merge_keys(payload, args, ("reason", "game_over_reason", "narration", "game_over_narration"))
         return
-    if tool_name == LlmToolName.WORLD_STATE_EFFECTS:
-        payload.update(args)
+    if tool_name == LlmToolName.NPC_CHANGE_RELATIONSHIP:
+        _append_payload_list(payload, "relationship_change", _single_or_value(args, "relationship_change", "change", "value"))
+        return
+    if tool_name == LlmToolName.NPC_MOVE:
+        _append_payload_list(payload, "npc_move", _single_or_value(args, "npc_move", "movement", "move", "value"))
+        return
+    if tool_name == LlmToolName.NPC_JOIN_PARTY:
+        value = _target_payload(args, "npc_join_party", "character", "npc", "target", "value")
+        _append_payload_list(payload, "npc_join_party", value)
+        return
+    if tool_name == LlmToolName.NPC_REMOVE_PARTY:
+        value = _target_payload(args, "npc_remove_party", "character", "npc", "target", "value")
+        _append_payload_list(payload, "npc_remove_party", value)
+        return
+    if tool_name == LlmToolName.NPC_DEAD:
+        value = _target_payload(args, "npc_dead", "character", "npc", "target", "value")
+        _append_payload_list(payload, "npc_dead", value)
+        return
+    if tool_name == LlmToolName.NPC_CAPTURE_PLAYER:
+        payload["npc_capture_player"] = _single_or_value(args, "npc_capture_player", "capture", "value")
+        return
+    if tool_name == LlmToolName.NPC_UPDATE_MEMORY:
+        value = _target_payload(args, "memory_updates", "memory", "memories", "value", value_key="memory")
+        _append_payload_list(payload, "memory_updates", value)
+        return
+    if tool_name == LlmToolName.NPC_UPDATE_DESCRIPTION:
+        value = _target_payload(args, "npc_description_updates", "description", "update", "value", value_key="description")
+        _append_payload_list(payload, "npc_description_updates", value)
+        return
+    if tool_name == LlmToolName.WORLD_HOME_CONSTRUCTION:
+        _append_payload_list(payload, "home_construction", _single_or_value(args, "home_construction", "construction", "value"))
+        return
+    if tool_name == LlmToolName.WORLD_MAINNODE_REVEAL:
+        value = args.get("world_mainnode_reveal") if args.get("world_mainnode_reveal") not in (None, "", [], {}) else args
+        _append_payload_list(payload, "world_mainnode_reveal", value)
+        return
+    if tool_name == LlmToolName.WORLD_SUBNODE_REVEAL:
+        value = args
+        for key in ("world_subnode_reveal", "subnode_map_reveal"):
+            if args.get(key) not in (None, "", [], {}):
+                value = args[key]
+                break
+        _append_payload_list(payload, "subnode_map_reveal", value)
         return
     if tool_name == LlmToolName.CRIME_RISK:
         payload["crime_risk"] = args or True
         payload.update(args)
         return
-    if tool_name == LlmToolName.REWARDS:
-        payload.update(args)
+    if tool_name == LlmToolName.ITEM_ADD:
+        _append_payload_list(payload, "item_add", _item_tool_payload(args, "item_add", "item", "items", "value"))
+        return
+    if tool_name == LlmToolName.ITEM_REMOVE:
+        _append_payload_list(payload, "item_remove", _item_tool_payload(args, "item_remove", "item", "items", "target", "value"))
+        return
+    if tool_name == LlmToolName.ITEM_EQUIP:
+        _append_payload_list(payload, "item_equip", _item_tool_payload(args, "item_equip", "item", "target", "value"))
+        return
+    if tool_name == LlmToolName.ITEM_UNEQUIP:
+        _append_payload_list(payload, "item_unequip", _item_tool_payload(args, "item_unequip", "item", "slot", "target", "value"))
         return
     if tool_name == LlmToolName.VISUAL_INTENT:
         payload["visual_intent"] = args or True
@@ -565,6 +738,30 @@ def _single_or_value(source: dict[str, Any], *keys: str) -> Any:
         if key in source and source[key] not in (None, "", [], {}):
             return source[key]
     return source
+
+
+def _target_payload(source: dict[str, Any], *keys: str, value_key: str = "target") -> Any:
+    value = _single_or_value(source, *keys)
+    if value is source or not any(key in source for key in ("target", "character", "character_name", "npc", "npc_name", "name")):
+        return value
+    significant = {key: item for key, item in source.items() if item not in (None, "", [], {})}
+    if len(significant) <= 1:
+        return value
+    entry = dict(source)
+    entry.setdefault(value_key, value)
+    return entry
+
+
+def _item_tool_payload(source: dict[str, Any], *keys: str) -> Any:
+    value = _single_or_value(source, *keys)
+    if value is source:
+        return source
+    significant = {key: item for key, item in source.items() if item not in (None, "", [], {})}
+    if len(significant) <= 1:
+        return value
+    entry = dict(source)
+    entry.setdefault("item", value)
+    return entry
 
 
 def _append_payload_list(payload: dict[str, Any], key: str, value: Any) -> None:

@@ -412,14 +412,13 @@ VENDOR_PROFILES = {
 ITEM_CONTAINER_KEYS = {
     "item",
     "items",
-    "item_reward",
-    "item_rewards",
+    "item_add",
+    "item_adds",
     "loot",
     "loot_items",
     "drop",
     "drops",
     "reward",
-    "rewards",
     "obtained_item",
     "obtained_items",
     "acquired_item",
@@ -1785,7 +1784,7 @@ def _looks_like_item(value: Any) -> bool:
 
 
 def _category_from_key(key: str) -> str:
-    if key in {"treasure", "reward", "rewards"}:
+    if key in {"treasure", "reward", "item_add", "item_adds"}:
         return "treasure"
     if "loot" in key or "drop" in key:
         return "junk"

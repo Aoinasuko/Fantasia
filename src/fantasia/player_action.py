@@ -18,9 +18,7 @@ class ActionCommandType(str, Enum):
     ENCOUNTER = "encounter"
     HOME = "home"
     ATTACK = "attack"
-    EXPLORE = "explore"
     SKILL = "skill"
-    UNLOCK = "unlock"
     CRAFT = "craft"
     TRADE_NEGOTIATION = "trade_negotiation"
     FACILITY = "facility"
@@ -100,41 +98,14 @@ def record_action_command(engine: Any, command: ActionCommand) -> None:
         return
 
 
-def is_unlock_action(action: str) -> bool:
-    text = str(action or "").strip()
-    if not text:
-        return False
-    lowered = text.casefold()
-    if any(word in lowered for word in ("unlock", "lockpick", "pick lock", "disarm", "locked chest", "trap")):
-        return True
-    has_target = any(word in text for word in ("鍵", "錠", "宝箱", "箱", "罠", "トラップ"))
-    has_verb = any(word in text for word in ("開け", "開く", "開錠", "解錠", "解除", "外す", "外せ", "調べ", "こじ開け"))
-    return has_target and has_verb
-
-
 def player_action_type_for_text(
     action: str,
     *,
     is_skill_action: Callable[[str], bool],
-    is_exploration_action: Callable[[str], bool],
 ) -> ActionCommandType | None:
-    if is_unlock_action(action):
-        return ActionCommandType.UNLOCK
     if is_skill_action(action):
         return ActionCommandType.SKILL
-    if is_explore_action(action) or is_exploration_action(action):
-        return ActionCommandType.EXPLORE
     return None
-
-
-def is_explore_action(action: str) -> bool:
-    text = str(action or "").strip()
-    if not text:
-        return False
-    lowered = text.casefold()
-    return any(word in text for word in ("探索", "調査", "調べ", "周囲")) or any(
-        word in lowered for word in ("explore", "investigate", "search", "look around")
-    )
 
 
 def quest_action_command_type(
@@ -378,7 +349,6 @@ def resolve_player_input(
             action_kind = player_action_type_for_text(
                 action_text,
                 is_skill_action=is_skill_action,
-                is_exploration_action=is_exploration_action,
             )
             payload = {"action_roll": action_roll or {}}
             if action_kind is not None:
@@ -415,9 +385,8 @@ def resolve_player_input(
     action_kind = player_action_type_for_text(
         action_text,
         is_skill_action=is_skill_action,
-        is_exploration_action=is_exploration_action,
     )
-    exploration_action = action_kind == ActionCommandType.EXPLORE or is_exploration_action(action_text)
+    exploration_action = is_exploration_action(action_text)
     if exploration_action:
         action_roll = engine._action_roll_for_input(action_text, input_type, "exploration")
     if exploration_action and engine._should_run_field_event_evaluator(action_text, input_type):
@@ -444,7 +413,7 @@ def resolve_player_input(
             if as_bool(field_event.get("event_occurred")):
                 return finish(
                     command(
-                        action_kind or ActionCommandType.EXPLORE,
+                        ActionCommandType.FIELD_EVENT,
                         payload={"field_event_trigger": field_event_trigger, "routed_to": ActionCommandType.FIELD_EVENT.value},
                     ),
                     engine._apply_field_event(

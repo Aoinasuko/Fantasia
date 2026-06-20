@@ -7058,7 +7058,7 @@ def _quest_reward_text(reward) -> str:
         parts.append(f"{gold}G")
     if exp:
         parts.append(f"EXP {exp}")
-    items = reward.get("items") or reward.get("item_rewards") or reward.get("rewards")
+    items = reward.get("items") or reward.get("item_add")
     item_names = []
     for item in items if isinstance(items, list) else ([] if items in (None, "") else [items]):
         if isinstance(item, dict):
@@ -7584,7 +7584,7 @@ UI_TEXT["en"].update(
         "world_progress_story": "Generating story",
         "world_progress_settlement": "Generating starting settlement",
         "world_progress_characters": "Generating NPCs",
-        "world_progress_quests": "Generating quests and rewards",
+        "world_progress_quests": "Generating quest outcomes",
         "world_progress_initial": "Generating opening scene",
         "world_progress_completed": "World generation complete",
         "world_select_title": "World Select",

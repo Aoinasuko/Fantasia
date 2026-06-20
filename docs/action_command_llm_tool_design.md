@@ -8,7 +8,7 @@
 
 ## 2026-06-20 Intent / Tool JSON Migration Note
 - Normal action, field event, quest, and conversation managers now express game-state changes through top-level `tools[]`.
-- Display fields such as `narration` and `choices` are intentionally ignored for movement, combat start, rewards, quest progress, NPC generation, and world-state side effects.
+- Display fields such as `narration` and `choices` are intentionally ignored for movement, combat start, item changes, quest progress, NPC generation, and world-state side effects.
 - `llm_tool.py` owns tool parsing, normalization, and common side-effect dispatch. `GameEngine` should read side-effect payloads through `tool_effect_payload(...)` or the specific tool helpers.
 - Top-level legacy side-effect keys such as `location`, `quest_progress`, `quest_update`, `event`, `relationship_change`, `memory_updates`, `new_npc_requests`, `discovered_location`, `boss_npc`, and reward/status fields are no longer part of these manager schemas.
 - Fixture LLM responses are converted to the new intent/tool shape before validation so local tests exercise the same contract.
@@ -47,9 +47,7 @@
   - `quest_abandon`
   - `conversation_start`
   - `conversation_continue`
-  - `explore`
   - `skill`
-  - `unlock`
   - `master_ai`
   - `attack`
   - `craft`
@@ -61,7 +59,8 @@
 - `resolve_player_input(...)`
   - 既存 `GameEngine._resolve_player_input` の実処理を担当する。
   - 現段階では既存順序を維持しつつ、どのルートに入ったかを `ActionCommand` で記録する。
-  - 探索・調査は `explore`、スキル使用は `skill`、鍵開け・宝箱の罠解除は `unlock` として記録する。
+  - 探索・調査・鍵開け・宝箱の罠解除は専用 `ActionCommandType` にせず、行動文として処理する。
+  - スキル使用だけは `skill` として記録する。
 
 ## llm_tool.py
 
@@ -78,9 +77,22 @@
   - `exp_delta`
   - `time_passage`
   - `game_over`
-  - `world_state_effects`
+  - `npc_change_relationship`
+  - `npc_move`
+  - `npc_join_party`
+  - `npc_remove_party`
+  - `npc_dead`
+  - `npc_capture_player`
+  - `npc_update_memory`
+  - `npc_update_description`
+  - `world_home_construction`
+  - `world_mainnode_reveal`
+  - `world_subnode_reveal`
   - `crime_risk`
-  - `rewards`
+  - `item_add`
+  - `item_remove`
+  - `item_equip`
+  - `item_unequip`
   - `visual_intent`
   - `movement_status`
   - `npc_action`
