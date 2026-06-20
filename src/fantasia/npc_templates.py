@@ -393,6 +393,7 @@ def npc_template_to_character_payload(
         "name": str(template.get("name") or template.get("id") or "NPC"),
         "role": str(template.get("role") or template.get("name") or ""),
         "category": "enemy_npc" if enemy else "npc",
+        "level": max(1, _safe_int(template.get("level"), 1)),
         "gender": _resolved_gender(template, rng),
         "age": _resolved_age(template, rng),
         "personality": str(template.get("personality") or ""),
@@ -410,6 +411,7 @@ def npc_template_to_character_payload(
             "combat_attacks": deepcopy(template.get("attacks") or []),
             "base_attack": max(0, _safe_int(template.get("atk"), 0)),
             "base_defense": max(0, _safe_int(template.get("def"), 0)),
+            "base_level": max(1, _safe_int(template.get("level"), 1)),
         },
         "flags": {
             "npc_template_id": str(template.get("id") or ""),

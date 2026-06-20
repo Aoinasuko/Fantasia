@@ -88,10 +88,6 @@ class ManagerSchema:
             lines.append(
                 "- Equipment changes: use equip_item/equip_items to equip a named item or item object, unequip_item/remove_equipment to remove equipment, or equipment_changes with action=equip/unequip and slot/item. Slots are weapon/armor_shield/armor_head/armor_body/armor_arm/armor_leg/armor_cloth/accessory_ring/accessory_amulet."
             )
-        if any(field.name == "display_cg" for field in self.fields):
-            lines.append(
-                "- 重要な場面、発見、戦闘の山場、会話の決定的瞬間など一枚絵CGが必要な場合だけ display_cg=true と cg_prompt/cg_description を返してください。"
-            )
         if any(field.name in {"status_effects", "player_status_effects", "character_status_effects", "long_term_statuses"} for field in self.fields):
             lines.append(
                 "- 状態付与が必要な場合は status_effects/player_status_effects/character_status_effects に、"
@@ -107,11 +103,6 @@ class ManagerSchema:
                 "and do not include HP damage."
             )
         lines.append("例:")
-        if any(field.name == "display_cg" for field in self.fields):
-            lines.append(
-                "- CGを表示する場合、cg_description/cg_prompt は直前の narration と同じ出来事だけを描写してください。"
-                "現在地、行動結果、登場中のNPC/敵、重要な小物を具体化し、文章にない人物や別の場所を追加しないでください。"
-            )
         if any(field.name in {"status_effects", "player_status_effects", "character_status_effects", "long_term_statuses"} for field in self.fields):
             lines.append(
                 "- 治療、解呪、休息、交渉などで状態が解除される場合は remove_status_effects/cure_status_effects/treated_status_effects に、"
@@ -200,11 +191,7 @@ REWARD_FIELDS = (
 )
 
 
-VISUAL_FIELDS = (
-    FieldRule("display_cg", (bool,), required=False, non_empty=False),
-    FieldRule("cg_prompt", (list, str), required=False, non_empty=False, string_items=False),
-    FieldRule("cg_description", (str,), required=False, non_empty=False),
-)
+VISUAL_FIELDS: tuple[FieldRule, ...] = ()
 
 
 STATUS_EFFECT_FIELDS = (
@@ -398,6 +385,82 @@ SCHEMAS: dict[str, ManagerSchema] = {
                 {"from": "月影の森", "to": "古い祠", "hours": 2},
                 {"from": "古い祠", "to": "湿った洞穴", "hours": 2},
             ],
+        },
+    ),
+    "create_world_theme": ManagerSchema(
+        manager_name="create_world_theme",
+        fields=(
+            FieldRule("world_name", (str,)),
+            FieldRule("overview", (str,)),
+            FieldRule("structure_description", (str,)),
+            FieldRule("structure", (dict, list), non_empty=False, string_items=False),
+            FieldRule("final_destination_concept", (str,), required=False, non_empty=False),
+            FieldRule("opening", (str,), required=False, non_empty=False),
+        ),
+        example={
+            "world_name": "霧灯りの辺境",
+            "overview": "霧深い森と古い鉱山跡に囲まれた辺境。失われた灯火の伝承が旅人を奥地へ導く。",
+            "structure_description": "文化、地形、脅威、最終目的地の雰囲気だけを示す。地図構造はゲーム側が生成する。",
+            "structure": {"themes": ["霧", "古代鉱山", "失われた灯火"], "tone": "dark fantasy"},
+            "final_destination_concept": "世界外縁に眠る、灯火を封じた古代遺跡",
+            "opening": "あなたは最初の街の入り口に立ち、霧の向こうへ続く道を見ている。",
+        },
+    ),
+    "local_world_settlement_describer": ManagerSchema(
+        manager_name="local_world_settlement_describer",
+        fields=(
+            FieldRule("settlements", (list,), string_items=False),
+            FieldRule("summary", (str,), required=False, non_empty=False),
+        ),
+        example={
+            "summary": "Local settlement names only.",
+            "settlements": [
+                {
+                    "slot_id": "loc_000",
+                    "name": "灯守りの街",
+                    "description": "霧の外縁を見張る灯台を持つ、旅人と職人の小さな街。",
+                }
+            ],
+        },
+    ),
+    "local_world_single_location_describer": ManagerSchema(
+        manager_name="local_world_single_location_describer",
+        fields=(
+            FieldRule("locations", (list,), string_items=False),
+            FieldRule("summary", (str,), required=False, non_empty=False),
+        ),
+        example={
+            "summary": "Local single-node location names only.",
+            "locations": [
+                {
+                    "slot_id": "loc_001",
+                    "name": "白石の街道",
+                    "description": "白い石標が並ぶ古道。霧が薄い日は遠くの山影が見える。",
+                }
+            ],
+        },
+    ),
+    "local_world_dungeon_location_describer": ManagerSchema(
+        manager_name="local_world_dungeon_location_describer",
+        fields=(
+            FieldRule("location", (dict,), string_items=False),
+            FieldRule("summary", (str,), required=False, non_empty=False),
+        ),
+        example={
+            "summary": "Local multi-node location flavor only.",
+            "location": {
+                "slot_id": "loc_010",
+                "name": "沈黙鉱山",
+                "description": "閉ざされた坑道が山腹と谷側の二つの入口へ続く、古い鉱山跡。",
+                "subnodes": [
+                    {
+                        "id": "main_01",
+                        "name": "崩れた搬入口",
+                        "kind": "collapsed_passage",
+                        "description": "朽ちた台車と落盤跡が続く狭い坑道。",
+                    }
+                ],
+            },
         },
     ),
     "dungeon_subnode_generator": ManagerSchema(
@@ -1598,6 +1661,41 @@ def schema_instruction(manager_name: str) -> str:
             "- connections must connect each new location to an existing location or another location from this same batch. Use hours=2 unless the prompt explicitly asks otherwise.\n"
             "- Return compact JSON only. Do not add Markdown or commentary.\n"
         )
+    if manager_name == "create_world_theme":
+        instruction += (
+            "\ncreate_world_theme rules:\n"
+            "- Decide only the world theme, culture, conflict, geography, opening tone, and final-destination concept.\n"
+            "- Do not return locations, map nodes, subnodes, roads, connections, danger values, or starting_location.\n"
+            "- The game side will generate the world map structure locally.\n"
+            "- Return compact JSON only. Do not add Markdown or commentary.\n"
+        )
+    if manager_name == "local_world_settlement_describer":
+        instruction += (
+            "\nlocal_world_settlement_describer rules:\n"
+            "- Return one settlement object for each supplied slot_id.\n"
+            "- Each settlement must include slot_id, name, and description.\n"
+            "- Do not change map structure, coordinates, danger, or connections.\n"
+            "- All human-readable names and descriptions must be Japanese.\n"
+            "- Return compact JSON only. Do not add Markdown or commentary.\n"
+        )
+    if manager_name == "local_world_single_location_describer":
+        instruction += (
+            "\nlocal_world_single_location_describer rules:\n"
+            "- Return one location object for each supplied slot_id, normally exactly three items per batch unless fewer slots were supplied.\n"
+            "- Each location must include slot_id, name, and description.\n"
+            "- Do not create subnodes, connections, facilities, or extra map locations.\n"
+            "- All human-readable names and descriptions must be Japanese.\n"
+            "- Return compact JSON only. Do not add Markdown or commentary.\n"
+        )
+    if manager_name == "local_world_dungeon_location_describer":
+        instruction += (
+            "\nlocal_world_dungeon_location_describer rules:\n"
+            "- Return location{slot_id,name,description,subnodes} for the one supplied dungeon slot.\n"
+            "- Only name and describe the listed internal subnodes. Do not include entrance, entrance_b, deepest, or any unlisted subnode.\n"
+            "- Do not change graph shape, external links, coordinates, danger, entrance nodes, or deepest node.\n"
+            "- All human-readable names and descriptions must be Japanese.\n"
+            "- Return compact JSON only. Do not add Markdown or commentary.\n"
+        )
     if manager_name == "dungeon_subnode_generator":
         instruction += (
             "\ndungeon_subnode_generator rules:\n"
@@ -1614,6 +1712,7 @@ def schema_instruction(manager_name: str) -> str:
             "\nDangerous-area movement rules:\n"
             "- In dungeons or dangerous areas, movement is limited to current_subnode.adjacent_subnodes unless current_subnode.remote_travel_targets explicitly allows remote movement.\n"
             "- Do not narrate jumping from a dungeon entrance to the objective, from the deepest area back to town, or to a non-adjacent subnode unless the response uses an allowed remote target.\n"
+            "- For the choices field, only offer movement/return/enter/leave choices whose target appears in the prompt's movement_options.allowed_moves. Do not offer generic choices such as 'return to town', 'return to the city', 'return to the village', 'return to base', or 'return to the inn' unless that destination is explicitly listed.\n"
             "- If the player receives a map, route note, or clue for a dungeon interior, reveal it with subnode_map_reveal/unlock_subnode_route instead of marking the nodes visited.\n"
             "- To reveal nearby dungeon rooms after looking around, use subnode_map_reveal={\"scope\":\"surroundings\"}. To reveal a route to the active quest objective, use subnode_map_reveal={\"quest\":\"active\"}.\n"
         )
@@ -1674,6 +1773,8 @@ def schema_instruction(manager_name: str) -> str:
             "- トップレベルには必ず settlement_structure_description, atmosphere, settlement_structure, facilities, residents, adventurers を置いてください。\n"
             "- core/spots/districts/landmarks などは settlement_structure の中にだけ入れてください。トップレベルに core/spots だけを返す形式は禁止です。\n"
             "- residents と adventurers に該当者がいない場合も [] を返してください。facilities も不明なら [] を返してください。\n"
+            "- 門、入口、出入口、中央広場、広場はゲーム側の固定移動ノードなので、facilities や settlement_structure の spots/shops/districts/landmarks/places/buildings に含めないでください。\n"
+            "- 井戸は固定配置ではありません。必要な場合だけ、通常の施設/spot として固有の名称と説明を付けて含めてください。井戸を外部リンク、隣接ロケーションの入口、ワールドマップ経路の端点にしないでください。\n"
             "- 次の外枠を崩さず、値だけを拠点に合わせて埋めてください。\n"
             "{\n"
             '  "settlement_structure_description": "拠点構造の文章",\n'
@@ -1782,9 +1883,9 @@ def _manager_retry_guidance(manager_name: str, errors: list[str], previous_respo
         '  "overview": "世界全体の概要",\n'
         '  "structure_description": "地理構造と移動ルールの説明",\n'
         '  "structure": {"map_rule": "地点同士は2時間単位で接続", "danger_rule": "開始地点から遠いほど危険"},\n'
-        '  "starting_location": "初期地点名",\n'
-        '  "locations": [{"name": "初期地点名", "kind": "settlement", "danger": 0, "description": "説明"}],\n'
-        '  "connections": [{"from": "初期地点名", "to": "隣接地点名", "hours": 2}]\n'
+        '  "starting_location": "開始拠点名",\n'
+        '  "locations": [{"name": "開始拠点名", "kind": "settlement", "danger": 0, "description": "説明"}],\n'
+        '  "connections": [{"from": "開始拠点名", "to": "隣接地点名", "hours": 2}]\n'
         "}\n"
     )
     if previous_keys & structure_like_keys:
@@ -1826,6 +1927,22 @@ def _apply_alias(response: dict[str, Any], field: FieldRule) -> None:
 
 
 def _canonicalize_manager_response(manager_name: str, value: Any) -> Any:
+    if manager_name == "local_world_settlement_describer":
+        return _wrap_collection_response(
+            value,
+            "settlements",
+            aliases=("settlement", "town", "village", "items"),
+            item_keys=("slot_id", "name", "title", "description", "overview", "summary"),
+        )
+    if manager_name == "local_world_single_location_describer":
+        return _wrap_collection_response(
+            value,
+            "locations",
+            aliases=("location", "place", "item", "items"),
+            item_keys=("slot_id", "name", "title", "description", "overview", "summary"),
+        )
+    if manager_name == "local_world_dungeon_location_describer":
+        return _repair_local_world_dungeon_description_response(value)
     if manager_name == "create_settlement_detail":
         return _repair_settlement_detail_response(value)
     if manager_name == "create_initial_character_profile":
@@ -1867,6 +1984,45 @@ def _canonicalize_manager_response(manager_name: str, value: Any) -> Any:
             aliases=("crafted_item", "result", "generated_item"),
             item_keys=("name", "category", "description", "quantity", "value", "rarity", "effects", "llm_effects"),
         )
+    return value
+
+
+def _repair_local_world_dungeon_description_response(value: Any) -> Any:
+    if isinstance(value, list):
+        return {"location": {"subnodes": value}}
+    if not isinstance(value, dict):
+        return value
+    response = dict(value)
+    if isinstance(response.get("location"), dict):
+        return response
+    for key in ("dungeon", "place", "area", "location_description"):
+        nested = response.get(key)
+        if isinstance(nested, dict):
+            repaired = dict(response)
+            repaired["location"] = nested
+            return repaired
+    location_keys = {"slot_id", "name", "title", "description", "overview", "summary", "subnodes", "rooms", "internal_subnodes"}
+    subnode_keys = {"id", "node_id", "kind", "type", "resource_hint", "encounter_hint", "loot_hint"}
+    if any(key in response for key in location_keys):
+        if "slot_id" in response or "subnodes" in response or "rooms" in response or "internal_subnodes" in response:
+            repaired = dict(response)
+            repaired["location"] = {
+                key: value
+                for key, value in response.items()
+                if key not in {"summary"}
+            }
+            return repaired
+        if any(key in response for key in subnode_keys):
+            return {"location": {"subnodes": [response]}, "summary": str(response.get("summary") or "")}
+        repaired = dict(response)
+        repaired["location"] = {
+            key: value
+            for key, value in response.items()
+            if key not in {"summary"}
+        }
+        return repaired
+    if any(key in response for key in subnode_keys):
+        return {"location": {"subnodes": [response]}}
     return value
 
 
@@ -1936,6 +2092,51 @@ def _settlement_structure_summary(structure: Any) -> str:
     return "中心施設と生活区、旅人向けの施設がまとまった拠点。"
 
 
+def _is_reserved_settlement_facility_text(name: Any) -> bool:
+    normalized = _normalise_text(name)
+    if not normalized:
+        return False
+    exact_names = (
+        "\u4e2d\u592e\u5e83\u5834",
+        "\u5e83\u5834",
+        "\u9580",
+        "\u6b63\u9580",
+        "\u57ce\u9580",
+        "\u5165\u53e3",
+        "\u5165\u308a\u53e3",
+        "\u51fa\u5165\u53e3",
+        "\u753a\u306e\u5165\u308a\u53e3",
+        "\u8857\u306e\u5165\u308a\u53e3",
+        "\u6751\u306e\u5165\u308a\u53e3",
+        "gate",
+        "gates",
+        "entrance",
+        "entry",
+        "plaza",
+        "centralplaza",
+    )
+    if normalized in {_normalise_text(item) for item in exact_names}:
+        return True
+    fragments = (
+        "\u4e2d\u592e\u5e83\u5834",
+        "\u5165\u308a\u53e3",
+        "\u5165\u53e3",
+        "\u51fa\u5165\u53e3",
+        "\u6b63\u9580",
+        "\u57ce\u9580",
+        "\u9580\u756a",
+        "\u9580\u524d",
+        "centralplaza",
+        "entrance",
+        "gateway",
+        "gatehouse",
+        "plaza",
+    )
+    if any(_normalise_text(fragment) in normalized for fragment in fragments):
+        return True
+    return normalized == "\u9580" or normalized.startswith("\u9580") or normalized.endswith("\u9580")
+
+
 def _settlement_facilities_from_structure(structure: Any) -> list[dict[str, Any]]:
     names: list[str] = []
     if isinstance(structure, dict):
@@ -1949,6 +2150,8 @@ def _settlement_facilities_from_structure(structure: Any) -> list[dict[str, Any]
 
     facilities: list[dict[str, Any]] = []
     for name in names:
+        if _is_reserved_settlement_facility_text(name):
+            continue
         facility_type = _settlement_facility_type(name)
         if not facility_type:
             continue

@@ -123,6 +123,111 @@ class FixtureLlmBackend(BaseLlmBackend):
                     {"from": names[1], "to": names[2], "hours": 2},
                 ],
             }
+        elif manager_name == "create_world_theme":
+            content = {
+                "world_name": "霧灯りの辺境",
+                "overview": "霧深い森と古い鉱山跡に囲まれた辺境。失われた灯火の伝承が旅人を奥地へ導く。",
+                "structure_description": "街道、森、鉱山、遺跡が霧の外側へ広がる小さな幻想世界。",
+                "structure": {
+                    "themes": ["霧", "古代鉱山", "失われた灯火"],
+                    "generation_mode": "local_skeleton_llm_descriptions",
+                },
+                "final_destination_concept": "世界の外縁に眠る、灯火を封じた古代遺跡",
+                "opening": "あなたは最初の街の入り口に立ち、霧の向こうへ続く道を見ている。",
+            }
+            try:
+                fixture_context = json.loads(user_text)
+            except Exception:
+                fixture_context = {}
+            requested = str(fixture_context.get("requested_world_name") or "").strip() if isinstance(fixture_context, dict) else ""
+            if requested:
+                content["world_name"] = requested
+        elif manager_name == "local_world_settlement_describer":
+            try:
+                fixture_context = json.loads(user_text)
+            except Exception:
+                fixture_context = {}
+            slots = fixture_context.get("slots") if isinstance(fixture_context, dict) else []
+            names = ["灯守りの街", "霧橋の村", "銀苔の村", "風見の町", "灰鐘の村"]
+            content = {
+                "summary": "Fixture settlement descriptions.",
+                "settlements": [
+                    {
+                        "slot_id": str(slot.get("slot_id") or f"loc_{index:03d}"),
+                        "name": names[index % len(names)],
+                        "description": f"霧の辺境にある拠点。外へ続く入り口と旅人の噂がある。危険度 {slot.get('danger', 0)}。",
+                    }
+                    for index, slot in enumerate(slots if isinstance(slots, list) else [])
+                    if isinstance(slot, dict)
+                ],
+            }
+        elif manager_name == "local_world_single_location_describer":
+            try:
+                fixture_context = json.loads(user_text)
+            except Exception:
+                fixture_context = {}
+            slots = fixture_context.get("slots") if isinstance(fixture_context, dict) else []
+            label_by_subtype = {
+                "road": "白石の街道",
+                "crossroad": "霧分かれの辻",
+                "coast": "青鳴りの海岸",
+                "river": "月映しの川辺",
+                "plain": "銀穂の平原",
+                "landmark": "古い祈り石",
+                "wilderness": "雨待ちの野",
+            }
+            locations = []
+            for index, slot in enumerate(slots if isinstance(slots, list) else []):
+                if not isinstance(slot, dict):
+                    continue
+                subtype = str(slot.get("subtype") or "location")
+                base = label_by_subtype.get(subtype, "名もなき道標")
+                locations.append(
+                    {
+                        "slot_id": str(slot.get("slot_id") or f"loc_{index:03d}"),
+                        "name": f"{base}{index + 1}",
+                        "description": f"世界設定に沿って配置された単体ロケーション。危険度 {slot.get('danger', 0)}。",
+                    }
+                )
+            content = {"summary": "Fixture single-node descriptions.", "locations": locations}
+        elif manager_name == "local_world_dungeon_location_describer":
+            try:
+                fixture_context = json.loads(user_text)
+            except Exception:
+                fixture_context = {}
+            slots = fixture_context.get("slots") if isinstance(fixture_context, dict) else []
+            slot = slots[0] if isinstance(slots, list) and slots and isinstance(slots[0], dict) else {}
+            subtype = str(slot.get("subtype") or "dungeon")
+            label_by_subtype = {
+                "forest": "黒枝の森",
+                "mountain": "鳴石山",
+                "ruin": "眠り灯の遺跡",
+                "cave": "滴りの洞窟",
+                "mine": "沈黙鉱山",
+                "final_destination": "最果ての灯火殿",
+            }
+            subnodes = []
+            for raw in fixture_context.get("subnodes_to_name", []) if isinstance(fixture_context, dict) else []:
+                if not isinstance(raw, dict):
+                    continue
+                node_id = str(raw.get("id") or "")
+                subnodes.append(
+                    {
+                        "id": node_id,
+                        "name": f"{node_id}の間",
+                        "kind": str(raw.get("kind") or "room"),
+                        "description": "ローカル生成された構造に沿って名付けられた内部地点。",
+                    }
+                )
+            content = {
+                "summary": "Fixture dungeon description.",
+                "location": {
+                    "slot_id": str(slot.get("slot_id") or "loc_000"),
+                    "name": label_by_subtype.get(subtype, "霧奥の迷宮"),
+                    "description": f"複数の入口と内部通路を持つ探索地。危険度 {slot.get('danger', 0)}。",
+                    "subnodes": subnodes,
+                },
+            }
         elif manager_name == "dungeon_subnode_generator":
             content = {
                 "summary": "Fixture dungeon layout with branches and varied rooms.",

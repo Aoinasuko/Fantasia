@@ -1716,18 +1716,20 @@ class FantasiaApp(tk.Tk):
         for column, button in enumerate((self.inventory_btn, self.craft_btn, self.loot_btn, self.world_map_btn, self.subnode_map_btn)):
             button.grid(row=0, column=column, padx=(0, 10), pady=0)
 
+        self.cg_btn = self._tool_icon_button(right_tools, "cg", _ui_text(self.config_data, "game_cg"), self._generate_cg_image)
         self.tutorial_btn = self._tool_icon_button(right_tools, "tutorial", _ui_text(self.config_data, "game_tutorial"), self._open_game_tutorial)
         self.save_btn = self._tool_icon_button(right_tools, "save", _ui_text(self.config_data, "game_save"), self._save_game)
         self.setting_btn = self._tool_icon_button(right_tools, "setting", _ui_text(self.config_data, "game_setting"), self._open_game_submenu)
-        for column, button in enumerate((self.tutorial_btn, self.save_btn, self.setting_btn)):
+        for column, button in enumerate((self.cg_btn, self.tutorial_btn, self.save_btn, self.setting_btn)):
             button.grid(row=0, column=column, padx=(10, 0), pady=0)
-        self.task_buttons.extend([self.inventory_btn, self.craft_btn, self.loot_btn, self.world_map_btn, self.subnode_map_btn, self.tutorial_btn, self.save_btn, self.setting_btn])
+        self.task_buttons.extend([self.inventory_btn, self.craft_btn, self.loot_btn, self.world_map_btn, self.subnode_map_btn, self.cg_btn, self.tutorial_btn, self.save_btn, self.setting_btn])
         for button, title_key, help_key in (
             (self.inventory_btn, "game_inventory", "game_inventory_help"),
             (self.craft_btn, "game_craft", "game_craft_help"),
             (self.loot_btn, "game_loot", "game_loot_help"),
             (self.world_map_btn, "game_world_map", "game_world_map_help"),
             (self.subnode_map_btn, "game_subnode_map", "game_subnode_map_help"),
+            (self.cg_btn, "game_cg", "game_cg_help"),
             (self.tutorial_btn, "game_tutorial", "game_tutorial_help"),
             (self.save_btn, "game_save", "game_save_help"),
             (self.setting_btn, "game_setting", "game_setting_help"),
@@ -3236,6 +3238,7 @@ class FantasiaApp(tk.Tk):
                 self._append_log("\n" + block_message + "\n")
                 return
             dialog.destroy()
+            self._dismiss_active_cg_for_player_input()
             self._run_task(task_name, callback, self._set_log)
 
         self._instant_button(footer, _ui_text(self.config_data, "move_window_confirm"), travel).grid(row=0, column=1, sticky="e")
@@ -3339,6 +3342,7 @@ class FantasiaApp(tk.Tk):
                 self._append_log("\n" + block_message + "\n")
                 return
             dialog.destroy()
+            self._dismiss_active_cg_for_player_input()
             self._run_task(
                 _ui_text(self.config_data, "task_world_map_travel"),
                 lambda dest=destination: self.engine.travel_world_map_to(dest),
@@ -3454,6 +3458,7 @@ class FantasiaApp(tk.Tk):
                 self._append_log("\n" + block_message + "\n")
                 return
             dialog.destroy()
+            self._dismiss_active_cg_for_player_input()
             self._run_task(
                 _ui_text(self.config_data, "task_subnode_map_travel"),
                 lambda dest=destination: self.engine.travel_subnode_to(dest),
@@ -5212,6 +5217,16 @@ class FantasiaApp(tk.Tk):
             lambda result: self._set_image(result.path),
         )
 
+    def _generate_cg_image(self) -> None:
+        self._hide_game_button_help()
+        if not self._image_generation_enabled(show_status=True):
+            return
+        self._run_task(
+            _ui_text(self.config_data, "task_generating_cg_image"),
+            self.engine.generate_cg_image,
+            lambda result: self._on_cg_image_generated(result.path),
+        )
+
     def _generate_character_image(self) -> None:
         if not self._image_generation_enabled(show_status=True):
             return
@@ -5235,6 +5250,7 @@ class FantasiaApp(tk.Tk):
             return
         action = self.action_var.get()
         self.action_var.set("")
+        self._dismiss_active_cg_for_player_input()
         self._run_task(
             _ui_text(self.config_data, "task_resolving_free_action"),
             lambda action=action: self.engine.resolve_action(action),
@@ -5248,6 +5264,7 @@ class FantasiaApp(tk.Tk):
             return
         if self._maybe_open_explicit_subscreen_choice(choice):
             return
+        self._dismiss_active_cg_for_player_input()
         self._run_task(
             _ui_text(self.config_data, "task_resolving_choice"),
             lambda: self.engine.resolve_choice(choice),
@@ -6212,6 +6229,12 @@ class FantasiaApp(tk.Tk):
         self._refresh_status_panel()
         self._render_stage()
 
+    def _dismiss_active_cg_for_player_input(self) -> None:
+        if self.engine.dismiss_active_cg():
+            self.image_cache.clear()
+            self.stage_source_image = None
+            self._render_stage()
+
     def _schedule_visual_updates(self) -> None:
         if not self._image_generation_enabled():
             return
@@ -6234,13 +6257,7 @@ class FantasiaApp(tk.Tk):
             return
         if state.world_data.world_name == "unknown":
             return
-        if isinstance(state.flags.get("pending_cg_request"), dict):
-            self._run_visual_task(
-                _ui_text(self.config_data, "task_generating_cg_image"),
-                self.engine.generate_cg_image,
-                lambda result: self._on_cg_image_generated(result.path),
-            )
-            return
+        state.flags.pop("pending_cg_request", None)
 
         current_location = self._current_location_name()
         pending_background = str(state.flags.get("pending_background_location") or "")
@@ -8294,6 +8311,7 @@ UI_TEXT["en"].update(
     {
         "settings_show_button_help": "Show Button Help",
         "settings_show_button_help_hint": "When enabled, hovering the lower game buttons shows the button name and a short explanation.",
+        "game_cg": "Create CG",
         "game_tutorial": "Tutorial",
         "game_tutorial_title": "Tutorial",
         "game_tutorial_prev": "Previous",
@@ -8304,6 +8322,7 @@ UI_TEXT["en"].update(
         "game_loot_help": "Open nearby containers or loot found in the current place.",
         "game_world_map_help": "View visited locations and travel along known routes.",
         "game_subnode_map_help": "View the internal map of the current town, facility, or dungeon.",
+        "game_cg_help": "Generate a CG image from the latest log, visible characters, status effects, and current location.",
         "game_tutorial_help": "Open beginner guide pages for what to do next.",
         "game_save_help": "Save the current adventure.",
         "game_setting_help": "Open the submenu for continuing, ending the game, or changing settings.",
@@ -8353,6 +8372,7 @@ UI_TEXT["ja"].update(
     {
         "settings_show_button_help": "ボタン説明を表示する",
         "settings_show_button_help_hint": "ONにすると、ゲーム画面下部のボタンにカーソルを合わせた時に名称と短い説明を表示します。",
+        "game_cg": "CG作成",
         "game_tutorial": "チュートリアル",
         "game_tutorial_title": "チュートリアル",
         "game_tutorial_prev": "前へ",
@@ -8363,6 +8383,7 @@ UI_TEXT["ja"].update(
         "game_loot_help": "今いる場所の箱や落ちている物を確認します。",
         "game_world_map_help": "訪れた場所や知っている経路を確認し、既知の道を移動します。",
         "game_subnode_map_help": "街、施設、ダンジョン内部のマップを確認します。",
+        "game_cg_help": "直近ログ、見えている人物、状態異常、現在地からCG画像を生成します。",
         "game_tutorial_help": "次に何をすればよいかを確認できる初心者向けガイドを開きます。",
         "game_save_help": "現在の冒険を保存します。",
         "game_setting_help": "ゲーム継続、終了、設定を選ぶサブメニューを開きます。",

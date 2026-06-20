@@ -1214,11 +1214,10 @@ def _random_item(
         rarity = _random_stackable_rarity(rng, rarity_profile)
     item_value = _item_value_with_rarity(base_value, rarity, rng)
     quantity = _random_quantity(category, rng)
-    loot_description = f"{context}で見つかる品。{description}" if source == "loot" and context else description
     return make_item(
         category,
         name=name,
-        description=loot_description,
+        description=description,
         quantity=quantity,
         value=item_value,
         rarity=rarity,
