@@ -175,7 +175,7 @@
       {"name": "剣で切る", "type": "physical"}
     ],
     "skills": [
-      {"name": "全力攻撃", "description": "強烈な一撃を敵に叩き込む。", "power": 2, "sp": 3}
+      {"name": "全力攻撃", "desc": "強烈な一撃を敵に叩き込む。", "usesp": 3, "power": 2, "ability": "str", "element": "physical", "type": ["damage_hp_single"]}
     ]
   },
   {
@@ -198,6 +198,9 @@
     },
     "attacks": [
       {"name": "槌で殴る", "type": "physical"}
+    ],
+    "skills": [
+      {"name": "治癒魔法", "desc": "味方単体のHPを回復する。", "usesp": 3, "power": 1, "ability": "int", "element": "light", "type": ["heal_single"]}
     ]
   },
   {
@@ -219,8 +222,11 @@
       "cha": 8
     },
     "attacks": [
-      {"name": "火球の魔法を敵に飛ばす", "type": "fire"},
-      {"name": "氷の魔法を敵に飛ばす", "type": "ice"}
+      {"name": "杖で殴る", "type": "physical"}
+    ],
+    "skills": [
+      {"name": "火球魔法", "desc": "火球を飛ばし、敵にダメージを与える。", "usesp": 3, "power": 1, "ability": "wis", "element": "fire", "type": ["damage_hp_single"]},
+      {"name": "氷魔法", "desc": "氷を飛ばし、敵にダメージを与える。", "usesp": 3, "power": 1, "ability": "wis", "element": "ice", "type": ["damage_hp_single"]}
     ]
   }
 ]

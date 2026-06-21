@@ -24,7 +24,7 @@
       {"name": "触手をたたきつけて攻撃", "type": "physical"}
     ],
     "skills": [
-      {"name": "拘束", "description": "触手を使い、拘束を行う。", "power": 2, "sp": 3}
+      {"name": "拘束", "desc": "触手を使い、相手の攻撃や逃走を封じる。", "usesp": 3, "power": 2, "ability": "str", "element": "physical", "type": [{"type": "effect_enemy_single", "buff_type": "restraint", "amount": 1, "duration": 1, "name": "触手拘束"}]}
     ]
   }
 ]

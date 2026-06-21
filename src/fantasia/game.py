@@ -10,36 +10,26 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from . import npc_generate
+from . import combat_flow
 from .image_pipeline import process_subject_image
 from .imagegen import BaseImageBackend, ImageResult
 from .i18n import ELEMENT_IDS, tr_enum
 from .combat import (
     _capture_subnode_description,
     _capture_subnode_name,
-    _combat_action_text,
-    _combat_apply_defense,
-    _combat_ability_from_response,
-    _combat_damage_message,
-    _combat_heal_message,
-    _combat_narration_payload,
-    _combat_response_candidates,
-    _combat_value_from_response,
-    _combat_weakness_multiplier,
-    _encounter_player_surrendered,
-    _first_int,
-    _game_controlled_hp_keys,
-    _normalise_combat_ability,
-    _npc_action_tool_kind,
-    _npc_response_is_offensive,
-    _player_surrender_response_ends_encounter,
-    _response_has_status_effect_update,
     _response_implies_capture_relocation,
-    _skill_default_ability,
-    _skill_default_uses_defense,
-    _skill_is_healing,
-    _strip_hp_update_value,
-    _surrender_control_prevents_npc_damage,
 )
+from .combat_llm_tool import CombatToolCall, CombatToolName, run_combat_tool
+from .combat_buff import (
+    effective_attributes as _combat_effective_attributes,
+    has_buff_type as _combat_has_buff_type,
+    stat_delta as _combat_stat_delta,
+    status_blocks_attack as _combat_status_blocks_attack,
+    status_blocks_escape as _combat_status_blocks_escape,
+    status_blocks_skill as _combat_status_blocks_skill,
+    tick_buffs as _combat_tick_buffs,
+)
+from .combat_model import normalise_combat_skill
 from .items import (
     EQUIPMENT_SLOT_LABELS,
     EQUIPMENT_SLOTS,
@@ -82,6 +72,7 @@ from .quests import (
     QUEST_BOARD_CHOICE_LABEL,
     QUEST_BOARD_NAME,
     QUEST_DEADLINE_HOURS,
+    QUEST_REPORT_CHOICE_LABEL,
     QUEST_REPORT_STAGE,
     QUEST_TYPES,
     SETTLEMENT_QUEST_BATCH_MAX,
@@ -120,9 +111,6 @@ from .status_effects import (
     SURRENDERED_STATUS_ID,
     STATUS_IMMUNITY_EFFECT_IDS,
     canonical_status_effect_id,
-    _combat_status_effects_fallback_note,
-    _combat_status_effects_mentioned,
-    _combat_status_effects_payload,
     _contextual_incapacitated_status_details,
     _global_status_target,
     _merge_status_effect,
@@ -251,9 +239,8 @@ TEMP_CONTEXT_AWARE_MANAGERS = {
     "input_gatekeeper",
     "check_action_feasibility",
     "craft_item_generator",
-    "referee_player_any_input_new_new",
-    "referee_npc",
-    "referee_npc_rewrite",
+    "combat_player_action",
+    "combat_enemy_action",
 }
 CRAFT_INTENT_DEFINITIONS = {
     "auto": {
@@ -2330,6 +2317,45 @@ class GameEngine:
             return self.state.log_text(16)
         return self._start_quest(f"依頼を受ける: {quest.name}", "choice", quest)
 
+    def _active_quest_can_report_at(self, location_name: str = "") -> bool:
+        if not self.state.active_quest:
+            return False
+        location = str(location_name or self.state.current_location or self.state.world_data.starting_location).strip()
+        if location != str(self.state.current_location or "").strip():
+            return False
+        if not self.is_current_location_guild():
+            return False
+        quest = self._find_quest_by_name(self.state.active_quest)
+        if not quest or quest.status != "active":
+            return False
+        return self._quest_objectives_returned(quest, location)
+
+    def _resolve_dedicated_quest_report(self, action: str, input_type: str, quest: QuestData) -> str:
+        location = self.state.current_location or self.state.world_data.starting_location
+        if not self.is_current_location_guild():
+            narration = "依頼の報告は、受注したギルドの受付で行う必要がある。"
+            self._append_turn(action, narration, location, self._location_default_choices(location), input_type=input_type)
+            self.save_game()
+            return self.state.log_text(16)
+        if not self._quest_objectives_returned(quest, location):
+            narration = "依頼はまだ報告できない。目的が未達成か、報告先が違っている。"
+            self._append_turn(action, narration, location, self._location_default_choices(location), input_type=input_type)
+            self.save_game()
+            return self.state.log_text(16)
+        response = {"narration": f"ギルド受付で依頼「{quest.name}」の達成を報告した。"}
+        display_len = len(self.state.display_log)
+        event = self._finish_quest(quest, "completed", "quest_report_command", response)
+        reward_lines = self.state.display_log[display_len:]
+        if reward_lines:
+            del self.state.display_log[display_len:]
+        choices = self._location_default_choices(location)
+        self.state.flags["screen_mode"] = "exploration"
+        self._append_turn(action, str(response["narration"]), location, choices, input_type=input_type)
+        if reward_lines:
+            self.state.display_log.extend(reward_lines)
+        self.save_game()
+        return self.state.log_text(16)
+
     def _player_equipment(self) -> dict[str, dict[str, Any]]:
         raw = self.state.extra.get("equipment")
         if not isinstance(raw, dict):
@@ -2395,28 +2421,15 @@ class GameEngine:
         }
 
     def _temporary_combat_bonuses(self) -> dict[str, int]:
-        bonuses = {"attack": 0, "defense": 0}
-        active = self._active_encounter()
         effects: list[Any] = []
+        active = self._active_encounter()
         effects.extend(self.state.status_effects)
         player = self.player_character()
         if player:
             effects.extend(player.status_effects)
         if isinstance(active, dict):
             effects.extend(_as_list(active.get("player_status_effects")))
-        for effect in effects:
-            if not isinstance(effect, dict):
-                continue
-            normalised = _normalise_status_effect(effect)
-            effect_id = _status_effect_id(normalised)
-            power = _safe_int(normalised.get("power"), 0)
-            if effect_id == "Atk_Mod":
-                bonuses["attack"] += power
-            elif effect_id == "Def_Mod":
-                bonuses["defense"] += power
-            elif effect_id == "Paralysis":
-                bonuses["attack"] -= max(1, abs(power) if power else 1)
-        return bonuses
+        return _combat_stat_delta(effects)
 
     def _player_status_immunity_ids(self) -> set[str]:
         summary = self.player_equipment_summary()
@@ -3693,6 +3706,7 @@ class GameEngine:
                 hours=requested_hours,
             )
         )
+        companion_lines.extend(self._apply_time_passage_combat_buffs(requested_hours, source=source))
         reason_text = f" {reason}" if reason else ""
         line = f"> [時間] {old_label} -> {new_label} (+{requested_hours}時間){reason_text}"
         event = {
@@ -3718,6 +3732,52 @@ class GameEngine:
             self.state.display_log.append(line)
             self.state.display_log.extend(companion_lines)
         return event
+
+    def _apply_time_passage_combat_buffs(self, hours: int, *, source: str = "time") -> list[str]:
+        if hours <= 0:
+            return []
+        lines: list[str] = []
+        player = self.player_character()
+        if player:
+            updated, hp_delta, sp_delta, tick_lines = _combat_tick_buffs(player.status_effects, player.name or self.state.player_name or "Player", hours=hours)
+            player.status_effects = updated
+            self.state.status_effects = list(updated)
+            lines.extend(tick_lines)
+            if hp_delta:
+                event = self._apply_player_hp_delta(hp_delta, source=f"{source}:status_tick", reason="status")
+                if event.get("line"):
+                    lines.append(str(event["line"]))
+            if sp_delta:
+                event = self._apply_player_sp_delta(sp_delta, source=f"{source}:status_tick", reason="status")
+                if event.get("line"):
+                    lines.append(str(event["line"]))
+        for character in self.state.world_data.characters.values():
+            if not isinstance(character, Character) or character.flags.get("is_player"):
+                continue
+            if not character.status_effects:
+                continue
+            updated, hp_delta, sp_delta, tick_lines = _combat_tick_buffs(character.status_effects, character.name, hours=hours)
+            character.status_effects = updated
+            lines.extend(tick_lines)
+            if hp_delta:
+                max_hp = max(1, _safe_int(character.max_hp, _character_calculated_max_hp(character)))
+                old_hp = max(0, _safe_int(character.current_hp, max_hp))
+                character.max_hp = max_hp
+                character.current_hp = max(0, min(max_hp, old_hp + hp_delta))
+                character.extra["current_hp"] = character.current_hp
+                character.extra["max_hp"] = max_hp
+                sign = f"+{character.current_hp - old_hp}" if character.current_hp >= old_hp else str(character.current_hp - old_hp)
+                lines.append(f"> [HP] {character.name}: {old_hp}/{max_hp} -> {character.current_hp}/{max_hp} ({sign})")
+            if sp_delta:
+                max_sp = max(1, _safe_int(character.max_sp, _character_calculated_max_sp(character)))
+                old_sp = max(0, _safe_int(character.current_sp, max_sp))
+                character.max_sp = max_sp
+                character.current_sp = max(0, min(max_sp, old_sp + sp_delta))
+                character.extra["current_sp"] = character.current_sp
+                character.extra["max_sp"] = max_sp
+                sign = f"+{character.current_sp - old_sp}" if character.current_sp >= old_sp else str(character.current_sp - old_sp)
+                lines.append(f"> [SP] {character.name}: {old_sp}/{max_sp} -> {character.current_sp}/{max_sp} ({sign})")
+        return lines
 
     def _world_time_total_hours(self) -> int:
         value = self.state.extra.get("world_time_hours")
@@ -7759,7 +7819,9 @@ class GameEngine:
             choices.append(MOVE_CHOICE_LABEL)
         active_facility = self._active_facility_record() if location_name == self.state.current_location else None
         active_is_guild = bool(active_facility and str(active_facility.get("type") or "").lower() == "guild")
-        if (active_is_guild or _location_is_guild(self.state.world_data, location_name)) and not self.state.active_quest:
+        if self._active_quest_can_report_at(location_name):
+            choices.insert(0, QUEST_REPORT_CHOICE_LABEL)
+        elif (active_is_guild or _location_is_guild(self.state.world_data, location_name)) and not self.state.active_quest:
             choices.insert(0, QUEST_BOARD_CHOICE_LABEL)
         if location_name == self.state.current_location and active_facility and str(active_facility.get("type") or "").lower() == "town_hall":
             if not self._player_home_for_location(location_name):
@@ -7791,6 +7853,7 @@ class GameEngine:
             choices,
             active_quest=bool(self.state.active_quest),
             can_move=self._location_has_movement_options(location_name),
+            quest_report_ready=self._active_quest_can_report_at(location_name),
         )
 
     def _filter_dangerous_nonadjacent_move_choices(self, choices: list[str], location_name: str) -> list[str]:
@@ -10160,7 +10223,9 @@ class GameEngine:
                     "Return fields: name, gender, age, role, category, backstory, personality, ability, "
                     "look, image_generation_prompt, traits, skills. "
                     "Each trait should include name, description, severity, power, strength_level, and effect. "
-                    "Each skill should include name, description, element, skill_type, effects, sp_cost, power, strength_level, and usefulness."
+                    "Each skill should include name, desc, usesp, power, ability, element, and type. "
+                    "usesp is 1-12, power is 1-5, ability is one of str/dex/con/int/wis/cha/magic/will, "
+                    "and type is an array of combat effect IDs such as damage_hp_single, heal_single, or effect_self."
                 ),
             },
         ]
@@ -10335,10 +10400,14 @@ class GameEngine:
                 "content": (
                     "あなたはAI駆動RPGのキャラクタースキル作成担当です。"
                     "Fantasiaのcreate_skill相当として、skills を持つJSONだけを返してください。"
-                    "skills は effects, skill_type, sp_cost, usefulness を含むオブジェクト配列にしてください。"
-                    "skills の各要素には element を必ず含め、指定された属性IDだけを使ってください。"
-                    "各スキルには power と strength_level を1から5の整数で必ず付けてください。"
-                    "回数制ではなくSP制です。強力なスキルほどsp_costを高くしてください。"
+                    "skills は name, desc, usesp, power, ability, element, type だけを持つオブジェクト配列にしてください。"
+                    "usespは1から12、powerは1から5の整数です。"
+                    "abilityはstr/dex/con/int/wis/cha/magic/willのいずれかです。"
+                    "element は指定された属性IDだけを使ってください。"
+                    "type は heal_single, heal_party, damage_hp_single, damage_hp_party, damage_sp_single, damage_sp_party, "
+                    "absorption_single, absorption_party, effect_enemy_single, effect_enemy_party, effect_self, effect_ally_single, effect_ally_party の配列です。"
+                    "複数回攻撃や複数効果のスキルでは、同じtypeを必要回数だけ重複して配列に入れてください。"
+                    "例: 3回攻撃なら type=[\"damage_hp_single\",\"damage_hp_single\",\"damage_hp_single\"]。"
                 ),
             },
             {
@@ -10352,7 +10421,8 @@ class GameEngine:
                     f"利用可能な属性ID: {element_options}\n"
                     f"今回生成するスキルの属性ID: {element_id}（{element_label}）\n"
                     f"{seed_instruction}\n"
-                    "このキャラクターのスキル、効果、属性、SPコスト、有用性を生成してください。"
+                    "スキル名や説明に「3連」「三連」「3回」「複数回」などが含まれる場合、その回数分だけ damage_hp_single 等を重複させてください。\n"
+                    "このキャラクターのスキルを新形式で生成してください。"
                 ),
             },
         ]
@@ -11338,33 +11408,33 @@ class GameEngine:
             "- Markdownや説明文を付けず、JSONオブジェクトだけを返してください。",
             "- 必須キー: content_violation:boolean, think:string, narration:string, process:array|object|string, finished:boolean。",
             "- think と process は短く。process は後続要約用なので、通常行動では1-2項目で十分です。",
-            "- 任意キーは必要な時だけ返してください: choices, recipients, reason, message。状態変更は必ず tools に入れてください。",
+            "- 任意キーは必要な時だけ返してください: choices, recipients, reason, message。状態変更候補は必ず tool_judgements に confidence 付きで入れてください。",
             "- choices の配列の中身は文字列にしてください。",
         ]
         if has_action_roll:
             lines.append("- game_side_action_roll が渡されている場合は、その成功/失敗/強制結果を結果描写と状態更新に反映してください。")
         if has_movement_options or dangerous_movement:
-            lines.append("- 移動する場合だけ tools に move_player を入れてください。行き先は world_data.movement_options.allowed_moves にある場所だけです。")
+            lines.append("- 移動する場合だけ tool_judgements に move_player を confidence=1.0 で入れてください。行き先は world_data.movement_options.allowed_moves にある場所だけです。")
             if has_active_quest:
-                lines.append("- クエスト目標への経路や周辺部屋を明かす場合だけ tools の world_subnode_reveal に subnode_map_reveal / unlock_subnode_route を入れてください。")
+                lines.append("- クエスト目標への経路や周辺部屋を明かす場合だけ tool_judgements の world_subnode_reveal に confidence=1.0 で subnode_map_reveal / unlock_subnode_route を入れてください。")
         if wants_person:
             lines.append("- NPC対象がいる場合だけ recipients を使い、好感度は npc_change_relationship、NPC移動は npc_move / npc_join_party / npc_remove_party / npc_dead、新規NPC候補は request_npc_generation に入れてください。既存NPCを再生成しないでください。")
         if wants_items:
-            lines.append("- アイテム入手は tools の item_add、消費・喪失・譲渡は item_remove、装備は item_equip、装備解除は item_unequip を使ってください。所持金だけが増減する場合は gold_delta を使ってください。")
+            lines.append("- アイテム入手は tool_judgements の item_add、消費・喪失・譲渡は item_remove、装備は item_equip、装備解除は item_unequip を confidence=1.0 で使ってください。所持金だけが増減する場合は gold_delta を使ってください。")
         if wants_status:
-            lines.append("- HP/SP/空腹/状態異常が変わる場合だけ tools の hp_effects/sp_effects/hunger_delta/status_effects に入れてください。")
+            lines.append("- HP/SP/空腹/状態異常が変わる場合だけ tool_judgements の hp_effects/sp_effects/hunger_delta/status_effects に confidence=1.0 で入れてください。")
         if wants_time:
-            lines.append("- 明確に時間が経過する場合だけ tools の time_passage に hours/days/reason を入れてください。")
+            lines.append("- 明確に時間が経過する場合だけ tool_judgements の time_passage に confidence=1.0 で hours/days/reason を入れてください。")
         if wants_home:
-            lines.append("- 家や拠点の建築・家具改善を素材で試みる時だけ tools の world_home_construction に home_construction を入れてください。")
+            lines.append("- 家や拠点の建築・家具改善を素材で試みる時だけ tool_judgements の world_home_construction に confidence=1.0 で home_construction を入れてください。")
         if wants_map:
-            lines.append("- ワールド地図や道順が新しく分かる時だけ tools の world_mainnode_reveal / world_subnode_reveal に経路表示情報を入れてください。")
+            lines.append("- ワールド地図や道順が新しく分かる時だけ tool_judgements の world_mainnode_reveal / world_subnode_reveal に confidence=1.0 で経路表示情報を入れてください。")
         if wants_game_over:
-            lines.append("- 確実にゲームオーバーになる結果だけ tools の game_over に reason/narration を入れてください。")
+            lines.append("- 確実にゲームオーバーになる結果だけ tool_judgements の game_over に confidence=1.0 で reason/narration を入れてください。")
         lines.append(tool_prompt_instruction())
         lines.append(
             '例: {"content_violation": false, "intent": {"kind": "look", "summary": "周囲を見る"}, '
-            '"narration": "短い描写", "process": [], "finished": false, "choices": ["周囲を見る"], "tools": []}'
+            '"narration": "短い描写", "process": [], "finished": false, "choices": ["周囲を見る"], "tool_judgements": []}'
         )
         return "\n".join(lines)
 
@@ -11447,7 +11517,7 @@ class GameEngine:
         if _is_skill_action(action):
             return self._resolve_player_skill(action, input_type, encounter)
         if _is_escape_action(action):
-            return self._resolve_player_any_input(action, input_type, encounter)
+            return combat_flow.resolve_player_escape(self, action, input_type, encounter)
         if _is_attack_action(action):
             return self._resolve_player_attack(action, input_type, encounter)
         return self._resolve_player_any_input(action, input_type, encounter)
@@ -11475,43 +11545,7 @@ class GameEngine:
         return self.state.log_text(16)
 
     def _resolve_player_skill(self, action: str, input_type: str, encounter: dict[str, Any]) -> str:
-        skill_name = _extract_skill_name(action)
-        skill = self._find_player_skill(skill_name)
-        if not skill:
-            narration = f"スキル「{skill_name or action}」は使用できない。"
-            self.state.flags["screen_mode"] = "battle"
-            self._append_turn(action, narration, str(encounter.get("location") or self.state.current_location), self._encounter_choices(encounter), input_type=input_type)
-            self.save_game()
-            return self.state.log_text(16)
-        cost = max(0, _safe_int(skill.get("sp_cost"), _skill_sp_cost(skill)))
-        max_sp = self._hp_number(encounter.get("player_max_sp"), self._player_max_sp())
-        current_sp = max(0, min(max_sp, self._hp_number(encounter.get("player_sp"), self._player_current_sp(max_sp))))
-        if cost > current_sp:
-            narration = f"SPが足りない。{skill.get('name')} はSP {cost} 必要。"
-            self.state.flags["screen_mode"] = "battle"
-            self._append_turn(action, narration, str(encounter.get("location") or self.state.current_location), self._encounter_choices(encounter), input_type=input_type)
-            self.save_game()
-            return self.state.log_text(16)
-        if cost:
-            event = self._apply_player_sp_delta(-cost, source="skill", reason=str(skill.get("name") or ""), encounter=encounter)
-            if event.get("line"):
-                encounter.setdefault("pending_resource_lines", []).append(str(event["line"]))
-        self._select_encounter_target_from_action(encounter, action)
-        player_response = self._referee_player_any_input_new_new(action, input_type, encounter)
-        self._strip_game_controlled_hp_updates(player_response, target="opponent")
-        self._strip_game_controlled_hp_updates(player_response, target="player")
-        self._apply_encounter_update(encounter, player_response.get("encounter_update"))
-        self._apply_response_implied_statuses(encounter, player_response, "opponent")
-        if _as_bool(player_response.get("content_violation")):
-            return self._finish_content_violation_encounter_turn(
-                action,
-                input_type,
-                encounter,
-                player_response,
-                "referee_player_any_input_new_new",
-            )
-        self._apply_player_skill_resolution(encounter, skill, player_response, action)
-        return self._resolve_npc_turn(action, input_type, encounter, player_response, "referee_player_any_input_new_new")
+        return combat_flow.resolve_player_skill(self, action, input_type, encounter)
 
     def _find_player_skill(self, name: str) -> dict[str, Any] | None:
         needle = str(name or "").strip().lower()
@@ -11522,6 +11556,18 @@ class GameEngine:
             if not needle or skill_name.lower() == needle or skill_name.lower() in needle or needle in skill_name.lower():
                 return skill
         return None
+
+    def _extract_skill_name_for_combat(self, action: str) -> str:
+        return _extract_skill_name(action)
+
+    def _strip_response_metadata_for_combat(self, response: dict[str, Any]) -> dict[str, Any]:
+        return _strip_response_metadata(response)
+
+    def _strip_encounter_log_for_combat(self, encounter: dict[str, Any]) -> dict[str, Any]:
+        return _strip_encounter_log(encounter)
+
+    def _game_over_choices_for_combat(self) -> list[str]:
+        return _game_over_choices()
 
     def _player_skills(self) -> list[dict[str, Any]]:
         skills: list[dict[str, Any]] = []
@@ -11540,153 +11586,6 @@ class GameEngine:
             seen.add(name)
             result.append(skill)
         return result
-
-    def _strip_game_controlled_hp_updates(self, response: dict[str, Any], *, target: str) -> None:
-        if not isinstance(response, dict):
-            return
-        top_keys = _game_controlled_hp_keys(target, top_level=True)
-        for key in list(response.keys()):
-            if str(key).strip().lower() in top_keys:
-                response.pop(key, None)
-        if "encounter_update" in response:
-            response["encounter_update"] = _strip_hp_update_value(response.get("encounter_update"), target)
-
-    def _apply_player_attack_damage(self, encounter: dict[str, Any], response: dict[str, Any], action: str) -> None:
-        old_hp = max(0, _safe_int(encounter.get("opponent_hp"), 0))
-        max_hp = max(old_hp, _safe_int(encounter.get("opponent_max_hp"), old_hp or 1))
-        attack = max(0, _safe_int(encounter.get("player_attack"), 0) + _safe_int(encounter.get("player_attack_bonus"), 0))
-        defense = max(0, _safe_int(encounter.get("opponent_defense"), 0))
-        attrs = self._player_attributes()
-        strength = max(1, _safe_int(attrs.get("str"), 10))
-        strength_factor = strength / 10.0
-        weakness = _combat_weakness_multiplier(response)
-        base = max(1, attack - defense)
-        raw_damage = base * strength_factor * weakness
-        damage = 0 if weakness <= 0 else max(1, int(round(raw_damage)))
-        result = self._apply_opponent_hp_delta(
-            encounter,
-            -damage,
-            source="player_attack",
-            reason="attack",
-        )
-        calc = {
-            "type": "player_attack",
-            "action": action,
-            "attack": attack,
-            "defense": defense,
-            "base_damage": base,
-            "strength": strength,
-            "strength_factor": round(strength_factor, 3),
-            "weakness_multiplier": weakness,
-            "damage": damage,
-            "old_hp": old_hp,
-            "new_hp": result.get("new_hp", old_hp),
-            "max_hp": max_hp,
-        }
-        narration = self._combat_damage_narration(
-            actor_name=self.state.player_name or "Player",
-            target_name=str(encounter.get("opponent_name") or "相手"),
-            action_name=action or "攻撃",
-            source_response=response,
-            combat_result=calc,
-        )
-        if narration:
-            response["narration"] = narration
-            calc["narration"] = narration
-        response["game_combat_result"] = calc
-        self.state.world_data.extra.setdefault("combat_events", []).append(dict(calc))
-        for line in result.get("lines", []):
-            encounter.setdefault("pending_resource_lines", []).append(str(line))
-
-    def _apply_player_skill_resolution(
-        self,
-        encounter: dict[str, Any],
-        skill: dict[str, Any],
-        response: dict[str, Any],
-        action: str,
-    ) -> None:
-        skill = _normalise_skill(skill)
-        skill_name = str(skill.get("name") or action or "スキル")
-        healing = _skill_is_healing(skill, response)
-        power = _entry_power(skill, fallback=_skill_power_from_text(skill))
-        ability = _combat_ability_from_response(response, skill=skill, healing=healing)
-        attrs = self._player_attributes()
-        ability_score = max(1, _safe_int(attrs.get(ability), 10))
-        raw_power = ability_score * 5 * max(SKILL_TRAIT_POWER_MIN, min(SKILL_TRAIT_POWER_MAX, power))
-        if healing:
-            result = self._apply_player_hp_delta(raw_power, source="player_skill", reason=skill_name, encounter=encounter)
-            actual = max(0, _safe_int(result.get("actual_delta"), 0))
-            calc = {
-                "type": "player_skill_heal",
-                "skill": skill_name,
-                "ability": ability,
-                "ability_score": ability_score,
-                "power": power,
-                "healing": raw_power,
-                "actual_healing": actual,
-                "old_hp": result.get("old_hp"),
-                "new_hp": result.get("new_hp"),
-                "max_hp": result.get("max_hp"),
-            }
-            narration = self._combat_heal_narration(
-                actor_name=self.state.player_name or "Player",
-                target_name=self.state.player_name or "Player",
-                action_name=action or skill_name,
-                skill_name=skill_name,
-                source_response=response,
-                combat_result=calc,
-            )
-            if narration:
-                response["narration"] = narration
-                calc["narration"] = narration
-            lines = []
-            if result.get("line"):
-                lines.append(str(result["line"]))
-        else:
-            defense_applies = _combat_apply_defense(response, default=_skill_default_uses_defense(skill))
-            defense = max(0, _safe_int(encounter.get("opponent_defense"), 0)) if defense_applies else 0
-            weakness = _combat_weakness_multiplier(response)
-            before_weakness = max(0, raw_power - defense)
-            raw_damage = before_weakness * weakness
-            damage = 0 if weakness <= 0 or before_weakness <= 0 else max(1, int(round(raw_damage)))
-            max_hp = max(1, _safe_int(encounter.get("opponent_max_hp"), _safe_int(encounter.get("opponent_hp"), 1)))
-            result = self._apply_opponent_hp_delta(
-                encounter,
-                -damage,
-                source="player_skill",
-                reason=skill_name,
-            )
-            calc = {
-                "type": "player_skill_damage",
-                "skill": skill_name,
-                "ability": ability,
-                "ability_score": ability_score,
-                "power": power,
-                "raw_power": raw_power,
-                "defense_applies": defense_applies,
-                "defense": defense,
-                "weakness_multiplier": weakness,
-                "damage": damage,
-                "old_hp": result.get("old_hp"),
-                "new_hp": result.get("new_hp"),
-                "max_hp": result.get("max_hp"),
-            }
-            narration = self._combat_damage_narration(
-                actor_name=self.state.player_name or "Player",
-                target_name=str(encounter.get("opponent_name") or "相手"),
-                action_name=action or skill_name,
-                source_response=response,
-                combat_result=calc,
-            )
-            if narration:
-                response["narration"] = narration
-                calc["narration"] = narration
-            lines = [str(line) for line in result.get("lines", [])]
-        calc["action"] = action
-        response["game_combat_result"] = calc
-        self.state.world_data.extra.setdefault("combat_events", []).append(dict(calc))
-        for line in lines:
-            encounter.setdefault("pending_resource_lines", []).append(str(line))
 
     def _apply_opponent_hp_delta(
         self,
@@ -11777,54 +11676,28 @@ class GameEngine:
         return apply_llm_npc_action_tool(self, encounter, npc_response, rewrite_response)
 
     def _npc_surrender_from_encounter(self, encounter: dict[str, Any]) -> dict[str, Any]:
-        opponent = self._encounter_opponent(encounter)
-        if not isinstance(opponent, Character):
-            encounter["opponent_status"] = SURRENDERED_STATUS_ID
-            return {"acted": True, "kind": "surrender", "lines": ["> [戦闘] 相手は降伏し、行動を止めた。"]}
-        effect = _normalise_status_effect(
-            {
-                "id": SURRENDERED_STATUS_ID,
-                "name": "降伏",
-                "description": "戦闘で降伏し、敵対行動を止めている。",
-                "duration": 0,
-                "combat_state": SURRENDERED_STATUS_ID,
-            },
-            source="npc_surrender",
+        result = run_combat_tool(
+            self,
+            CombatToolCall(
+                CombatToolName.NPC_SURRENDER,
+                source="legacy_npc_surrender_from_encounter",
+                encounter=encounter,
+                opponent=self._encounter_opponent(encounter),
+            ),
         )
-        _merge_status_effect(opponent.status_effects, effect)
-        opponent.flags["surrendered"] = True
-        opponent.flags["hostile"] = False
-        opponent.extra["surrendered"] = True
-        opponent.extra["hostile"] = False
-        self._set_encounter_opponent_combat_status(encounter, opponent, SURRENDERED_STATUS_ID)
-        return {"acted": True, "kind": "surrender", "lines": [f"> [戦闘] {opponent.name}は降伏し、行動を止めた。"]}
+        return {"acted": result.acted, "kind": "surrender", "lines": result.lines, "event": result.event}
 
     def _npc_flee_from_encounter(self, encounter: dict[str, Any]) -> dict[str, Any]:
-        opponent = self._encounter_opponent(encounter)
-        if not isinstance(opponent, Character):
-            encounter["opponent_status"] = FLED_STATUS_ID
-            encounter["status"] = "ended"
-            return {"acted": True, "kind": "flee", "lines": ["> [戦闘] 相手は逃亡し、戦闘から外れた。"]}
-        location = str(encounter.get("location") or opponent.location or self.state.current_location)
-        destination = self._npc_flee_destination(opponent, location)
-        opponent.flags["fled_from_combat"] = True
-        opponent.extra["fled_from_combat"] = True
-        self._set_encounter_opponent_combat_status(encounter, opponent, FLED_STATUS_ID)
-        if destination.get("location"):
-            self._set_character_presence(
-                opponent,
-                str(destination["location"]),
-                "present",
-                subnode_id=str(destination.get("subnode") or ""),
-            )
-            label = str(destination.get("label") or destination.get("location") or "")
-            line = f"> [戦闘] {opponent.name}は{label}へ逃亡し、戦闘から外れた。"
-        else:
-            opponent.state = FLED_STATUS_ID
-            opponent.flags["state"] = FLED_STATUS_ID
-            opponent.extra["state"] = FLED_STATUS_ID
-            line = f"> [戦闘] {opponent.name}はその場から逃げ去り、戦闘から外れた。"
-        return {"acted": True, "kind": "flee", "lines": [line]}
+        result = run_combat_tool(
+            self,
+            CombatToolCall(
+                CombatToolName.NPC_FLEE,
+                source="legacy_npc_flee_from_encounter",
+                encounter=encounter,
+                opponent=self._encounter_opponent(encounter),
+            ),
+        )
+        return {"acted": result.acted, "kind": "flee", "lines": result.lines, "event": result.event}
 
     def _npc_flee_destination(self, character: Character, location: str) -> dict[str, str]:
         world = self.state.world_data
@@ -11908,68 +11781,6 @@ class GameEngine:
         self.save_game()
         return self.state.log_text(16)
 
-    def _apply_npc_combat_damage(
-        self,
-        encounter: dict[str, Any],
-        npc_response: dict[str, Any],
-        rewrite_response: dict[str, Any],
-        *,
-        applied_status_effects: list[dict[str, Any]] | None = None,
-    ) -> list[str]:
-        if int(encounter.get("opponent_hp") or 0) <= 0:
-            return []
-        opponent = self._encounter_opponent(encounter)
-        if isinstance(opponent, Character) and self._character_has_surrendered(opponent, encounter):
-            return []
-        if _surrender_control_prevents_npc_damage(encounter, npc_response, rewrite_response):
-            return []
-        if not _npc_response_is_offensive(npc_response, rewrite_response):
-            return []
-        attack = max(0, _safe_int(encounter.get("opponent_attack"), 0))
-        defense = max(0, _safe_int(encounter.get("player_defense"), 0) + _safe_int(encounter.get("player_defense_bonus"), 0))
-        weakness = _combat_weakness_multiplier(
-            rewrite_response,
-            default=_combat_weakness_multiplier(npc_response, default=1.0),
-        )
-        base = max(1, attack - defense)
-        raw_damage = base * weakness
-        damage = 0 if weakness <= 0 else max(1, int(round(raw_damage)))
-        opponent_name = str(encounter.get("opponent_name") or "相手")
-        max_hp = max(1, _safe_int(encounter.get("player_max_hp"), self._player_max_hp()))
-        event = self._apply_player_hp_delta(-damage, source="npc_attack", reason=opponent_name, encounter=encounter)
-        calc = {
-            "type": "npc_attack",
-            "opponent": opponent_name,
-            "attack": attack,
-            "defense": defense,
-            "base_damage": base,
-            "weakness_multiplier": weakness,
-            "damage": damage,
-            "player_old_hp": event.get("old_hp"),
-            "player_new_hp": event.get("new_hp"),
-            "player_max_hp": event.get("max_hp"),
-        }
-        status_payload = _combat_status_effects_payload(applied_status_effects or [])
-        if status_payload:
-            calc["applied_status_effects"] = status_payload
-        narration = self._combat_damage_narration(
-            actor_name=opponent_name,
-            target_name=self.state.player_name or "Player",
-            action_name=f"{opponent_name}の攻撃",
-            source_response=rewrite_response or npc_response,
-            combat_result=calc,
-        )
-        if narration:
-            target_response = rewrite_response if isinstance(rewrite_response, dict) and rewrite_response else npc_response
-            target_response["narration"] = narration
-            calc["narration"] = narration
-        lines = []
-        if event.get("line"):
-            lines.append(str(event["line"]))
-        rewrite_response["game_combat_result"] = calc
-        self.state.world_data.extra.setdefault("combat_events", []).append(dict(calc))
-        return lines
-
     def _resolve_player_attack(
         self,
         action: str,
@@ -11977,927 +11788,10 @@ class GameEngine:
         encounter: dict[str, Any] | None = None,
     ) -> str:
         encounter = encounter or self._ensure_encounter(action)
-        self._select_encounter_target_from_action(encounter, action)
-        player_response = self._referee_player_attack_new_new(action, input_type, encounter)
-        self._strip_game_controlled_hp_updates(player_response, target="opponent")
-        self._apply_encounter_update(encounter, player_response.get("encounter_update"))
-        self._apply_response_implied_statuses(encounter, player_response, "opponent")
-        self._apply_player_attack_damage(encounter, player_response, action)
-        return self._resolve_npc_turn(action, input_type, encounter, player_response, "referee_player_attack_new_new")
+        return combat_flow.resolve_player_attack(self, action, input_type, encounter)
 
     def _resolve_player_any_input(self, action: str, input_type: str, encounter: dict[str, Any]) -> str:
-        self._select_encounter_target_from_action(encounter, action)
-        player_response = self._referee_player_any_input_new_new(action, input_type, encounter)
-        self._apply_encounter_update(encounter, player_response.get("encounter_update"))
-        self._apply_response_implied_statuses(encounter, player_response, "opponent")
-        if _as_bool(player_response.get("content_violation")):
-            narration = str(player_response.get("narration") or player_response.get("message") or "その行動は戦闘に反映されなかった。")
-            choices = _as_str_list(player_response.get("choices")) or self._encounter_choices(encounter)
-            previous_location = self.state.current_location
-            location = str(encounter.get("location") or self.state.current_location)
-            self._record_encounter_turn(
-                action,
-                input_type,
-                encounter,
-                [
-                    {
-                        "manager": "referee_player_any_input_new_new",
-                        "response": _strip_response_metadata(player_response),
-                    }
-                ],
-            )
-            self.state.flags["screen_mode"] = "battle"
-            self._append_turn(action, narration, location, choices, input_type=input_type)
-            self._apply_visual_intent(player_response, "referee_player_any_input_new_new", location, previous_location)
-            self.save_game()
-            return self.state.log_text(16)
-        return self._resolve_npc_turn(action, input_type, encounter, player_response, "referee_player_any_input_new_new")
-
-    def _finish_content_violation_encounter_turn(
-        self,
-        action: str,
-        input_type: str,
-        encounter: dict[str, Any],
-        player_response: dict[str, Any],
-        manager_name: str,
-    ) -> str:
-        narration = str(player_response.get("narration") or player_response.get("message") or "その行動は戦闘に反映されなかった。")
-        choices = _as_str_list(player_response.get("choices")) or self._encounter_choices(encounter)
-        previous_location = self.state.current_location
-        location = str(encounter.get("location") or self.state.current_location)
-        self._record_encounter_turn(
-            action,
-            input_type,
-            encounter,
-            [
-                {
-                    "manager": manager_name,
-                    "response": _strip_response_metadata(player_response),
-                }
-            ],
-        )
-        self.state.flags["screen_mode"] = "battle"
-        self._append_turn(action, narration, location, choices, input_type=input_type)
-        self._apply_visual_intent(player_response, manager_name, location, previous_location)
-        self.save_game()
-        return self.state.log_text(16)
-
-    def _resolve_group_npc_turn(
-        self,
-        action: str,
-        input_type: str,
-        encounter: dict[str, Any],
-        player_response: dict[str, Any],
-        player_manager: str,
-        status_lines: list[str],
-    ) -> str:
-        location = str(encounter.get("location") or self.state.current_location)
-        previous_location = self.state.current_location
-        manager_records: list[dict[str, Any]] = [
-            {"manager": player_manager, "response": _strip_response_metadata(player_response)}
-        ]
-        narration_parts: list[str] = [str(player_response.get("narration") or player_response.get("text") or "")]
-        terminal_outcome = self._apply_encounter_outcome(encounter)
-        status_lines.extend(self._apply_quest_encounter_outcome(encounter, terminal_outcome))
-        if terminal_outcome.get("narration"):
-            narration_parts.append(str(terminal_outcome.get("narration") or ""))
-
-        finished = (
-            _as_bool(player_response.get("finished"))
-            or _as_bool(terminal_outcome.get("ended"))
-            or _as_bool(encounter.get("capture_relocated"))
-        )
-        if not finished and not self._is_game_over():
-            for opponent in list(self._acting_encounter_opponents(encounter))[:COMBAT_MAX_OPPONENTS]:
-                self._set_encounter_active_opponent(encounter, opponent)
-                if max(0, _safe_int(opponent.current_hp, 0)) <= 0:
-                    continue
-                npc_response = self._referee_npc(action, input_type, encounter, player_response)
-                self._strip_game_controlled_hp_updates(npc_response, target="player")
-                npc_status_effects: list[dict[str, Any]] = []
-                npc_status_effects.extend(
-                    self._apply_encounter_update(
-                        encounter,
-                        npc_response.get("encounter_update"),
-                        context_actor=opponent,
-                        action_context=action,
-                        response_context=npc_response,
-                    )
-                )
-                npc_status_effects.extend(
-                    self._apply_response_implied_statuses(
-                        encounter,
-                        npc_response,
-                        "player",
-                        context_actor=opponent,
-                        action_context=action,
-                    )
-                )
-                status_lines.extend(self._apply_response_hp_effects(npc_response, "referee_npc", encounter=encounter))
-                status_lines.extend(self._apply_response_sp_effects(npc_response, "referee_npc", encounter=encounter))
-                status_lines.extend(self._apply_response_gold_effects(npc_response, "referee_npc"))
-                status_lines.extend(self._apply_response_hunger_effects(npc_response, "referee_npc"))
-                status_lines.extend(self._apply_response_exp_effects(npc_response, "referee_npc", encounter=encounter))
-                status_lines.extend(self._apply_response_time_effects(npc_response, "referee_npc"))
-                status_lines.extend(self._apply_response_game_over_effects(npc_response, "referee_npc", encounter=encounter))
-                status_lines.extend(
-                    self._apply_response_state_side_effects(
-                        npc_response,
-                        "referee_npc",
-                        default_character=opponent,
-                        default_location=location,
-                        encounter=encounter,
-                    )
-                )
-
-                if max(0, _safe_int(opponent.current_hp, 0)) <= 0:
-                    rewrite_response: dict[str, Any] = {}
-                elif self._should_referee_npc_rewrite(encounter, player_response, npc_response):
-                    rewrite_response = self._referee_npc_rewrite(action, input_type, encounter, player_response, npc_response)
-                else:
-                    rewrite_response = {}
-                self._strip_game_controlled_hp_updates(rewrite_response, target="player")
-                npc_status_effects.extend(
-                    self._apply_encounter_update(
-                        encounter,
-                        rewrite_response.get("encounter_update"),
-                        context_actor=opponent,
-                        action_context=action,
-                        response_context=rewrite_response,
-                    )
-                )
-                npc_status_effects.extend(
-                    self._apply_response_implied_statuses(
-                        encounter,
-                        rewrite_response,
-                        "player",
-                        context_actor=opponent,
-                        action_context=action,
-                    )
-                )
-                status_lines.extend(self._apply_response_hp_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
-                status_lines.extend(self._apply_response_sp_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
-                status_lines.extend(self._apply_response_gold_effects(rewrite_response, "referee_npc_rewrite"))
-                status_lines.extend(self._apply_response_hunger_effects(rewrite_response, "referee_npc_rewrite"))
-                status_lines.extend(self._apply_response_exp_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
-                status_lines.extend(self._apply_response_time_effects(rewrite_response, "referee_npc_rewrite"))
-                status_lines.extend(self._apply_response_game_over_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
-                status_lines.extend(
-                    self._apply_response_state_side_effects(
-                        rewrite_response,
-                        "referee_npc_rewrite",
-                        default_character=opponent,
-                        default_location=location,
-                        encounter=encounter,
-                    )
-                )
-                npc_tool_result = self._apply_npc_action_tool(encounter, npc_response, rewrite_response)
-                npc_tool_kind = str(npc_tool_result.get("kind") or "")
-                status_lines.extend(str(line) for line in npc_tool_result.get("lines", []) if line)
-                if not _as_bool(npc_tool_result.get("acted")):
-                    status_lines.extend(
-                        self._apply_npc_combat_damage(
-                            encounter,
-                            npc_response,
-                            rewrite_response,
-                            applied_status_effects=npc_status_effects,
-                        )
-                    )
-                player_submission_finished = _player_surrender_response_ends_encounter(encounter, npc_response, rewrite_response)
-                if player_submission_finished:
-                    encounter["player_status"] = str(encounter.get("player_status") or "surrender_accepted")
-                    status_lines.append("> [Combat] Player surrender/capture resolved; combat ended.")
-                if rewrite_response.get("narration") or rewrite_response.get("text") or npc_response.get("narration") or npc_response.get("text"):
-                    narration_parts.append(
-                        str(
-                            rewrite_response.get("narration")
-                            or rewrite_response.get("text")
-                            or npc_response.get("narration")
-                            or npc_response.get("text")
-                            or ""
-                        )
-                    )
-                manager_records.extend(
-                    [
-                        {"manager": "referee_npc", "opponent": opponent.name, "response": _strip_response_metadata(npc_response)},
-                        {
-                            "manager": "referee_npc_rewrite",
-                            "opponent": opponent.name,
-                            "response": _strip_response_metadata(rewrite_response),
-                        },
-                    ]
-                )
-                for manager_name, response in (
-                    ("referee_npc", npc_response),
-                    ("referee_npc_rewrite", rewrite_response),
-                ):
-                    self._apply_response_item_effects(response, manager_name)
-                    self._maybe_finish_active_quest_from_response(response, manager_name, action)
-                terminal_outcome = self._apply_encounter_outcome(encounter)
-                status_lines.extend(self._apply_quest_encounter_outcome(encounter, terminal_outcome))
-                if terminal_outcome.get("narration"):
-                    narration_parts.append(str(terminal_outcome.get("narration") or ""))
-                if self._is_game_over() or _as_bool(terminal_outcome.get("game_over")):
-                    finished = True
-                    break
-                if player_submission_finished:
-                    finished = True
-                    break
-                if (
-                    npc_tool_kind != "surrender"
-                    and (
-                        _as_bool(npc_response.get("finished"))
-                        or _as_bool(npc_response.get("should_end_encounter"))
-                        or _as_bool(rewrite_response.get("finished"))
-                    )
-                    or _as_bool(terminal_outcome.get("ended"))
-                ):
-                    finished = True
-                    break
-
-        if not self._is_game_over() and not _as_bool(terminal_outcome.get("ended")):
-            status_lines.extend(self._tick_encounter_status_effects(encounter))
-            status_lines.extend(self._apply_equipment_regen_effects("combat_turn", encounter=encounter))
-            terminal_outcome = self._apply_encounter_outcome(encounter)
-            status_lines.extend(self._apply_quest_encounter_outcome(encounter, terminal_outcome))
-            if terminal_outcome.get("narration"):
-                narration_parts.append(str(terminal_outcome.get("narration") or ""))
-
-        game_over = self._is_game_over() or _as_bool(terminal_outcome.get("game_over"))
-        living = self._living_encounter_opponents(encounter)
-        if game_over:
-            self.state.flags["screen_mode"] = "game_over"
-            self.state.flags.pop("active_encounter", None)
-            self.state.flags.pop("active_conversation", None)
-        elif finished or _as_bool(terminal_outcome.get("ended")) or not living:
-            encounter["status"] = "ended"
-            self._update_encounter_presence(encounter, str(terminal_outcome.get("opponent_state") or "gone"))
-            self.state.flags.pop("active_encounter", None)
-            self.state.flags["screen_mode"] = "exploration"
-        else:
-            encounter["status"] = "active"
-            acting = self._acting_encounter_opponents(encounter)
-            self._set_encounter_active_opponent(encounter, (acting or living)[0])
-            for opponent in living:
-                self._set_character_presence(opponent, location, "present")
-                self._sync_encounter_opponent_entry(encounter, opponent)
-            self.state.flags["active_encounter"] = encounter
-            self.state.flags["screen_mode"] = "battle"
-
-        narration = "\n".join(part for part in [*narration_parts, "\n".join(status_lines)] if part).strip()
-        if not narration:
-            narration = "The battle situation changed."
-        if game_over:
-            choices = _game_over_choices()
-        else:
-            choices = _dedupe_strs(_as_str_list(player_response.get("choices")) + ([] if not finished else _quest_start_choices(self.state.world_data.quests)))
-            if self._encounter_has_surrendered_opponents(encounter):
-                choices = _dedupe_strs(choices + ["降伏を受け入れる"])
-            if not choices:
-                choices = self._encounter_choices(encounter)
-        self._record_encounter_turn(action, input_type, encounter, manager_records)
-        for record in manager_records:
-            self.state.world_data.history.append(
-                {
-                    "manager": record["manager"],
-                    "action": action,
-                    "input_type": input_type,
-                    "opponent": record.get("opponent"),
-                    "encounter": _strip_encounter_log(encounter),
-                    "response": record["response"],
-                }
-            )
-        self._append_turn(action, narration, location, choices, input_type=input_type)
-        self._apply_visual_intent(player_response, player_manager, location, previous_location)
-        self._apply_response_item_effects(player_response, player_manager)
-        self._maybe_finish_active_quest_from_response(player_response, player_manager, action)
-        self.save_game()
-        return self.state.log_text(16)
-
-    def _resolve_npc_turn(
-        self,
-        action: str,
-        input_type: str,
-        encounter: dict[str, Any],
-        player_response: dict[str, Any],
-        player_manager: str,
-    ) -> str:
-        status_lines = list(encounter.pop("pending_resource_lines", []))
-        status_lines.extend(self._apply_response_hp_effects(player_response, player_manager, encounter=encounter))
-        status_lines.extend(self._apply_response_sp_effects(player_response, player_manager, encounter=encounter))
-        status_lines.extend(self._apply_response_gold_effects(player_response, player_manager))
-        status_lines.extend(self._apply_response_hunger_effects(player_response, player_manager))
-        status_lines.extend(self._apply_response_exp_effects(player_response, player_manager, encounter=encounter))
-        status_lines.extend(self._apply_response_time_effects(player_response, player_manager))
-        status_lines.extend(self._apply_response_game_over_effects(player_response, player_manager, encounter=encounter))
-        opponent = self._encounter_opponent(encounter)
-        status_lines.extend(
-            self._apply_response_state_side_effects(
-                player_response,
-                player_manager,
-                default_character=opponent if isinstance(opponent, Character) else None,
-                default_location=str(encounter.get("location") or self.state.current_location),
-                encounter=encounter,
-            )
-        )
-        if len(self._encounter_opponents(encounter)) > 1:
-            return self._resolve_group_npc_turn(action, input_type, encounter, player_response, player_manager, status_lines)
-        opponent_surrendered = isinstance(opponent, Character) and self._character_has_surrendered(opponent, encounter)
-        if int(encounter.get("opponent_hp") or 0) <= 0:
-            npc_response = {"finished": True, "narration": ""}
-        elif opponent_surrendered:
-            npc_response = {"finished": False, "narration": ""}
-        else:
-            npc_response = self._referee_npc(action, input_type, encounter, player_response)
-        self._strip_game_controlled_hp_updates(npc_response, target="player")
-        npc_status_effects: list[dict[str, Any]] = []
-        npc_status_effects.extend(
-            self._apply_encounter_update(
-                encounter,
-                npc_response.get("encounter_update"),
-                context_actor=opponent if isinstance(opponent, Character) else None,
-                action_context=action,
-                response_context=npc_response,
-            )
-        )
-        npc_status_effects.extend(
-            self._apply_response_implied_statuses(
-                encounter,
-                npc_response,
-                "player",
-                context_actor=opponent if isinstance(opponent, Character) else None,
-                action_context=action,
-            )
-        )
-        status_lines.extend(self._apply_response_hp_effects(npc_response, "referee_npc", encounter=encounter))
-        status_lines.extend(self._apply_response_sp_effects(npc_response, "referee_npc", encounter=encounter))
-        status_lines.extend(self._apply_response_gold_effects(npc_response, "referee_npc"))
-        status_lines.extend(self._apply_response_hunger_effects(npc_response, "referee_npc"))
-        status_lines.extend(self._apply_response_exp_effects(npc_response, "referee_npc", encounter=encounter))
-        status_lines.extend(self._apply_response_time_effects(npc_response, "referee_npc"))
-        status_lines.extend(self._apply_response_game_over_effects(npc_response, "referee_npc", encounter=encounter))
-        status_lines.extend(
-            self._apply_response_state_side_effects(
-                npc_response,
-                "referee_npc",
-                default_character=opponent if isinstance(opponent, Character) else None,
-                default_location=str(encounter.get("location") or self.state.current_location),
-                encounter=encounter,
-            )
-        )
-        opponent_surrendered = isinstance(opponent, Character) and self._character_has_surrendered(opponent, encounter)
-        if int(encounter.get("opponent_hp") or 0) <= 0 or opponent_surrendered:
-            rewrite_response = {}
-        elif self._should_referee_npc_rewrite(encounter, player_response, npc_response):
-            rewrite_response = self._referee_npc_rewrite(action, input_type, encounter, player_response, npc_response)
-        else:
-            rewrite_response = {}
-        self._strip_game_controlled_hp_updates(rewrite_response, target="player")
-        npc_status_effects.extend(
-            self._apply_encounter_update(
-                encounter,
-                rewrite_response.get("encounter_update"),
-                context_actor=opponent if isinstance(opponent, Character) else None,
-                action_context=action,
-                response_context=rewrite_response,
-            )
-        )
-        npc_status_effects.extend(
-            self._apply_response_implied_statuses(
-                encounter,
-                rewrite_response,
-                "player",
-                context_actor=opponent if isinstance(opponent, Character) else None,
-                action_context=action,
-            )
-        )
-        status_lines.extend(self._apply_response_hp_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
-        status_lines.extend(self._apply_response_sp_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
-        status_lines.extend(self._apply_response_gold_effects(rewrite_response, "referee_npc_rewrite"))
-        status_lines.extend(self._apply_response_hunger_effects(rewrite_response, "referee_npc_rewrite"))
-        status_lines.extend(self._apply_response_exp_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
-        status_lines.extend(self._apply_response_time_effects(rewrite_response, "referee_npc_rewrite"))
-        status_lines.extend(self._apply_response_game_over_effects(rewrite_response, "referee_npc_rewrite", encounter=encounter))
-        status_lines.extend(
-            self._apply_response_state_side_effects(
-                rewrite_response,
-                "referee_npc_rewrite",
-                default_character=opponent if isinstance(opponent, Character) else None,
-                default_location=str(encounter.get("location") or self.state.current_location),
-                encounter=encounter,
-            )
-        )
-        npc_tool_result = self._apply_npc_action_tool(encounter, npc_response, rewrite_response)
-        npc_tool_kind = str(npc_tool_result.get("kind") or "")
-        status_lines.extend(str(line) for line in npc_tool_result.get("lines", []) if line)
-        if not _as_bool(npc_tool_result.get("acted")):
-            status_lines.extend(
-                self._apply_npc_combat_damage(
-                    encounter,
-                    npc_response,
-                    rewrite_response,
-                    applied_status_effects=npc_status_effects,
-                )
-            )
-        player_submission_finished = _player_surrender_response_ends_encounter(encounter, npc_response, rewrite_response)
-        if player_submission_finished:
-            encounter["player_status"] = str(encounter.get("player_status") or "surrender_accepted")
-            status_lines.append("> [Combat] Player surrender/capture resolved; combat ended.")
-        status_lines.extend(self._tick_encounter_status_effects(encounter))
-        status_lines.extend(self._apply_equipment_regen_effects("combat_turn", encounter=encounter))
-        outcome = self._apply_encounter_outcome(encounter)
-        status_lines.extend(self._apply_quest_encounter_outcome(encounter, outcome))
-        if (
-            _as_bool(outcome.get("ended"))
-            and str(outcome.get("opponent_state") or "") == "dead"
-            and str(encounter.get("opponent_type") or "") == "character"
-        ):
-            status_lines.extend(
-                self._apply_crime_risk(
-                    action,
-                    {"crime_delta": 100, "reason": "killed_character_in_town"},
-                    "encounter_outcome",
-                    location=str(encounter.get("location") or self.state.current_location),
-                )
-            )
-
-        finished = (
-            _as_bool(player_response.get("finished"))
-            or (
-                npc_tool_kind != "surrender"
-                and (
-                    _as_bool(npc_response.get("finished"))
-                    or _as_bool(npc_response.get("should_end_encounter"))
-                    or _as_bool(rewrite_response.get("finished"))
-                )
-            )
-            or _as_bool(outcome.get("ended"))
-            or player_submission_finished
-        )
-        game_over = self._is_game_over() or _as_bool(outcome.get("game_over"))
-        if game_over:
-            self.state.flags["screen_mode"] = "game_over"
-            self.state.flags.pop("active_encounter", None)
-            self.state.flags.pop("active_conversation", None)
-        elif finished:
-            encounter["status"] = "ended"
-            self._update_encounter_presence(encounter, str(outcome.get("opponent_state") or "gone"))
-            self.state.flags.pop("active_encounter", None)
-            self.state.flags["screen_mode"] = "exploration"
-        else:
-            encounter["status"] = "active"
-            self._update_encounter_presence(encounter, "present")
-            self.state.flags["active_encounter"] = encounter
-            self.state.flags["screen_mode"] = "battle"
-
-        narration = "\n".join(
-            part
-            for part in [
-                str(player_response.get("narration") or player_response.get("text") or ""),
-                str(rewrite_response.get("narration") or rewrite_response.get("text") or npc_response.get("narration") or npc_response.get("text") or ""),
-                "\n".join(status_lines),
-                str(outcome.get("narration") or ""),
-            ]
-            if part
-        ).strip() or "戦闘の状況が変化した。"
-        if game_over:
-            choices = _game_over_choices()
-        else:
-            choices = _dedupe_strs(
-                _as_str_list(rewrite_response.get("choices") or npc_response.get("choices") or player_response.get("choices"))
-                + ([] if not finished else _quest_start_choices(self.state.world_data.quests))
-            )
-            if self._encounter_has_surrendered_opponents(encounter):
-                choices = _dedupe_strs(choices + ["降伏を受け入れる"])
-        if not choices:
-            choices = self._encounter_choices(encounter)
-
-        manager_records = [
-            {"manager": player_manager, "response": _strip_response_metadata(player_response)},
-            {"manager": "referee_npc", "response": _strip_response_metadata(npc_response)},
-            {"manager": "referee_npc_rewrite", "response": _strip_response_metadata(rewrite_response)},
-        ]
-        self._record_encounter_turn(action, input_type, encounter, manager_records)
-        for record in manager_records:
-            self.state.world_data.history.append(
-                {
-                    "manager": record["manager"],
-                    "action": action,
-                    "input_type": input_type,
-                    "encounter": _strip_encounter_log(encounter),
-                    "response": record["response"],
-                }
-            )
-
-        previous_location = self.state.current_location
-        location = str(encounter.get("location") or self.state.current_location)
-        self._append_turn(action, narration, location, choices, input_type=input_type)
-        visual_response = rewrite_response or npc_response or player_response
-        self._apply_visual_intent(visual_response, "referee_npc_rewrite", location, previous_location)
-        for manager_name, response in (
-            (player_manager, player_response),
-            ("referee_npc", npc_response),
-            ("referee_npc_rewrite", rewrite_response),
-        ):
-            self._apply_response_item_effects(response, manager_name)
-            self._maybe_finish_active_quest_from_response(response, manager_name, action)
-        self.save_game()
-        return self.state.log_text(16)
-
-    def _referee_player_attack_new_new(
-        self,
-        action: str,
-        input_type: str,
-        encounter: dict[str, Any],
-    ) -> dict[str, Any]:
-        world_payload = _ai_json(self._focused_world_ai_context(include_recent_log=False))
-        encounter_payload = json.dumps(_strip_encounter_log(encounter), ensure_ascii=False)
-        opponent_payload = json.dumps(self._encounter_opponent_payload(encounter), ensure_ascii=False)
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "あなたはAI駆動RPGのプレイヤー攻撃判定担当です。"
-                    "Fantasiaのreferee_player_attack_new_new相当として、"
-                    "プレイヤーの攻撃が当たるか、効果、戦闘状態更新、次の選択肢を判定してください。"
-                    "必ず narration, choices を持つJSONだけを返してください。"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"世界データ: {world_payload}\n"
-                    f"現在地: {self.state.current_location}\n"
-                    f"対象: {encounter.get('opponent_name')}\n"
-                    f"対象データ: {opponent_payload}\n"
-                    f"戦闘状態: {encounter_payload}\n"
-                    f"入力種別: {input_type}\n"
-                    f"プレイヤー行動: {action}\n"
-                    "この攻撃の結果を判定してください。"
-                ),
-            },
-        ]
-        messages.append(
-            {
-                "role": "user",
-                "content": (
-                    "Combat HP is controlled by the game. Do not directly decide opponent_hp or opponent_hp_delta. "
-                    "For this attack, return combat_judgement with weakness_multiplier from 0.0 to 3.0 and a short reason. "
-                    "0 means no effect, 1 means normal, values above 1 mean weakness or excellent matchup."
-                ),
-            }
-        )
-        return self._chat_json(
-            "referee_player_attack_new_new",
-            messages,
-            max_tokens=700,
-            world_name=self.state.world_name,
-            player_name=self.state.player_name,
-        )
-
-    def _referee_player_any_input_new_new(
-        self,
-        action: str,
-        input_type: str,
-        encounter: dict[str, Any],
-    ) -> dict[str, Any]:
-        world_payload = _ai_json(self._focused_world_ai_context(include_recent_log=False))
-        encounter_payload = json.dumps(_strip_encounter_log(encounter), ensure_ascii=False)
-        opponent_payload = json.dumps(self._encounter_opponent_payload(encounter), ensure_ascii=False)
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "あなたはAI駆動RPGの戦闘中自由入力判定担当です。"
-                    "Fantasiaのreferee_player_any_input_new_new相当として、"
-                    "降伏、交渉、防御、逃走など攻撃以外の入力意図と戦闘状態更新を判定してください。"
-                    "content_violation はゲーム側では判定しないため、必要な場合だけLLMとして判断してください。"
-                    "必ず narration, intent, choices を持つJSONだけを返してください。"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"世界データ: {world_payload}\n"
-                    f"現在地: {self.state.current_location}\n"
-                    f"対象: {encounter.get('opponent_name')}\n"
-                    f"対象データ: {opponent_payload}\n"
-                    f"戦闘状態: {encounter_payload}\n"
-                    f"入力種別: {input_type}\n"
-                    f"プレイヤー行動: {action}\n"
-                    "この戦闘中の自由入力を判定してください。"
-                ),
-            },
-        ]
-        if _is_skill_action(action):
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        "Skill HP is controlled by the game. Do not directly decide player_hp, player_hp_delta, "
-                        "opponent_hp, or opponent_hp_delta. For this skill, return combat_judgement with: "
-                        "effect_type damage or heal, ability one of str/dex/con/int/wis/cha/magic/will, "
-                        "apply_defense true or false, weakness_multiplier from 0.0 to 3.0, and a short reason."
-                    ),
-                }
-            )
-        return self._chat_json(
-            "referee_player_any_input_new_new",
-            messages,
-            max_tokens=700,
-            world_name=self.state.world_name,
-            player_name=self.state.player_name,
-        )
-
-    def _referee_npc(
-        self,
-        action: str,
-        input_type: str,
-        encounter: dict[str, Any],
-        player_response: dict[str, Any],
-    ) -> dict[str, Any]:
-        world_payload = _ai_json(self._focused_world_ai_context(include_recent_log=False))
-        encounter_payload = json.dumps(_strip_encounter_log(encounter), ensure_ascii=False)
-        player_payload = json.dumps(_strip_response_metadata(player_response), ensure_ascii=False)
-        opponent_payload = json.dumps(self._encounter_opponent_payload(encounter), ensure_ascii=False)
-        player_battle_payload = json.dumps(self._encounter_player_payload(encounter), ensure_ascii=False)
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "あなたはAI駆動RPGのNPC/敵行動判定担当です。"
-                    "Fantasiaのreferee_npc相当として、プレイヤー行動後のNPC/敵の行動を判定してください。"
-                    "NPCの性格、役割、世界観、敵対理由、直前のプレイヤー行動を必ず考慮してください。"
-                    "降伏、交渉、恐怖、慈悲、職業倫理などにより、攻撃以外の行動も自然に選んでください。"
-                    "必ず narration, npc_action, choices を持つJSONだけを返してください。"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"世界データ: {world_payload}\n"
-                    f"敵対者: {encounter.get('opponent_name')}\n"
-                    f"敵対者データ: {opponent_payload}\n"
-                    f"プレイヤー戦闘データ: {player_battle_payload}\n"
-                    f"戦闘状態: {encounter_payload}\n"
-                    f"入力種別: {input_type}\n"
-                    f"プレイヤー行動: {action}\n"
-                    f"プレイヤー側判定: {player_payload}\n"
-                    "このNPC/敵が次に取る行動を判定してください。"
-                ),
-            },
-        ]
-        messages.append(
-            {
-                "role": "user",
-                "content": (
-                    "Player HP damage is controlled by the game. Do not directly decide player_hp or player_hp_delta. "
-                    "If the NPC or enemy attacks this turn, return combat_judgement with offensive true and "
-                    "weakness_multiplier from 0.0 to 3.0. If it does not attack, set offensive false. "
-                    "Capture, restraint, disarming, watching, accepting surrender, or non-damaging entanglement after "
-                    "surrender are not HP-damage attacks; use status effects and combat_judgement.offensive=false for them. "
-                    "Choose the NPC action from its personality, traits, role, world context, the player's current HP ratio, "
-                    "player_status, and player_status_effects. If this NPC would capture weak prey, intimidate, restrain, "
-                    "feed, bargain, flee, or watch instead of simply damaging, describe that action and set offensive=false "
-                    "unless it is a real HP-damaging attack. Treat world data, world overview, theme, laws, and setting notes "
-                    "as shared NPC behavior rules. If the world says NPCs avoid killing, capture weakened enemies, honor surrender, "
-                    "or prefer survival, reflect that in this NPC's action. Available explicit NPC action tools: "
-                    "set npc_action='flee' when the NPC escapes to an adjacent node/location, or npc_action='surrender' when the NPC yields and stops acting. "
-                    "Surrender does not end the encounter by itself; the player may accept the surrender or keep fighting. "
-                    "For flee or surrender, set combat_judgement.offensive=false and do not describe HP damage. "
-                    "If the NPC attack also applies a debuff/status effect, include that debuff in narration as part of the same action. "
-                    "Return status effects with name, description, remove_condition, power, duration, effect_id, and llm_effect. "
-                    "Use effect_id=Inoperable for restraints or sleep, Psychosis for skill-sealing mental disorder, Silence for mouth/voice sealing, "
-                    "Paralysis for action penalties, HP_Damage/SP_Damage for automatic damage, and Atk_Mod/Def_Mod for temporary stat changes. "
-                    "For incapacitating effects, do not use a generic display name such as 行動不能; create a concrete name and description from the attack."
-                ),
-            }
-        )
-        return self._chat_json(
-            "referee_npc",
-            messages,
-            max_tokens=800,
-            world_name=self.state.world_name,
-            player_name=self.state.player_name,
-        )
-
-    def _should_referee_npc_rewrite(
-        self,
-        encounter: dict[str, Any],
-        player_response: dict[str, Any],
-        npc_response: dict[str, Any],
-    ) -> bool:
-        if not isinstance(npc_response, dict) or not npc_response:
-            return False
-        if _as_bool(npc_response.get("content_violation")):
-            return False
-        if _as_bool(npc_response.get("rewrite_required") or npc_response.get("needs_rewrite")):
-            return True
-        if _encounter_player_surrendered(encounter):
-            return True
-        if _response_has_status_effect_update(npc_response):
-            return True
-        if _response_has_status_effect_update(player_response) and _npc_response_is_offensive(npc_response):
-            return True
-        if _npc_action_tool_kind(npc_response):
-            return False
-        if _as_bool(npc_response.get("should_end_encounter")) and not _npc_response_is_offensive(npc_response):
-            return True
-        return False
-
-    def _referee_npc_rewrite(
-        self,
-        action: str,
-        input_type: str,
-        encounter: dict[str, Any],
-        player_response: dict[str, Any],
-        npc_response: dict[str, Any],
-    ) -> dict[str, Any]:
-        world_payload = _ai_json(self._focused_world_ai_context(include_recent_log=False))
-        encounter_payload = json.dumps(_strip_encounter_log(encounter), ensure_ascii=False)
-        player_payload = json.dumps(_strip_response_metadata(player_response), ensure_ascii=False)
-        npc_payload = json.dumps(_strip_response_metadata(npc_response), ensure_ascii=False)
-        opponent_payload = json.dumps(self._encounter_opponent_payload(encounter), ensure_ascii=False)
-        player_battle_payload = json.dumps(self._encounter_player_payload(encounter), ensure_ascii=False)
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "あなたはAI駆動RPGのNPC行動リライト担当です。"
-                    "Fantasiaのreferee_npc_rewrite相当として、referee_npcの判定を"
-                    "世界観、NPCの性格、プレイヤーの降伏/交渉などの文脈に合う自然な描写へ整えてください。"
-                    "判定が文脈に反して単調な攻撃になっている場合は、理由を保ったまま妥当な行動に補正してください。"
-                    "降伏後の拘束、捕獲、武装解除、監視、非致傷の絡め取りはHPダメージ攻撃ではないため、"
-                    "必要なら combat_judgement.offensive=false に補正してください。"
-                    "必ず narration, choices を持つJSONだけを返してください。"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"世界データ: {world_payload}\n"
-                    f"敵対者: {encounter.get('opponent_name')}\n"
-                    f"敵対者データ: {opponent_payload}\n"
-                    f"プレイヤー戦闘データ: {player_battle_payload}\n"
-                    f"戦闘状態: {encounter_payload}\n"
-                    f"入力種別: {input_type}\n"
-                    f"プレイヤー行動: {action}\n"
-                    f"プレイヤー側判定: {player_payload}\n"
-                    f"NPC側判定: {npc_payload}\n"
-                    "このNPC/敵の行動を自然文として整え、必要なら文脈に合うように補正してください。"
-                ),
-            },
-        ]
-        messages.append(
-            {
-                "role": "user",
-                "content": (
-                    "Rewrite the NPC action while preserving the game judgement. Consider player_hp/player_max_hp, "
-                    "player_status, player_status_effects, the world setting/worldview, and the NPC's personality/traits. "
-                    "If the world setting says NPCs avoid killing, capture weakened enemies, honor surrender, flee from danger, "
-                    "or act by a shared code, preserve that behavior. Do not turn capture, "
-                    "restraint, surrender acceptance, stalking, intimidation, or feeding preparation into a generic damage attack "
-                    "unless combat_judgement.offensive is truly appropriate. Preserve npc_action='flee' or npc_action='surrender' "
-                    "when that is the chosen tool, keep combat_judgement.offensive=false for those tools, and do not mark surrender as encounter finished unless the player accepted it. "
-                    "If a debuff/status effect is applied, rewrite narration so the attack method and debuff are described together. "
-                    "Use the status object fields name, description, remove_condition, power, duration, effect_id, and llm_effect. "
-                    "For restraints or sleep use effect_id=Inoperable, and do not leave the display name as generic 行動不能; use a concrete name and description based on the NPC's method."
-                ),
-            }
-        )
-        return self._chat_json(
-            "referee_npc_rewrite",
-            messages,
-            max_tokens=700,
-            world_name=self.state.world_name,
-            player_name=self.state.player_name,
-        )
-
-    def _combat_damage_narration(
-        self,
-        *,
-        actor_name: str,
-        target_name: str,
-        action_name: str,
-        source_response: dict[str, Any],
-        combat_result: dict[str, Any],
-    ) -> str:
-        payload = {
-            "actor": actor_name,
-            "target": target_name,
-            "action": action_name,
-            "source_narration": str(source_response.get("narration") or source_response.get("text") or ""),
-            "npc_action": source_response.get("npc_action"),
-            "intent": source_response.get("intent"),
-            "combat_judgement": source_response.get("combat_judgement"),
-            "result": _combat_narration_payload(combat_result),
-        }
-        fallback = _combat_damage_message(
-            _safe_int(payload["result"].get("damage"), 0),
-            max(1, _safe_int(payload["result"].get("max_hp"), 1)),
-            action_name=action_name,
-        )
-        status_fallback = _combat_status_effects_fallback_note(combat_result.get("applied_status_effects"), target_name)
-        if status_fallback:
-            fallback = f"{fallback}{status_fallback}"
-        try:
-            response = self._chat_json(
-                "combat_damage_narrator",
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "あなたはAI駆動RPGの戦闘結果描写担当です。"
-                            "ゲーム側で確定したダメージ、倍率、HP変化に合わせて、"
-                            "攻撃手段と結果が矛盾しない戦闘ログ用の短い自然文を作ってください。"
-                            "HPやダメージ量を変更してはいけません。"
-                            "damage が小さい場合は浅い傷やかすめた描写にし、"
-                            "lethal=true または new_hp=0 の場合はその攻撃で対象が力尽きたことを含めてください。"
-                            "result.applied_status_effects がある場合は、攻撃と同時にその状態異常が付与されたことを"
-                            "同じ文脈の自然な文章として必ず含めてください。"
-                            "必ず narration だけを持つJSONを返してください。"
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            "次の計算済み戦闘結果を、ログに表示する1〜2文へ整えてください。\n"
-                            f"{json.dumps(payload, ensure_ascii=False)}"
-                        ),
-                    },
-                ],
-                max_tokens=220,
-                world_name=self.state.world_name,
-                player_name=self.state.player_name,
-                retries=1,
-            )
-            narration = str(response.get("narration") or response.get("message") or "").strip()
-            if narration and status_fallback and not _combat_status_effects_mentioned(narration, combat_result.get("applied_status_effects")):
-                narration = f"{narration}{status_fallback}"
-            return narration or fallback
-        except Exception as exc:
-            self.state.world_data.extra.setdefault("combat_narration_errors", []).append(
-                {"manager": "combat_damage_narrator", "error": str(exc), "payload": payload}
-            )
-            return fallback
-
-    def _combat_heal_narration(
-        self,
-        *,
-        actor_name: str,
-        target_name: str,
-        action_name: str,
-        skill_name: str,
-        source_response: dict[str, Any],
-        combat_result: dict[str, Any],
-    ) -> str:
-        payload = {
-            "actor": actor_name,
-            "target": target_name,
-            "action": action_name,
-            "skill": skill_name,
-            "source_narration": str(source_response.get("narration") or source_response.get("text") or ""),
-            "combat_judgement": source_response.get("combat_judgement"),
-            "result": _combat_narration_payload(combat_result),
-        }
-        fallback = _combat_heal_message(_safe_int(payload["result"].get("healing"), 0), skill_name)
-        if fallback.startswith("> [戦闘] "):
-            fallback = fallback[len("> [戦闘] ") :]
-        try:
-            response = self._chat_json(
-                "combat_heal_narrator",
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "あなたはAI駆動RPGの回復結果描写担当です。"
-                            "ゲーム側で確定した回復量とHP変化に合わせて、"
-                            "回復手段と効果が矛盾しない戦闘ログ用の短い自然文を作ってください。"
-                            "HPや回復量を変更してはいけません。"
-                            "回復量が小さい場合は少し楽になった程度にし、回復量が0なら効果が薄い描写にしてください。"
-                            "必ず narration だけを持つJSONを返してください。"
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            "次の計算済み回復結果を、ログに表示する1〜2文へ整えてください。\n"
-                            f"{json.dumps(payload, ensure_ascii=False)}"
-                        ),
-                    },
-                ],
-                max_tokens=220,
-                world_name=self.state.world_name,
-                player_name=self.state.player_name,
-                retries=1,
-            )
-            narration = str(response.get("narration") or response.get("message") or "").strip()
-            return narration or fallback
-        except Exception as exc:
-            self.state.world_data.extra.setdefault("combat_narration_errors", []).append(
-                {"manager": "combat_heal_narrator", "error": str(exc), "payload": payload}
-            )
-            return fallback
+        return combat_flow.resolve_player_free_action(self, action, input_type, encounter)
 
     def _ensure_encounter(self, action: str) -> dict[str, Any]:
         active = self._active_encounter()
@@ -13894,28 +12788,20 @@ class GameEngine:
         return raw if isinstance(raw, list) else []
 
     def _player_incapacitated_effects(self) -> list[dict[str, Any]]:
-        effects: list[dict[str, Any]] = []
-        for raw in self._actor_status_effects("player"):
-            effect = _normalise_status_effect(raw)
-            if not effect:
-                continue
-            if _status_effect_blocks_action(effect) or _status_effect_blocks_movement(effect):
-                effects.append(effect)
-        return effects
+        return [
+            effect
+            for effect in self._actor_status_effects("player")
+            if isinstance(effect, dict) and (_combat_has_buff_type([effect], "restraint") or _combat_has_buff_type([effect], "psychosis"))
+        ]
 
     def _player_active_status_effects(self) -> list[dict[str, Any]]:
-        effects: list[dict[str, Any]] = []
-        for raw in self._actor_status_effects("player"):
-            effect = _normalise_status_effect(raw)
-            if effect:
-                effects.append(effect)
-        return effects
+        return [effect for effect in self._actor_status_effects("player") if isinstance(effect, dict)]
 
     def _player_skill_block_effects(self) -> list[dict[str, Any]]:
-        return [effect for effect in self._player_active_status_effects() if _status_effect_blocks_skill(effect)]
+        return [effect for effect in self._player_active_status_effects() if _combat_status_blocks_skill([effect])]
 
     def _player_silence_block_effects(self) -> list[dict[str, Any]]:
-        return [effect for effect in self._player_active_status_effects() if _status_effect_id(effect) == "Silence"]
+        return []
 
     def _player_incapacitated_action_block(
         self,
@@ -13925,21 +12811,15 @@ class GameEngine:
         for_movement: bool = False,
     ) -> str:
         if for_movement:
-            effects = self._player_incapacitated_effects()
-            return "movement" if any(_status_effect_blocks_movement(effect) for effect in effects) else ""
+            return ""
         if _is_skill_action(action) and self._player_skill_block_effects():
             return "skill"
         if _status_effect_action_uses_mouth(action) and self._player_silence_block_effects():
             return "silence"
-        effects = self._player_incapacitated_effects()
-        if not effects:
-            return ""
         if _is_escape_action(action):
-            return "escape" if any(_status_effect_blocks_escape(effect) for effect in effects) else ""
+            return "escape" if _combat_status_blocks_escape(self._actor_status_effects("player", encounter)) else ""
         if _is_attack_action(action) or _is_aggressive_player_action(action):
-            return "attack" if any(_status_effect_blocks_attack(effect) for effect in effects) else ""
-        if encounter and _is_movement_intent(action):
-            return "movement" if any(_status_effect_blocks_movement(effect) for effect in effects) else ""
+            return "attack" if _combat_status_blocks_attack(self._actor_status_effects("player", encounter)) else ""
         return ""
 
     def _player_incapacitated_message(self, reason: str = "") -> str:
@@ -14356,62 +13236,40 @@ class GameEngine:
     def _tick_encounter_status_effects(self, encounter: dict[str, Any]) -> list[str]:
         lines: list[str] = []
         opponents = self._encounter_opponents(encounter)
-        if opponents:
-            player_status_list = self._actor_status_effects("player", encounter)
-            if player_status_list:
-                hp = max(0, int(encounter.get("player_hp") or 0))
-                updated, hp_delta, sp_delta, tick_lines = _tick_status_effects(player_status_list, self.state.player_name or "Player")
-                if hp_delta:
-                    max_hp = _safe_int(encounter.get("player_max_hp"), hp)
-                    hp = max(0, min(max_hp if max_hp > 0 else hp + hp_delta, hp + hp_delta))
-                    encounter["player_hp"] = hp
-                if sp_delta:
-                    max_sp = _safe_int(encounter.get("player_max_sp"), self._player_max_sp())
-                    sp = max(0, _safe_int(encounter.get("player_sp"), self._player_current_sp(max_sp)) + sp_delta)
-                    encounter["player_sp"] = min(max_sp if max_sp > 0 else sp, sp)
-                lines.extend(tick_lines)
-                self._sync_actor_status_effects("player", updated, encounter)
-            active_uuid = str(encounter.get("active_opponent_uuid") or encounter.get("opponent_uuid") or "")
-            active_name = str(encounter.get("active_opponent_name") or encounter.get("opponent_name") or "")
-            for opponent in opponents:
-                self._set_encounter_active_opponent(encounter, opponent)
-                opponent_status_list = self._actor_status_effects("opponent", encounter)
-                if not opponent_status_list:
-                    continue
-                updated, hp_delta, sp_delta, tick_lines = _tick_status_effects(opponent_status_list, opponent.name)
-                if hp_delta:
-                    self._apply_opponent_hp_delta(encounter, hp_delta, source="status_tick", reason="status")
-                if sp_delta:
-                    max_sp = max(0, _safe_int(opponent.max_sp, 0))
-                    opponent.current_sp = max(0, min(max_sp if max_sp > 0 else opponent.current_sp + sp_delta, _safe_int(opponent.current_sp, 0) + sp_delta))
-                lines.extend(tick_lines)
-                self._sync_actor_status_effects("opponent", updated, encounter)
-            restore = self._character_from_reference(active_name, active_uuid)
-            if restore:
-                self._set_encounter_active_opponent(encounter, restore)
-            self._sync_player_battle_state(encounter)
-            return lines
-        for target, hp_key, label in (
-            ("player", "player_hp", "あなた"),
-            ("opponent", "opponent_hp", str(encounter.get("opponent_name") or "相手")),
-        ):
-            status_list = self._actor_status_effects(target, encounter)
-            if not status_list:
-                continue
-            hp = max(0, int(encounter.get(hp_key) or 0))
-            updated, hp_delta, sp_delta, tick_lines = _tick_status_effects(status_list, label)
-            if hp_delta:
-                max_hp = _safe_int(encounter.get("player_max_hp" if target == "player" else "opponent_max_hp"), hp)
-                hp = max(0, min(max_hp if max_hp > 0 else hp + hp_delta, hp + hp_delta))
-                encounter[hp_key] = hp
-            if sp_delta:
-                sp_key = "player_sp" if target == "player" else "opponent_sp"
-                max_sp_key = "player_max_sp" if target == "player" else "opponent_max_sp"
-                max_sp = _safe_int(encounter.get(max_sp_key), 0)
-                sp = max(0, _safe_int(encounter.get(sp_key), 0) + sp_delta)
-                encounter[sp_key] = min(max_sp if max_sp > 0 else sp, sp)
+        player_status_list = self._actor_status_effects("player", encounter)
+        if player_status_list:
+            updated, hp_delta, sp_delta, tick_lines = _combat_tick_buffs(player_status_list, self.state.player_name or "Player", combat_turn=True)
             lines.extend(tick_lines)
-            self._sync_actor_status_effects(target, updated, encounter)
+            if hp_delta:
+                event = self._apply_player_hp_delta(hp_delta, source="status_tick", reason="status", encounter=encounter)
+                if event.get("line"):
+                    lines.append(str(event["line"]))
+            if sp_delta:
+                event = self._apply_player_sp_delta(sp_delta, source="status_tick", reason="status", encounter=encounter)
+                if event.get("line"):
+                    lines.append(str(event["line"]))
+            self._sync_actor_status_effects("player", updated, encounter)
+        active_uuid = str(encounter.get("active_opponent_uuid") or encounter.get("opponent_uuid") or "")
+        active_name = str(encounter.get("active_opponent_name") or encounter.get("opponent_name") or "")
+        for opponent in opponents:
+            self._set_encounter_active_opponent(encounter, opponent)
+            opponent_status_list = self._actor_status_effects("opponent", encounter)
+            if not opponent_status_list:
+                continue
+            updated, hp_delta, sp_delta, tick_lines = _combat_tick_buffs(opponent_status_list, opponent.name, combat_turn=True)
+            lines.extend(tick_lines)
+            if hp_delta:
+                event = self._apply_opponent_hp_delta(encounter, hp_delta, source="status_tick", reason="status")
+                lines.extend(str(line) for line in event.get("lines", []) if line)
+            if sp_delta:
+                max_sp = max(0, _safe_int(opponent.max_sp, 0))
+                old_sp = max(0, _safe_int(opponent.current_sp, 0))
+                opponent.current_sp = max(0, min(max_sp if max_sp > 0 else old_sp + sp_delta, old_sp + sp_delta))
+                opponent.extra["current_sp"] = opponent.current_sp
+            self._sync_actor_status_effects("opponent", updated, encounter)
+        restore = self._character_from_reference(active_name, active_uuid)
+        if restore:
+            self._set_encounter_active_opponent(encounter, restore)
         self._sync_player_battle_state(encounter)
         return lines
 
@@ -15554,9 +14412,12 @@ class GameEngine:
         if encounter.get("status") == "ended":
             return _quest_start_choices(self.state.world_data.quests) or ["周囲を見る"]
         choices = ["攻撃", "スキル", "行動", "逃走"]
-        if self._player_incapacitated_effects():
-            choices = [choice for choice in choices if choice not in {"攻撃", "逃走"}]
-        if self._player_skill_block_effects():
+        player_statuses = self._actor_status_effects("player", encounter)
+        if _combat_status_blocks_attack(player_statuses):
+            choices = [choice for choice in choices if choice != "攻撃"]
+        if _combat_status_blocks_escape(player_statuses):
+            choices = [choice for choice in choices if choice != "逃走"]
+        if _combat_status_blocks_skill(player_statuses):
             choices = [choice for choice in choices if choice != "スキル"]
         if self._encounter_has_surrendered_opponents(encounter):
             choices.append("降伏を受け入れる")
@@ -18108,6 +16969,8 @@ class GameEngine:
             self._apply_visual_intent({}, "quest_abandoned", location, previous_location)
             self.save_game()
             return self.state.log_text(16)
+        if action_command_type == ActionCommandType.QUEST_REPORT.value:
+            return self._resolve_dedicated_quest_report(action, input_type, quest)
         referee = self._quest_referee_with_free_action(
             action,
             input_type,
@@ -18900,7 +17763,7 @@ def _character_visual_feature_parts(character: Character) -> list[str]:
         character.backstory,
     ]
     parts.extend(_dict_list_visual_parts(character.traits, ("name", "description", "effect", "severity", "visual", "appearance")))
-    parts.extend(_dict_list_visual_parts(character.skills, ("name", "description", "effect", "element", "skill_type", "visual_effect")))
+    parts.extend(_dict_list_visual_parts(character.skills, ("name", "desc", "effect", "element", "type", "visual_effect")))
     parts.extend(_dict_list_visual_parts(character.status_effects, ("name", "description", "llm_effect", "severity", "visual")))
     parts.extend(_ability_visual_parts(character.extra))
     parts.extend(_dict_list_visual_parts(character.inventory[:4], ("name", "category", "description")))
@@ -18939,7 +17802,7 @@ def _monster_visual_feature_parts(monster: Character) -> list[str]:
         monster.look,
     ]
     parts.extend(_dict_list_visual_parts(monster.traits, ("name", "description", "effect", "severity", "visual", "appearance")))
-    parts.extend(_dict_list_visual_parts(monster.skills, ("name", "description", "effect", "element", "skill_type", "visual_effect")))
+    parts.extend(_dict_list_visual_parts(monster.skills, ("name", "desc", "effect", "element", "type", "visual_effect")))
     return _dedupe_strs(parts)[:28]
 
 
@@ -19401,22 +18264,7 @@ def _character_entry_seed_instruction(seed_name: str = "", seed_description: str
 
 
 def _normalise_skill(value: Any) -> dict[str, Any]:
-    skill = _as_named_dict(value, "Skill")
-    name = str(skill.get("name") or skill.get("skill") or skill.get("title") or "").strip()
-    if not name:
-        return {}
-    skill["name"] = name
-    skill_type = str(skill.get("skill_type") or skill.get("type") or skill.get("category") or "physical").strip().lower()
-    skill["skill_type"] = skill_type or "physical"
-    skill["element"] = _normalise_element_id(skill.get("element") or skill.get("attribute") or skill.get("element_type") or skill.get("category") or skill.get("skill_type"))
-    skill["category"] = skill["element"]
-    power = _entry_power(skill, fallback=_skill_power_from_text(skill))
-    skill["power"] = power
-    skill["strength_level"] = power
-    skill["sp_cost"] = _skill_sp_cost(skill)
-    for old_key in ("max_uses", "uses", "remaining_uses", "current_uses"):
-        skill.pop(old_key, None)
-    return skill
+    return normalise_combat_skill(value)
 
 
 def _normalise_trait(value: Any) -> dict[str, Any]:
@@ -19430,39 +18278,6 @@ def _normalise_trait(value: Any) -> dict[str, Any]:
     trait["strength_level"] = power
     trait["severity"] = power
     return trait
-
-
-def _skill_sp_cost(skill: dict[str, Any]) -> int:
-    skill_type = str(skill.get("skill_type") or skill.get("type") or skill.get("category") or "").lower()
-    text = json.dumps(skill, ensure_ascii=False).lower()
-    if "passive" in skill_type or "常時" in text:
-        return 0
-    power = _entry_power(skill, fallback=_skill_power_from_text(skill))
-    power_floor = _skill_sp_floor(power)
-    explicit = (
-        skill.get("sp_cost")
-        or skill.get("cost_sp")
-        or skill.get("sp")
-        or skill.get("mp_cost")
-        or skill.get("mana_cost")
-    )
-    if explicit not in (None, ""):
-        return max(0, min(99, max(_safe_int(explicit, 0), power_floor)))
-    cost = 5
-    if any(word in skill_type for word in ("magic", "spell", "arcane", "support")):
-        cost += 2
-    if any(word in skill_type for word in ("ultimate", "special", "burst", "奥義", "必殺")):
-        cost += 8
-    effect_count = len(skill.get("effects")) if isinstance(skill.get("effects"), list) else 0
-    cost += min(6, effect_count * 2)
-    numeric_values = [abs(_safe_int(match.group(0), 0)) for match in re.finditer(r"\d+", text)]
-    if numeric_values:
-        cost += min(8, max(numeric_values) // 2)
-    if any(word in text for word in ("high", "very", "powerful", "great", "major", "large", "area", "aoe", "all", "revive", "death", "instant", "強力", "大", "全体", "蘇生", "即死")):
-        cost += 5
-    if any(word in text for word in ("low", "minor", "small", "weak", "軽", "小")):
-        cost -= 2
-    return max(1, min(30, max(cost, power_floor)))
 
 
 def _entry_power(value: Any, fallback: int = 1) -> int:
@@ -19611,7 +18426,7 @@ def _skill_trait_power_instruction(character: Character) -> str:
     if _is_player_power_actor(character):
         return (
             f"{scale} スキルや体質はBPを消費しません。"
-            "プレイヤーが自由に作れる要素なので、各項目に power と strength_level を1〜5で付けてください。"
+            "プレイヤーが自由に作れる要素なので、各項目に power を1〜5で付けてください。"
         )
     budget = _actor_power_budget(character)
     used = _entry_power_total(character.traits) + _entry_power_total(character.skills)
@@ -20078,26 +18893,13 @@ def _quest_captor_resolution_action(action: str) -> bool:
 
 
 def _quest_completion_report_action(action: str) -> bool:
-    text = str(action or "").casefold()
-    if any(
-        word in str(action or "")
-        for word in (
-            "\u5831\u544a",
-            "\u5b8c\u4e86",
-            "\u9054\u6210",
-            "\u4f9d\u983c\u4e3b",
-            "\u30ae\u30eb\u30c9",
-            "\u53d7\u4ed8",
-            "\u623b",
-            "\u5e30\u9084",
-            "\u5831\u916c",
-        )
-    ):
+    original = str(action or "").strip()
+    if original == QUEST_REPORT_CHOICE_LABEL:
         return True
-    return any(word in text for word in ("report", "complete", "turn in", "return to client", "claim reward", "guild")) or any(
-        word in str(action or "")
-        for word in ("報告", "完了", "達成", "依頼主", "ギルド", "受付", "戻", "帰還", "報酬")
-    )
+    text = original.casefold()
+    if any(phrase in original for phrase in ("依頼を報告", "依頼の報告", "達成報告", "完了報告", "報酬を受け取", "報酬を請求")):
+        return True
+    return any(word in text for word in ("report quest", "turn in quest", "claim reward"))
 
 
 def _normalise_world_starting_location(world: WorldData, response: dict[str, Any] | None = None) -> None:
@@ -20974,11 +19776,15 @@ def _augment_location_choices_for_world(
     *,
     active_quest: bool,
     can_move: bool = False,
+    quest_report_ready: bool = False,
 ) -> list[str]:
     result = list(choices)
     if can_move:
         result.insert(0, MOVE_CHOICE_LABEL)
-    if _location_is_guild(world, location_name) and not active_quest:
+    if quest_report_ready:
+        result = [choice for choice in result if str(choice).strip() != QUEST_REPORT_CHOICE_LABEL]
+        result.insert(0, QUEST_REPORT_CHOICE_LABEL)
+    elif _location_is_guild(world, location_name) and not active_quest:
         result = [choice for choice in result if not _is_direct_quest_accept_choice(choice)]
         result.insert(0, QUEST_BOARD_CHOICE_LABEL)
     return _exploration_choices(result)
@@ -22372,7 +21178,10 @@ def _character_ai_context(character: Character, *, details: bool = True) -> dict
         "max_hp": character.max_hp,
         "current_sp": character.current_sp,
         "max_sp": character.max_sp,
+        "attack": character.attack,
+        "defense": character.defense,
         "attributes": _compact_value(character.attributes, max_chars=500),
+        "resistance": _compact_value(character.resistance, max_chars=300),
         "gender": character.gender,
         "age": character.age,
         "backstory": _short_text(character.backstory, 700 if details else 280),

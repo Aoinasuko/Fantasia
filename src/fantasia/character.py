@@ -32,6 +32,7 @@ class Character:
     image_generation_prompt: list[str] = field(default_factory=list)
     traits: list[dict[str, Any]] = field(default_factory=list)
     skills: list[dict[str, Any]] = field(default_factory=list)
+    resistance: list[dict[str, Any]] = field(default_factory=list)
     status_effects: list[dict[str, Any]] = field(default_factory=list)
     inventory: list[dict[str, Any]] = field(default_factory=list)
     equipment: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -60,6 +61,7 @@ class Character:
         kwargs["image_generation_prompt"] = _as_list(kwargs.get("image_generation_prompt"))
         kwargs["traits"] = _as_list(kwargs.get("traits"))
         kwargs["skills"] = _as_list(kwargs.get("skills"))
+        kwargs["resistance"] = _as_list(kwargs.get("resistance"))
         kwargs["status_effects"] = _as_list(kwargs.get("status_effects"))
         kwargs["inventory"] = _as_list(kwargs.get("inventory"))
         kwargs["equipment"] = _as_dict(kwargs.get("equipment"))
@@ -101,11 +103,11 @@ def _as_int(value: Any, default: int = 0) -> int:
 
 
 def _as_list(value: Any) -> list:
-    return value if isinstance(value, list) else []
+    return list(value) if isinstance(value, list) else []
 
 
 def _as_dict(value: Any) -> dict:
-    return value if isinstance(value, dict) else {}
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _int_dict(value: Any) -> dict[str, int]:

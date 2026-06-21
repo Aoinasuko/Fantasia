@@ -124,6 +124,8 @@ QUEST_BOARD_NAME = "依頼掲示板"
 
 QUEST_BOARD_CHOICE_LABEL = "依頼掲示板を見る"
 
+QUEST_REPORT_CHOICE_LABEL = "達成した依頼を報告する"
+
 QUEST_DEADLINE_HOURS = 48
 
 QUEST_TYPES = {"rescue", "retrieve", "defeat", "delivery", "investigate", "procure"}

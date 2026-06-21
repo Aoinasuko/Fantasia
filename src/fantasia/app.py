@@ -663,7 +663,7 @@ class FantasiaApp(tk.Tk):
         self.character_look_text.insert("1.0", "short hair, clear eyes, leather armor, practical travel cloak")
         self.character_personality_text.insert("1.0", "慎重だが、困っている人を見捨てられない。")
         self.character_traits_text.insert("1.0", "冷静 | 危機でも判断力を失いにくい | 2\n旅慣れ | 野外行動に慣れている | 1")
-        self.character_skills_text.insert("1.0", "一閃 | physical | 武器で素早く斬り込む基本技 | 5\n応急手当 | other | 簡単な治療で体勢を立て直す | 3")
+        self.character_skills_text.insert("1.0", "一閃 | physical | 武器で素早く斬り込む基本技 | 5 | 2 | str | damage_hp_single\n応急処置 | light | 簡単な治療で体勢を立て直す | 3 | 1 | wis | heal_single")
 
         actions = tk.Frame(panel, bg="#111722")
         actions.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(12, 0))
@@ -1573,15 +1573,15 @@ class FantasiaApp(tk.Tk):
         self.start_game_btn.grid(row=0, column=0, sticky="ew", padx=8, pady=(6, 8), ipady=4)
         self.task_buttons.append(self.start_game_btn)
 
-        self.character_backstory_text.insert("1.0", "辺境の村で育った駆け出しの冒険者。")
+        self.character_backstory_text.insert("1.0", "辺境の村で育った駆け出しの冒険者。慎重だが、困っている人を見捨てられない。")
         self.character_look_text.insert("1.0", "short hair, clear eyes, leather armor, practical travel cloak")
         self.character_personality_text = tk.Text(screen, height=1)
-        self.character_personality_text.insert("1.0", "慎重だが、困っている人を見捨てられない。")
+        self.character_personality_text.insert("1.0", "")
         self._set_character_entries(
             "skills",
-            _parse_character_skills(
-                "一閃 | physical | 武器で素早く斬り込む基本技 | 5 | 2\n"
-                "応急手当 | support | 簡単な治療で体勢を立て直す | 3 | 1"
+                _parse_character_skills(
+                "一閃 | physical | 武器で素早く斬り込む基本技 | 5 | 2 | str | damage_hp_single\n"
+                "応急処置 | light | 簡単な治療で体勢を立て直す | 3 | 1 | wis | heal_single"
             ),
         )
         self._set_character_entries(
@@ -2154,8 +2154,8 @@ class FantasiaApp(tk.Tk):
             self._set_character_entries(
                 "skills",
                 _parse_character_skills(
-                    "一閃 | physical | 武器で素早く斬り込む基本技 | 5 | 2\n"
-                    "応急手当 | support | 簡単な治療で体勢を立て直す | 3 | 1"
+                    "一閃 | physical | 武器で素早く斬り込む基本技 | 5 | 2 | str | damage_hp_single\n"
+                    "応急処置 | light | 簡単な治療で体勢を立て直す | 3 | 1 | wis | heal_single"
                 ),
             )
         if hasattr(self, "character_traits_frame") or hasattr(self, "character_traits_text"):
@@ -2334,7 +2334,7 @@ class FantasiaApp(tk.Tk):
         if is_skill:
             language = getattr(self.config_data, "language", "ja")
             element_labels = [tr_enum("element", element_id, language, fallback=element_id) for element_id in ELEMENT_IDS]
-            current_element = _normalise_element_id(current_entry.get("element") or current_entry.get("category") or current_entry.get("skill_type"), fallback="fire")
+            current_element = _normalise_element_id(current_entry.get("element"), fallback="fire")
             element_var.set(tr_enum("element", current_element, language, fallback=current_element))
             tk.Label(
                 top,
@@ -2358,7 +2358,7 @@ class FantasiaApp(tk.Tk):
             font=self.ui_fonts.bold(-2),
         ).grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 0))
         description_text = self._instant_text(description_frame, 1, 0, height=10, padx=8, pady=(4, 8))
-        current_description = str(current_entry.get("description") or current_entry.get("effect") or current_entry.get("usefulness") or "").strip()
+        current_description = str(current_entry.get("desc") or current_entry.get("description") or current_entry.get("effect") or "").strip()
         if current_description:
             description_text.insert("1.0", current_description)
 
@@ -2423,10 +2423,9 @@ class FantasiaApp(tk.Tk):
                 if seed_name:
                     entry["name"] = seed_name
                 if seed_description:
-                    entry["description"] = seed_description
+                    entry["desc" if is_skill else "description"] = seed_description
                 if is_skill:
                     entry["element"] = element_id
-                    entry.setdefault("category", element_id)
                     entry = _normalise_character_skills([entry])[0]
                 else:
                     entry = _normalise_character_traits([entry])[0]
@@ -2868,9 +2867,10 @@ class FantasiaApp(tk.Tk):
         language = self.config_data.language
         kind = str(item.get("kind") or "")
         name = str(item.get("name") or "")
+        uuid = str(item.get("uuid") or "").strip()
         encounter = item.get("encounter") if isinstance(item.get("encounter"), dict) else {}
         if kind in {"player", "character", "companion"}:
-            character = self.engine.state.world_data.character(name)
+            character = self.engine.state.world_data.character(uuid or name)
             if character and kind != "player":
                 self.engine._ensure_character_runtime_data(character)
             data = character.to_dict() if character else {}
@@ -2883,9 +2883,76 @@ class FantasiaApp(tk.Tk):
                 encounter = self.engine.state.flags.get("active_encounter") if isinstance(self.engine.state.flags.get("active_encounter"), dict) else {}
             if not data:
                 return f"{name}\n\n{tr_enum('roster', 'no_character_data', language)}"
-            return _format_character_status_detail(data, encounter if isinstance(encounter, dict) else {}, is_player=kind == "player", language=language)
+            data = dict(data)
+            encounter_data = encounter if isinstance(encounter, dict) else {}
+            data["status_effects"] = self._actor_detail_status_effects(data, kind=kind, encounter=encounter_data)
+            return _format_character_status_detail(data, encounter_data, is_player=kind == "player", language=language)
 
         return f"{name}\n\n{tr_enum('roster', 'no_status_data', language)}"
+
+    def _actor_detail_status_effects(self, data: dict[str, object], *, kind: str, encounter: dict[str, object]) -> list[object]:
+        collected: list[object] = []
+        seen: set[str] = set()
+
+        def add_all(value: object) -> None:
+            if not isinstance(value, list):
+                return
+            for effect in value:
+                if isinstance(effect, dict):
+                    key_source = (
+                        effect.get("effect_id")
+                        or effect.get("id")
+                        or effect.get("status_id")
+                        or effect.get("name")
+                        or effect.get("status")
+                        or json.dumps(effect, ensure_ascii=False, sort_keys=True, default=str)
+                    )
+                    key = str(key_source).strip().casefold()
+                    item: object = dict(effect)
+                else:
+                    key = str(effect).strip().casefold()
+                    item = effect
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                collected.append(item)
+
+        active_encounter = isinstance(encounter, dict) and encounter.get("status") != "ended"
+        if kind == "player":
+            add_all(getattr(self.engine.state, "status_effects", []))
+            if active_encounter:
+                add_all(encounter.get("player_status_effects"))
+            player = self.engine.player_character()
+            if player:
+                add_all(player.status_effects)
+            if self.engine.state.party and isinstance(self.engine.state.party[0], dict):
+                add_all(self.engine.state.party[0].get("status_effects"))
+            add_all(data.get("status_effects"))
+            return collected
+
+        data_name = str(data.get("name") or "").strip()
+        data_uuid = str(data.get("uuid") or "").strip()
+        if active_encounter:
+            raw_opponents = encounter.get("opponents")
+            for entry in raw_opponents if isinstance(raw_opponents, list) else []:
+                if not isinstance(entry, dict):
+                    continue
+                entry_name = str(entry.get("name") or "").strip()
+                entry_uuid = str(entry.get("uuid") or "").strip()
+                if entry_name == data_name or (data_uuid and entry_uuid == data_uuid):
+                    add_all(entry.get("status_effects"))
+                    add_all(entry.get("opponent_status_effects"))
+                    break
+            if str(encounter.get("opponent_name") or "").strip() == data_name or (
+                data_uuid and str(encounter.get("opponent_uuid") or "").strip() == data_uuid
+            ):
+                add_all(encounter.get("opponent_status_effects"))
+
+        character = self.engine.state.world_data.character(data_uuid or data_name)
+        if character:
+            add_all(character.status_effects)
+        add_all(data.get("status_effects"))
+        return collected
 
     def _npc_roster_items(self) -> list[dict[str, object]]:
         state = self.engine.state
@@ -2933,6 +3000,7 @@ class FantasiaApp(tk.Tk):
                 items.append(
                     {
                         "name": name,
+                        "uuid": uuid,
                         "subtitle": opponent_type or "enemy",
                         "hp": hp_text,
                         "image": image,
@@ -3054,7 +3122,16 @@ class FantasiaApp(tk.Tk):
             hp = str(player.get("hp") or player.get("health") or f"{current_hp}/{max_hp}")
             sp = str(player.get("sp") or f"{current_sp}/{max_sp}")
         subtitle = f"Lv:{level or '1'}"
-        return {"name": name, "subtitle": subtitle, "hp": f"HP:{hp}", "sp": f"SP:{sp}", "image": image, "attrs": attrs, "kind": kind}
+        return {
+            "name": name,
+            "uuid": str(player.get("uuid") or ""),
+            "subtitle": subtitle,
+            "hp": f"HP:{hp}",
+            "sp": f"SP:{sp}",
+            "image": image,
+            "attrs": attrs,
+            "kind": kind,
+        }
 
     def _actor_image_from_paths(self, image_paths: dict[str, str], keys: tuple[str, ...]) -> Image.Image | None:
         return self._load_layer_image(_subject_image_path(image_paths, keys))
@@ -6368,6 +6445,9 @@ class FantasiaApp(tk.Tk):
             self._refresh_choices()
             return True
         if choice in {"攻撃", "スキル", "行動", "逃走"}:
+            allowed = {item for item in self.engine.state.choices if item in {"攻撃", "スキル", "行動", "逃走"}}
+            if allowed and choice not in allowed:
+                return False
             self.battle_choice_menu = choice
             self._refresh_choices()
             return True
@@ -6380,7 +6460,8 @@ class FantasiaApp(tk.Tk):
             return [choice for choice in self.engine.state.choices if choice.strip()]
         menu = self.battle_choice_menu
         if not menu:
-            return ["攻撃", "スキル", "行動", "逃走"]
+            visible = [choice for choice in self.engine.state.choices if choice in {"攻撃", "スキル", "行動", "逃走"}]
+            return visible or ["攻撃", "スキル", "行動", "逃走"]
         if menu == "攻撃":
             return [f"{target}を攻撃する" for target in self._battle_target_names(encounter)] + ["戻る"]
         if menu == "スキル":
@@ -6389,7 +6470,7 @@ class FantasiaApp(tk.Tk):
             choices: list[str] = []
             for skill in skills:
                 for target in targets:
-                    choices.append(f"skill: {skill['name']} -> {target} (SP {skill['sp_cost']})")
+                    choices.append(f"skill: {skill['name']} -> {target} (SP {skill['usesp']})")
                     if len(choices) >= 4:
                         break
                 if len(choices) >= 4:
@@ -6413,15 +6494,11 @@ class FantasiaApp(tk.Tk):
                 name = str(raw.get("name") or raw.get("skill") or "").strip()
                 if not name:
                     continue
-                skill_type = str(raw.get("skill_type") or raw.get("type") or "").lower()
-                if "passive" in skill_type:
+                effect_types = _skill_effect_type_list(raw.get("type"))
+                if not effect_types:
                     continue
-                cost = _safe_int(raw.get("sp_cost") or raw.get("cost_sp") or raw.get("sp") or raw.get("mp_cost"), 0)
-                if cost <= 0:
-                    cost = _estimate_skill_sp_cost(raw)
-                if cost <= 0:
-                    continue
-                skills.append({**raw, "name": name, "sp_cost": cost})
+                cost = max(1, min(12, _safe_int(raw.get("usesp"), 1)))
+                skills.append({**raw, "name": name, "usesp": cost, "type": [{"type": item} for item in effect_types]})
         return skills
 
     def _battle_free_actions(self, encounter: dict[str, object]) -> list[str]:
@@ -6596,7 +6673,7 @@ def run_save_smoke_test() -> None:
                     look="short hair, leather armor, travel cloak",
                     personality="calm and curious",
                     traits=[{"name": "冷静", "description": "危機でも判断力を保つ", "severity": 2}],
-                    skills=[{"name": "一閃", "element": "none", "description": "素早い攻撃", "skill_type": "physical", "sp_cost": 5}],
+                    skills=[{"name": "一閃", "desc": "素早い攻撃", "usesp": 5, "power": 2, "ability": "str", "element": "physical", "type": [{"type": "damage_hp_single"}]}],
                     extra={"ability": {"attributes": {"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10}}},
                 )
             )
@@ -6777,18 +6854,16 @@ def _parse_character_skills(text: str) -> list[dict[str, object]]:
         parts = [part.strip() for part in line.replace("｜", "|").replace("：", "|").split("|")]
         if not parts or not parts[0]:
             continue
+        power = _entry_power(parts[4] if len(parts) > 4 else 1)
         skill = {
             "name": parts[0],
             "element": parts[1] if len(parts) > 1 else "",
-            "description": parts[2] if len(parts) > 2 else "",
-            "skill_type": "physical",
-            "sp_cost": _safe_int(parts[3], 0) if len(parts) > 3 else 0,
+            "desc": parts[2] if len(parts) > 2 else "",
+            "usesp": max(1, min(12, _safe_int(parts[3], 1) if len(parts) > 3 else 1)),
+            "power": power,
+            "ability": parts[5].lower() if len(parts) > 5 and parts[5] else "str",
+            "type": [{"type": item} for item in _skill_effect_type_list(parts[6] if len(parts) > 6 else "damage_hp_single")],
         }
-        if not skill["sp_cost"]:
-            skill["sp_cost"] = _estimate_skill_sp_cost(skill)
-        power = _entry_power(parts[4] if len(parts) > 4 else skill, fallback=_skill_power_from_cost(int(skill["sp_cost"] or 0)))
-        skill["power"] = power
-        skill["strength_level"] = power
         skills.append(skill)
     return _normalise_character_skills(skills)
 
@@ -6811,13 +6886,13 @@ def _format_character_skills(skills: list[dict[str, object]]) -> str:
         name = str(skill.get("name") or skill.get("skill") or "").strip()
         if not name:
             continue
-        category = _normalise_element_id(skill.get("element") or skill.get("category") or skill.get("skill_type"))
-        description = str(skill.get("description") or skill.get("effect") or "").strip()
-        cost = skill.get("sp_cost", skill.get("cost_sp", skill.get("sp", 0)))
-        if not cost:
-            cost = _estimate_skill_sp_cost(skill)
+        category = _normalise_element_id(skill.get("element"))
+        description = str(skill.get("desc") or "").strip()
+        cost = skill.get("usesp", 1)
         power = _entry_power(skill)
-        lines.append(f"{name} | {category} | {description} | {cost} | {power}".rstrip(" |"))
+        ability = str(skill.get("ability") or "str")
+        effect_types = ",".join(_skill_effect_type_list(skill.get("type")) or ["damage_hp_single"])
+        lines.append(f"{name} | {category} | {description} | {cost} | {power} | {ability} | {effect_types}".rstrip(" |"))
     return "\n".join(lines)
 
 
@@ -6900,6 +6975,89 @@ def _normalise_character_traits(traits: list[dict[str, object]]) -> list[dict[st
     return result
 
 
+def _skill_effect_type_list(value: object) -> list[str]:
+    allowed = {
+        "heal_single",
+        "heal_party",
+        "damage_hp_single",
+        "damage_hp_party",
+        "damage_sp_single",
+        "damage_sp_party",
+        "absorption_single",
+        "absorption_party",
+        "effect_enemy_single",
+        "effect_enemy_party",
+        "effect_self",
+        "effect_ally_single",
+        "effect_ally_party",
+    }
+    items: list[object]
+    if isinstance(value, list):
+        items = value
+    else:
+        items = [part.strip() for part in str(value or "").replace("、", ",").split(",")]
+    result: list[str] = []
+    for item in items:
+        effect_type = str(item.get("type") if isinstance(item, dict) else item or "").strip()
+        if effect_type in allowed:
+            result.append(effect_type)
+    return result
+
+
+def _skill_effect_label(effect_type: str, language: str = "ja") -> str:
+    labels_ja = {
+        "heal_single": "単体回復",
+        "heal_party": "味方全体回復",
+        "damage_hp_single": "単体ダメージ",
+        "damage_hp_party": "敵全体ダメージ",
+        "damage_sp_single": "単体SPダメージ",
+        "damage_sp_party": "敵全体SPダメージ",
+        "absorption_single": "単体吸収",
+        "absorption_party": "敵全体吸収",
+        "effect_enemy_single": "敵単体状態変化",
+        "effect_enemy_party": "敵全体状態変化",
+        "effect_self": "自身状態変化",
+        "effect_ally_single": "味方単体状態変化",
+        "effect_ally_party": "味方全体状態変化",
+    }
+    labels_en = {
+        "heal_single": "Single Heal",
+        "heal_party": "Party Heal",
+        "damage_hp_single": "Single Damage",
+        "damage_hp_party": "Enemy Party Damage",
+        "damage_sp_single": "Single SP Damage",
+        "damage_sp_party": "Enemy Party SP Damage",
+        "absorption_single": "Single Drain",
+        "absorption_party": "Enemy Party Drain",
+        "effect_enemy_single": "Enemy Status",
+        "effect_enemy_party": "Enemy Party Status",
+        "effect_self": "Self Status",
+        "effect_ally_single": "Ally Status",
+        "effect_ally_party": "Party Status",
+    }
+    labels = labels_ja if str(language or "ja").startswith("ja") else labels_en
+    return labels.get(effect_type, effect_type)
+
+
+def _skill_effect_label_summary(value: object, config_data) -> str:
+    language = getattr(config_data, "language", "ja")
+    effect_types = _skill_effect_type_list(value)
+    if not effect_types:
+        return ""
+    ordered: list[str] = []
+    counts: dict[str, int] = {}
+    for effect_type in effect_types:
+        if effect_type not in counts:
+            ordered.append(effect_type)
+        counts[effect_type] = counts.get(effect_type, 0) + 1
+    labels: list[str] = []
+    for effect_type in ordered:
+        label = _skill_effect_label(effect_type, language)
+        count = counts.get(effect_type, 0)
+        labels.append(f"{label} x{count}" if count > 1 else label)
+    return "、".join(labels) if str(language or "ja").startswith("ja") else ", ".join(labels)
+
+
 def _normalise_character_skills(skills: list[dict[str, object]]) -> list[dict[str, object]]:
     result: list[dict[str, object]] = []
     for raw in skills:
@@ -6908,18 +7066,17 @@ def _normalise_character_skills(skills: list[dict[str, object]]) -> list[dict[st
         name = str(raw.get("name") or raw.get("skill") or raw.get("title") or "").strip()
         if not name:
             continue
-        skill = dict(raw)
-        skill["name"] = name
-        skill["skill_type"] = str(skill.get("skill_type") or skill.get("type") or skill.get("category") or "physical").strip().lower() or "physical"
-        skill["element"] = _normalise_element_id(skill.get("element") or skill.get("attribute") or skill.get("element_type") or skill.get("category") or skill.get("skill_type"))
-        skill["category"] = skill["element"]
-        if not skill.get("sp_cost"):
-            skill["sp_cost"] = _estimate_skill_sp_cost(skill)
-        power = _entry_power(skill, fallback=_skill_power_from_cost(_safe_int(str(skill.get("sp_cost", 0)), 0)))
-        if "passive" not in str(skill.get("skill_type") or "").lower():
-            skill["sp_cost"] = max(_safe_int(str(skill.get("sp_cost", 0)), 0), _skill_sp_floor(power))
-        skill["power"] = power
-        skill["strength_level"] = power
+        power = _entry_power(raw)
+        effect_types = _skill_effect_type_list(raw.get("type")) or ["damage_hp_single"]
+        skill = {
+            "name": name,
+            "desc": str(raw.get("desc") or "").strip(),
+            "usesp": max(1, min(12, _safe_int(raw.get("usesp"), 1))),
+            "power": max(1, min(5, power)),
+            "ability": str(raw.get("ability") or "str").strip().lower() or "str",
+            "element": _normalise_element_id(raw.get("element")),
+            "type": [{"type": item} for item in effect_types],
+        }
         result.append(skill)
     return result
 
@@ -6928,26 +7085,27 @@ def _character_entry_generated_summary(entry: dict[str, object], kind: str, conf
     power = _entry_power(entry)
     lines: list[str] = []
     if kind == "skills":
-        sp_cost = entry.get("sp_cost", entry.get("cost_sp", entry.get("sp", "")))
-        element_id = _normalise_element_id(entry.get("element") or entry.get("category") or entry.get("skill_type"))
+        sp_cost = entry.get("usesp", "")
+        element_id = _normalise_element_id(entry.get("element"))
         lines.append(f"{_ui_text(config_data, 'character_entry_sp_cost')}:{sp_cost}")
         lines.append(f"{_ui_text(config_data, 'character_entry_power')}:{power}")
         lines.append(
             f"{_ui_text(config_data, 'character_entry_element')}:"
             f"{tr_enum('element', element_id, getattr(config_data, 'language', 'ja'), fallback=element_id)}"
         )
+        effect_labels = _skill_effect_label_summary(entry.get("type"), config_data)
+        if effect_labels:
+            lines.append(f"{_ui_text(config_data, 'character_entry_generated_effect')}:{effect_labels}")
     else:
         lines.append(f"{_ui_text(config_data, 'character_entry_power')}:{power}")
-    effects = entry.get("effects")
+    effects = entry.get("type")
     effect = str(
         entry.get("effect")
-        or entry.get("usefulness")
-        or entry.get("description")
-        or (_compact_tooltip_value(effects) if effects else "")
+        or entry.get("desc")
         or ""
     ).strip()
     if effect:
-        lines.append(f"{_ui_text(config_data, 'character_entry_generated_effect')}:{effect}")
+        lines.append(f"{_ui_text(config_data, 'character_entry_description')}:{effect}")
     return "\n".join(lines)
 
 
@@ -6990,29 +7148,13 @@ def _entry_power(value: object, fallback: int = 1) -> int:
     return max(1, min(5, fallback))
 
 
-def _skill_power_from_cost(cost: int) -> int:
-    if cost >= 16:
-        return 5
-    if cost >= 11:
-        return 4
-    if cost >= 7:
-        return 3
-    if cost >= 4:
-        return 2
-    return 1
-
-
-def _skill_sp_floor(power: int) -> int:
-    return {1: 2, 2: 4, 3: 7, 4: 11, 5: 16}.get(max(1, min(5, power)), 2)
-
-
 def _character_entry_tooltip_text(entry: dict[str, object], kind: str, config_data) -> str:
     name = str(entry.get("name") or entry.get("skill") or entry.get("trait") or "").strip()
     power = _entry_power(entry)
     lines = [name, f"{_ui_text(config_data, 'character_entry_power')}: {power}/5"]
     if kind == "skills":
-        sp_cost = entry.get("sp_cost", entry.get("cost_sp", entry.get("sp", "")))
-        element_id = _normalise_element_id(entry.get("element") or entry.get("category") or entry.get("skill_type"))
+        sp_cost = entry.get("usesp", "")
+        element_id = _normalise_element_id(entry.get("element"))
         if sp_cost not in (None, ""):
             lines.append(f"{_ui_text(config_data, 'character_entry_sp_cost')}: {sp_cost}")
         if element_id:
@@ -7020,12 +7162,13 @@ def _character_entry_tooltip_text(entry: dict[str, object], kind: str, config_da
                 f"{_ui_text(config_data, 'character_entry_element')}: "
                 f"{tr_enum('element', element_id, getattr(config_data, 'language', 'ja'), fallback=element_id)}"
             )
-    description = str(entry.get("description") or entry.get("effect") or entry.get("usefulness") or "").strip()
+    description = str(entry.get("desc") or entry.get("effect") or "").strip()
     if description:
         lines.extend(["", description])
-    effects = entry.get("effects")
+    effects = entry.get("type")
     if effects:
-        lines.extend(["", _ui_text(config_data, "character_entry_generated_effect"), _compact_tooltip_value(effects)])
+        effect_labels = _skill_effect_label_summary(effects, config_data) if kind == "skills" else _compact_tooltip_value(effects)
+        lines.extend(["", _ui_text(config_data, "character_entry_generated_effect"), effect_labels])
     return "\n".join(str(line) for line in lines if str(line) != "")
 
 
@@ -7070,24 +7213,6 @@ def _quest_reward_text(reward) -> str:
     if description:
         parts.append(description)
     return " / ".join(part for part in parts if part)
-
-
-def _estimate_skill_sp_cost(skill: dict[str, object]) -> int:
-    text = json.dumps(skill, ensure_ascii=False).lower()
-    skill_type = str(skill.get("skill_type") or skill.get("type") or skill.get("category") or "").lower()
-    if "passive" in skill_type or "常時" in text:
-        return 0
-    power = _entry_power(skill, fallback=1)
-    cost = 5
-    if any(word in skill_type for word in ("magic", "spell", "support")):
-        cost += 2
-    if any(word in text for word in ("powerful", "major", "large", "area", "aoe", "all", "revive", "death", "強力", "大", "全体", "蘇生", "即死")):
-        cost += 5
-    numbers = [_safe_int(match.group(0), 0) for match in re.finditer(r"\d+", text)]
-    if numbers:
-        cost += min(8, max(numbers) // 2)
-    power_floor = (0, 2, 4, 7, 11, 16)[power]
-    return max(1, min(30, max(cost, power_floor)))
 
 
 def _prompt_parts_from_look(look: str) -> list[str]:
@@ -7249,7 +7374,21 @@ def _format_status_effect_section(title: str, value: object) -> list[str]:
     return _format_display_entry_section(
         title,
         value,
-        description_keys=("description", "llm_effect", "remove_condition", "effect_text", "display_effect", "mechanical_effect", "effect", "summary", "text", "note", "details"),
+        description_keys=(
+            "description",
+            "desc",
+            "llm_effect",
+            "remove_condition",
+            "condition_cancell",
+            "effect_text",
+            "display_effect",
+            "mechanical_effect",
+            "effect",
+            "summary",
+            "text",
+            "note",
+            "details",
+        ),
     )
 
 
@@ -7273,7 +7412,7 @@ def _format_skill_section(title: str, value: object, *, language: str = "ja") ->
             name = _display_entry_name(entry)
             description = _display_entry_description(
                 entry,
-                ("description", "effect_text", "display_effect", "effect", "summary", "usefulness", "text", "note", "details"),
+                ("desc", "effect_text", "display_effect", "effect", "summary", "text", "note", "details"),
             )
             cost = _skill_display_sp_cost(entry)
             cost_text = f"({cost_label}:{cost})" if cost is not None else ""
@@ -7287,11 +7426,9 @@ def _format_skill_section(title: str, value: object, *, language: str = "ja") ->
 
 
 def _skill_display_sp_cost(entry: dict[str, object]) -> int | None:
-    for key in ("sp_cost", "cost_sp", "sp", "mp_cost"):
-        if entry.get(key) not in (None, ""):
-            return max(0, _safe_int(str(entry.get(key)), 0))
-    estimated = _estimate_skill_sp_cost(entry)
-    return estimated if estimated > 0 else None
+    if entry.get("usesp") not in (None, ""):
+        return max(1, min(12, _safe_int(str(entry.get("usesp")), 1)))
+    return None
 
 
 def _format_display_entry_section(title: str, value: object, *, description_keys: tuple[str, ...]) -> list[str]:

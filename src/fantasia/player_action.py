@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable
 
+from .quests import QUEST_REPORT_CHOICE_LABEL
+
 
 class PlayerInputType(str, Enum):
     CHOICE = "choice"
@@ -129,11 +131,13 @@ def quest_action_command_type(
 
 
 def _explicit_quest_report_action(action: str) -> bool:
-    text = str(action or "")
-    lowered = text.casefold()
-    if any(word in text for word in ("報告", "完了", "達成", "依頼主", "ギルド", "受付", "報酬")):
+    text = str(action or "").strip()
+    if text == QUEST_REPORT_CHOICE_LABEL:
         return True
-    return any(word in lowered for word in ("report", "complete", "turn in", "claim reward", "guild", "client"))
+    lowered = text.casefold()
+    if any(phrase in text for phrase in ("依頼を報告", "依頼の報告", "達成報告", "完了報告", "報酬を受け取", "報酬を請求")):
+        return True
+    return any(word in lowered for word in ("report quest", "turn in quest", "claim reward"))
 
 
 def _quest_destination_action_requested(engine: Any, quest: Any, action: str) -> bool:
@@ -338,7 +342,6 @@ def resolve_player_input(
     if engine.state.active_quest:
         active_quest = engine._find_quest_by_name(engine.state.active_quest)
         if active_quest:
-            action_roll = engine._action_roll_for_input(action_text, input_type, "quest")
             quest_command_type = quest_action_command_type(
                 engine,
                 active_quest,
@@ -346,6 +349,16 @@ def resolve_player_input(
                 is_quest_abandon_action=is_quest_abandon_action,
                 is_quest_report_action=is_quest_report_action,
             )
+            if quest_command_type != ActionCommandType.QUEST_REPORT and engine._active_quest_can_report_at(engine.state.current_location):
+                conversation_target = engine._find_conversation_target(action_text)
+                if conversation_target:
+                    return finish(
+                        command(ActionCommandType.CONVERSATION_START, target=str(conversation_target.name)),
+                        engine._start_conversation(action_text, input_type, conversation_target),
+                    )
+            action_roll = None
+            if quest_command_type != ActionCommandType.QUEST_REPORT:
+                action_roll = engine._action_roll_for_input(action_text, input_type, "quest")
             action_kind = player_action_type_for_text(
                 action_text,
                 is_skill_action=is_skill_action,

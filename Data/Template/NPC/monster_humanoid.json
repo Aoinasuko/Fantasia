@@ -24,7 +24,7 @@
       {"name": "持っている短剣で攻撃", "type": "physical"}
     ],
     "skills": [
-      {"name": "連続攻撃", "description": "連続で攻撃する。", "power": 2, "sp": 3}
+      {"name": "連続攻撃", "desc": "短剣で連続して攻撃する。", "usesp": 3, "power": 2, "ability": "dex", "element": "physical", "type": ["damage_hp_single", "damage_hp_single"]}
     ],
     "traits": [
       {"name": "弱気", "description": "自身が劣勢になると、戦意を失い相手に助けを求める。", "power": 2}
@@ -55,7 +55,7 @@
       {"name": "持っている弓で矢を撃って攻撃", "type": "physical"}
     ],
     "skills": [
-      {"name": "毒の矢", "description": "毒の矢を放ち相手に攻撃をする。", "power": 2, "sp": 3}
+      {"name": "毒の矢", "desc": "毒の矢を放ち、傷と毒で相手を弱らせる。", "usesp": 3, "power": 2, "ability": "dex", "element": "poison", "type": [{"type": "damage_hp_single"}, {"type": "effect_enemy_single", "buff_type": "decrease_hp", "amount": 1, "duration": 1, "name": "毒"}]}
     ],
     "traits": [
       {"name": "弱気", "description": "自身が劣勢になると、戦意を失い相手に助けを求める。", "power": 2}

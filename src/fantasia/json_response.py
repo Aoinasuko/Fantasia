@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from dataclasses import dataclass
@@ -66,7 +66,7 @@ class ManagerSchema:
             )
         if any(field.name in {"player_sp_delta", "sp_delta", "restore_sp", "recover_sp", "consume_sp", "player_sp", "sp_effect", "sp_effects"} for field in self.fields):
             lines.append(
-                "- SP changes: use player_sp_delta/sp_delta for signed changes, restore_sp/recover_sp for recovery, consume_sp for spent SP, or player_sp for an absolute current SP value. Skills should use sp_cost instead of max_uses."
+                "- SP changes: use player_sp_delta/sp_delta for signed changes, restore_sp/recover_sp for recovery, consume_sp for spent SP, or player_sp for an absolute current SP value. Combat skills store their cost in usesp."
             )
         if any(field.name in {"player_hunger_delta", "hunger_delta", "restore_hunger", "recover_hunger", "player_hunger", "hunger", "hunger_effect", "hunger_effects"} for field in self.fields):
             lines.append(
@@ -171,7 +171,7 @@ class ManagerSchema:
                 "ゲームオーバー時に「リスタート」「再開」など存在しない選択肢を作らないでください。"
             )
         example = dict(self.example)
-        if any(field.name == "tools" for field in self.fields):
+        if any(field.name == "tool_judgements" for field in self.fields):
             for key in (
                 "location",
                 "hp_delta",
@@ -195,7 +195,7 @@ class ManagerSchema:
             ):
                 example.pop(key, None)
             example.setdefault("intent", {"kind": "narrate", "summary": "display the result"})
-            example.setdefault("tools", [])
+            example.setdefault("tool_judgements", [])
         lines.append(json.dumps(example, ensure_ascii=False, indent=2))
         return "\n".join(lines)
 
@@ -213,7 +213,7 @@ VISUAL_FIELDS: tuple[FieldRule, ...] = ()
 
 INTENT_TOOL_FIELDS = (
     FieldRule("intent", (dict, str), required=False, non_empty=False, string_items=False),
-    FieldRule("tools", (list,), non_empty=False, string_items=False),
+    FieldRule("tool_judgements", (list,), non_empty=False, string_items=False),
 )
 
 
@@ -880,7 +880,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("process", (list, dict, str), non_empty=False, string_items=False),
             FieldRule("finished", (bool,)),
             FieldRule("choices", (list,), required=False),
-            FieldRule("tools", (list,), non_empty=False, string_items=False),
+            FieldRule("tool_judgements", (list,), non_empty=False, string_items=False),
             FieldRule("think", (str,), required=False, non_empty=False),
             FieldRule("recipients", (list,), required=False, non_empty=False),
             FieldRule("reason", (str,), required=False, non_empty=False),
@@ -895,7 +895,14 @@ SCHEMAS: dict[str, ManagerSchema] = {
                 {"step": "状態更新", "result": "赤い印の噂を補強する"},
             ],
             "finished": False,
-            "location": "灯守りの宿",
+            "tool_judgements": [
+                {
+                    "name": "move_player",
+                    "confidence": 1.0,
+                    "arguments": {"location": "灯守りの宿"},
+                    "reason": "プレイヤーの行動結果としてその場所へ移動するため。",
+                }
+            ],
             "recipients": ["ミラ"],
             "choices": ["赤い印について聞く", "掲示板を見る", "周辺を探索する"],
         },
@@ -954,13 +961,12 @@ SCHEMAS: dict[str, ManagerSchema] = {
                     "skills": [
                         {
                             "name": "薬草鑑定",
-                            "description": "周辺の薬草や毒草を見分ける。",
-                            "skill_type": "support",
-                            "effects": [{"name": "治療手がかり", "value": 1}],
-                            "sp_cost": 3,
+                            "desc": "周辺の薬草や毒草を見分け、必要なら仲間を手当てする。",
+                            "usesp": 3,
                             "power": 2,
-                            "strength_level": 2,
-                            "usefulness": "探索と会話で追加情報を出せる。",
+                            "ability": "wis",
+                            "element": "nature",
+                            "type": ["heal_single"],
                         }
                     ],
                     "traits": [{"name": "慎重", "description": "危険な相手には距離を取る。", "power": 1, "strength_level": 1}],
@@ -1000,13 +1006,12 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "skills": [
                 {
                     "name": "雨避けの処方",
-                    "description": "雨で悪化する状態異常を一時的に和らげる。",
-                    "skill_type": "support",
-                    "effects": [{"name": "状態異常緩和", "value": 1}],
-                    "sp_cost": 2,
+                    "desc": "雨で悪化する傷を一時的に和らげる。",
+                    "usesp": 2,
                     "power": 1,
-                    "strength_level": 1,
-                    "usefulness": "探索前の準備や会話イベントに使える。",
+                    "ability": "wis",
+                    "element": "water",
+                    "type": ["heal_single"],
                 }
             ],
             "memory_updates": [{"target": "レナ", "memory": "プレイヤーと初対面。まだ警戒している。"}],
@@ -1144,6 +1149,70 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "reason": "応答文で敵が明確に攻撃を開始しているため。",
         },
     ),
+    "combat_player_action": ManagerSchema(
+        manager_name="combat_player_action",
+        fields=(
+            FieldRule("narration", (str,), aliases=("text", "message")),
+            FieldRule("intent", (str,)),
+            FieldRule("choices", (list,), required=False, non_empty=False),
+            FieldRule("tool_judgements", (list,), non_empty=False, string_items=False),
+        ),
+        example={
+            "intent": "surrender",
+            "narration": "あなたは武器を下ろし、無抵抗の姿勢を保った。",
+            "choices": ["相手の反応を待つ", "事情を説明する"],
+            "tool_judgements": [
+                {
+                    "name": "player_surrender",
+                    "confidence": 1.0,
+                    "arguments": {"reason": "player maintains nonresistance"},
+                    "reason": "プレイヤーが無抵抗を示しているため。",
+                }
+            ],
+        },
+    ),
+    "combat_enemy_action": ManagerSchema(
+        manager_name="combat_enemy_action",
+        fields=(
+            FieldRule("action_type", (str,)),
+            FieldRule("narration", (str,), required=False, non_empty=False, aliases=("text", "message")),
+            FieldRule("attack_name", (str,), required=False, non_empty=False),
+            FieldRule("skill_name", (str,), required=False, non_empty=False),
+            FieldRule("element", (str,), required=False, non_empty=False),
+            FieldRule("buff_type", (str,), required=False, non_empty=False),
+            FieldRule("status_name", (str,), required=False, non_empty=False),
+            FieldRule("status_desc", (str,), required=False, non_empty=False),
+            FieldRule("duration", (int, str), required=False, non_empty=False),
+            FieldRule("amount", (int, str), required=False, non_empty=False),
+            FieldRule("choices", (list,), required=False, non_empty=False),
+            FieldRule("reason", (str,), required=False, non_empty=False),
+            FieldRule("finished", (bool,), required=False, non_empty=False),
+            FieldRule("tool_judgements", (list,), non_empty=False, string_items=False),
+        ),
+        example={
+            "action_type": "free_action",
+            "narration": "緑スライムはあなたの無抵抗を見て、攻撃を止めた。",
+            "choices": ["攻撃", "スキル", "行動", "逃走"],
+            "reason": "プレイヤーが降伏しているため。",
+            "tool_judgements": [
+                {
+                    "name": "accept_player_surrender",
+                    "confidence": 1.0,
+                    "arguments": {"reason": "enemy accepts nonresistance"},
+                    "reason": "敵が降伏を受け入れるため。",
+                }
+            ],
+        },
+    ),
+    "combat_log_narrator": ManagerSchema(
+        manager_name="combat_log_narrator",
+        fields=(
+            FieldRule("narration", (str,), aliases=("text", "message")),
+        ),
+        example={
+            "narration": "あなたの一撃は緑スライムの粘液を浅く散らしたが、弾力に阻まれて深くは通らなかった。",
+        },
+    ),
     "context_reference_resolver": ManagerSchema(
         manager_name="context_reference_resolver",
         fields=(
@@ -1159,185 +1228,6 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "resolved_action": "ミラにさっきの依頼について尋ねる",
             "confidence": 80,
             "reason": "直近ログで会話していた宿の主人がミラで、入力の「あの人」がその人物を指すため。",
-        },
-    ),
-    "referee_player_attack_new_new": ManagerSchema(
-        manager_name="referee_player_attack_new_new",
-        fields=(
-            FieldRule("narration", (str,), aliases=("text",)),
-            FieldRule("choices", (list,)),
-            FieldRule("target", (str,), required=False),
-            FieldRule("hit", (bool,), required=False, non_empty=False),
-            FieldRule("damage", (int, str), required=False, non_empty=False),
-            FieldRule("encounter_update", (dict, list), required=False, non_empty=False, string_items=False),
-            FieldRule("effects", (list,), required=False, non_empty=False, string_items=False),
-            FieldRule("finished", (bool,), required=False, non_empty=False),
-            *STATUS_EFFECT_FIELDS,
-            *ITEM_EFFECT_FIELDS,
-            *VISUAL_FIELDS,
-        ),
-        example={
-            "target": "硝子森の影",
-            "hit": True,
-            "damage": 3,
-            "narration": "刃は霧を裂き、影の輪郭をわずかに揺らした。",
-            "encounter_update": {
-                "opponent_hp_delta": -3,
-                "opponent_status": "wounded",
-                "opponent_status_effects": [
-                    {
-                        "name": "幻霧の裂傷",
-                        "description": "霧の傷が残り、行動ごとにHPが少し削られる。",
-                        "remove_condition": "止血する、霧の魔力を払う、または時間経過で治まる。",
-                        "power": 1,
-                        "duration": 3,
-                        "effect_id": "HP_Damage",
-                        "llm_effect": "傷口に幻霧がまとわりつき、痛みと視界の揺らぎを描写に反映する。",
-                    }
-                ],
-            },
-            "effects": [{"name": "牽制", "duration": 1}],
-            "finished": False,
-            "choices": ["距離を取る", "追撃する", "降伏する"],
-        },
-    ),
-    "referee_player_any_input_new_new": ManagerSchema(
-        manager_name="referee_player_any_input_new_new",
-        fields=(
-            FieldRule("narration", (str,), aliases=("text",)),
-            FieldRule("choices", (list,)),
-            FieldRule("intent", (str,)),
-            FieldRule("encounter_update", (dict, list), required=False, non_empty=False, string_items=False),
-            FieldRule("effects", (list,), required=False, non_empty=False, string_items=False),
-            FieldRule("finished", (bool,), required=False, non_empty=False),
-            FieldRule("content_violation", (bool,), required=False, non_empty=False),
-            *STATUS_EFFECT_FIELDS,
-            *ITEM_EFFECT_FIELDS,
-            *VISUAL_FIELDS,
-        ),
-        example={
-            "intent": "surrender",
-            "narration": "あなたは武器を下ろし、敵意がないことを示した。",
-            "encounter_update": {
-                "player_status": "surrendering",
-                "player_surrendered": True,
-                "player_status_effects": [
-                    {
-                        "name": "武装解除",
-                        "description": "武器を下ろしているため、再武装するまで攻撃行動が不利になる。",
-                        "remove_condition": "武器を拾い直す、または敵が降伏を受け入れる。",
-                        "power": -2,
-                        "duration": -1,
-                        "effect_id": "Atk_Mod",
-                        "llm_effect": "武器を構えていないため、攻撃するには一手遅れる。",
-                    }
-                ],
-            },
-            "effects": [],
-            "finished": False,
-            "choices": ["両手を上げる", "事情を説明する", "相手の反応を待つ"],
-        },
-    ),
-    "referee_npc": ManagerSchema(
-        manager_name="referee_npc",
-        fields=(
-            FieldRule("narration", (str,), aliases=("text",)),
-            FieldRule("choices", (list,)),
-            FieldRule("npc_action", (str,)),
-            FieldRule("target", (str,), required=False),
-            FieldRule("intent", (str,), required=False),
-            FieldRule("encounter_update", (dict, list), required=False, non_empty=False, string_items=False),
-            FieldRule("effects", (list,), required=False, non_empty=False, string_items=False),
-            FieldRule("combat_judgement", (dict,), required=False, non_empty=False, string_items=False),
-            FieldRule("finished", (bool,), required=False, non_empty=False),
-            FieldRule("should_end_encounter", (bool,), required=False, non_empty=False),
-            *STATUS_EFFECT_FIELDS,
-            *ITEM_EFFECT_FIELDS,
-            *VISUAL_FIELDS,
-        ),
-        example={
-            "npc_action": "restrain",
-            "intent": "capture",
-            "target": "Player",
-            "narration": "影は踏み込まず、足元の闇を糸のように伸ばしてあなたの脚を縫い止めた。",
-            "encounter_update": {
-                "opponent_status": "guarded",
-                "player_status": "disarmed",
-                "player_status_effects": [
-                    {
-                        "name": "影縛り",
-                        "description": "影の糸に足元を縫い止められ、攻撃・逃走・移動ができない。",
-                        "remove_condition": "影の糸を切る、術者を説得する、または拘束を解く。",
-                        "power": 0,
-                        "duration": 2,
-                        "effect_id": "Inoperable",
-                        "llm_effect": "影による拘束。攻撃・逃走・移動を妨げる。",
-                    }
-                ],
-            },
-            "combat_judgement": {"offensive": False, "weakness_multiplier": 0.0, "reason": "拘束のみでHPダメージなし。"},
-            "effects": [{"name": "拘束姿勢", "duration": 1}],
-            "finished": False,
-            "should_end_encounter": False,
-            "choices": ["拘束を解こうともがく", "事情を説明する"],
-        },
-    ),
-    "referee_npc_rewrite": ManagerSchema(
-        manager_name="referee_npc_rewrite",
-        fields=(
-            FieldRule("narration", (str,), aliases=("text",)),
-            FieldRule("choices", (list,)),
-            FieldRule("npc_action", (str,), required=False),
-            FieldRule("encounter_update", (dict, list), required=False, non_empty=False, string_items=False),
-            FieldRule("combat_judgement", (dict,), required=False, non_empty=False, string_items=False),
-            FieldRule("finished", (bool,), required=False, non_empty=False),
-            FieldRule("rewrite_reason", (str,), required=False, non_empty=False),
-            *STATUS_EFFECT_FIELDS,
-            *ITEM_EFFECT_FIELDS,
-            *VISUAL_FIELDS,
-        ),
-        example={
-            "npc_action": "accept_surrender",
-            "narration": "硝子森の影は踏み込まず、雨音の中で武器を下ろせと短く告げた。",
-            "encounter_update": {
-                "opponent_status": "watching",
-                "player_status": "surrender_accepted",
-                "status_effects": {
-                    "player": [
-                        {
-                            "name": "監視下",
-                            "description": "敵に見張られている。急な攻撃や逃走は疑われやすい。",
-                            "remove_condition": "会話で安全を得る、またはその場を離れる。",
-                            "power": 0,
-                            "duration": -1,
-                            "effect_id": "SendLLM",
-                            "llm_effect": "監視による行動圧力。会話や慎重な移動は可能。",
-                        }
-                    ]
-                },
-            },
-            "combat_judgement": {"offensive": False, "weakness_multiplier": 0.0, "reason": "監視と武装解除のみでHPダメージなし。"},
-            "finished": True,
-            "rewrite_reason": "相手の慎重な性格と降伏の意思を反映した。",
-            "choices": ["事情を説明する", "ゆっくり離れる"],
-        },
-    ),
-    "combat_damage_narrator": ManagerSchema(
-        manager_name="combat_damage_narrator",
-        fields=(
-            FieldRule("narration", (str,), aliases=("text", "message")),
-        ),
-        example={
-            "narration": "ナナはゴブリンへ素早い一閃を繰り出した。刃は的確に急所を捉え、ゴブリンはその場で力尽きた。",
-        },
-    ),
-    "combat_heal_narrator": ManagerSchema(
-        manager_name="combat_heal_narrator",
-        fields=(
-            FieldRule("narration", (str,), aliases=("text", "message")),
-        ),
-        example={
-            "narration": "ナナは癒しの魔法を唱えた。淡い光が傷を少しふさぎ、呼吸がいくらか楽になった。",
         },
     ),
     "create_character": ManagerSchema(
@@ -1407,14 +1297,12 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "skills": [
                 {
                     "name": "Lantern Signal",
-                    "description": "Uses a lantern flash to guide or distract.",
-                    "element": "light",
-                    "skill_type": "support",
-                    "effects": "Improves ally positioning and weakens surprise attacks.",
-                    "sp_cost": 3,
+                    "desc": "Uses a lantern flash to guide allies or distract threats.",
+                    "usesp": 3,
                     "power": 2,
-                    "strength_level": 2,
-                    "usefulness": "Supportive utility in travel and combat.",
+                    "ability": "wis",
+                    "element": "light",
+                    "type": ["effect_ally_party"],
                 }
             ],
         },
@@ -1474,15 +1362,13 @@ SCHEMAS: dict[str, ManagerSchema] = {
         example={
             "skills": [
                 {
-                    "name": "噂の照合",
-                    "description": "旅人の証言と古い地図を照らし合わせる。",
-                    "element": "light",
-                    "skill_type": "support",
-                    "effects": [{"name": "手がかり発見", "value": 1}],
-                    "sp_cost": 3,
+                    "name": "三連突き",
+                    "desc": "鋭い突きを三度続けて放つ。",
+                    "usesp": 3,
                     "power": 2,
-                    "strength_level": 2,
-                    "usefulness": "探索前の情報収集に役立つ。",
+                    "ability": "dex",
+                    "element": "physical",
+                    "type": ["damage_hp_single", "damage_hp_single", "damage_hp_single"],
                 }
             ]
         },
@@ -1603,15 +1489,17 @@ def schema_instruction(manager_name: str) -> str:
     }:
         instruction += (
             "\nTool/intent JSON rules:\n"
-            "- Put all game-state side effects in top-level tools only. tools may be an empty array.\n"
+            "- Put all game-state side-effect candidates in top-level tool_judgements only. tool_judgements may be an empty array.\n"
             "- Do not output side effects as top-level keys. Forbidden top-level side-effect keys include location, "
             "hp_delta, sp_delta, gold_delta, hunger_delta, exp_delta, time_passed_hours, item_add, item_remove, item_equip, item_unequip, status_effects, relationship_change, memory_updates, "
             "npc_movements, npc_move, npc_join_party, npc_remove_party, npc_dead, npc_capture_player, npc_update_memory, npc_update_description, "
             "map_reveal, world_home_construction, world_mainnode_reveal, world_subnode_reveal, discovered_location, quest_update, quest_progress, event, combat_started, "
             "new_npc_requests, and game_over.\n"
             "- Top-level fields are for display and intent only: content_violation, intent, narration, process, "
-            "finished, speaker, topic, mood, quest_name, objective, choices, and tools.\n"
-            "- Each tool item must be {\"name\":\"tool_name\",\"arguments\":{...}}.\n"
+            "finished, speaker, topic, mood, quest_name, objective, choices, and tool_judgements.\n"
+            "- Each tool judgement item must be {\"name\":\"tool_name\",\"confidence\":0.0-1.0,\"arguments\":{...},\"reason\":\"...\"}.\n"
+            "- The game executes only tool judgements whose confidence is exactly 1.0. 0.99 or missing confidence is not executed.\n"
+            "- Set confidence to 1.0 only when the state change is definitely intended by the action and current context.\n"
             "- Supported tool names: move_player, status_effects, hp_effects, sp_effects, gold_delta, hunger_delta, "
             "exp_delta, time_passage, game_over, npc_change_relationship, npc_move, npc_join_party, npc_remove_party, npc_dead, "
             "npc_capture_player, npc_update_memory, npc_update_description, world_home_construction, world_mainnode_reveal, world_subnode_reveal, "
@@ -1619,7 +1507,7 @@ def schema_instruction(manager_name: str) -> str:
             "generate_quest, spawn_npc, spawn_enemy, spawn_boss, request_npc_generation, quest_event, "
             "quest_progress, quest_update.\n"
             "- Example: {\"intent\":{\"kind\":\"look\",\"summary\":\"observe the area\"},\"narration\":\"...\","
-            "\"choices\":[\"look around\"],\"tools\":[{\"name\":\"move_player\",\"arguments\":{\"location\":\"Town Gate\"}}]}\n"
+            "\"choices\":[\"look around\"],\"tool_judgements\":[{\"name\":\"move_player\",\"confidence\":1.0,\"arguments\":{\"location\":\"Town Gate\"},\"reason\":\"The player chose to go there.\"}]}\n"
         )
     if manager_name == "check_action_feasibility":
         instruction += (
@@ -1720,7 +1608,7 @@ def schema_instruction(manager_name: str) -> str:
             "- In dungeons or dangerous areas, movement is limited to current_subnode.adjacent_subnodes unless current_subnode.remote_travel_targets explicitly allows remote movement.\n"
             "- Do not narrate jumping from a dungeon entrance to the objective, from the deepest area back to town, or to a non-adjacent subnode unless the response uses an allowed remote target.\n"
             "- For the choices field, only offer movement/return/enter/leave choices whose target appears in the prompt's movement_options.allowed_moves. Do not offer generic choices such as 'return to town', 'return to the city', 'return to the village', 'return to base', or 'return to the inn' unless that destination is explicitly listed.\n"
-            "- If the player receives a map, route note, or clue for a dungeon interior, reveal it with tools[{name: world_subnode_reveal, arguments: {subnode_map_reveal: ...}}] instead of marking the nodes visited.\n"
+            "- If the player receives a map, route note, or clue for a dungeon interior, reveal it with tool_judgements[{name: world_subnode_reveal, confidence: 1.0, arguments: {subnode_map_reveal: ...}}] instead of marking the nodes visited.\n"
             "- To reveal nearby dungeon rooms after looking around, use world_subnode_reveal with subnode_map_reveal={\"scope\":\"surroundings\"}. To reveal a route to the active quest objective, use world_subnode_reveal with subnode_map_reveal={\"quest\":\"active\"}.\n"
         )
     if manager_name == "field_event_evaluator":
@@ -1761,7 +1649,7 @@ def schema_instruction(manager_name: str) -> str:
     if manager_name == "master_ai_facilitator":
         instruction += (
             "\nmaster_ai_facilitator home construction rules:\n"
-            "- If the player is outside a settlement and clearly tries to build or improve their own house using a specified material item, use tools[{name: world_home_construction, arguments: {home_construction: ...}}].\n"
+            "- If the player is outside a settlement and clearly tries to build or improve their own house using a specified material item, use tool_judgements[{name: world_home_construction, confidence: 1.0, arguments: {home_construction: ...}}].\n"
             "- home_construction should include usable, material_name, furniture_level_gain, narration, and reason. furniture_level_gain must be 0 to 3.\n"
             "- If the material is not suitable as building material, set usable=false and explain the refusal in narration/reason.\n"
             "- Do not create a player home only by narration. The game side creates the home when construction progress reaches 100%.\n"
@@ -1975,7 +1863,7 @@ def _canonicalize_manager_response(manager_name: str, value: Any) -> Any:
             value,
             "skills",
             aliases=("skill", "generated_skill", "skill_list"),
-            item_keys=("name", "description", "element", "skill_type", "effects", "sp_cost", "power", "strength_level", "usefulness"),
+            item_keys=("name", "desc", "usesp", "power", "ability", "element", "type"),
         )
     if manager_name == "create_trait":
         return _wrap_collection_response(
@@ -2300,3 +2188,4 @@ def _is_empty(item: Any) -> bool:
     if isinstance(item, (list, dict)):
         return len(item) == 0
     return False
+

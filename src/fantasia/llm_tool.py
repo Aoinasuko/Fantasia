@@ -4,9 +4,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from .combat import _npc_action_tool_kind
-
-
 class LlmToolName(str, Enum):
     STATUS_EFFECTS = "status_effects"
     HP_EFFECTS = "hp_effects"
@@ -261,28 +258,50 @@ def run_llm_tool(engine: Any, call: LlmToolCall) -> LlmToolResult:
 def response_tool_calls(response: Any, *, source: str = "") -> list[dict[str, Any]]:
     if not isinstance(response, dict):
         return []
-    raw_tools = response.get("tools")
-    if not isinstance(raw_tools, list):
-        return []
     calls: list[dict[str, Any]] = []
+    raw_tools: list[Any] = []
+    for key in ("tool_judgements", "tool_judgments", "tool_confidences", "llm_tool_judgements", "tools"):
+        value = response.get(key)
+        if isinstance(value, list):
+            raw_tools.extend(value)
     for raw in raw_tools:
+        confidence = 0.0
         if isinstance(raw, str):
             name = raw.strip()
             args: Any = {}
         elif isinstance(raw, dict):
-            name = str(raw.get("name") or raw.get("tool") or raw.get("type") or "").strip()
+            name = str(raw.get("name") or raw.get("tool_name") or raw.get("tool") or raw.get("type") or "").strip()
+            confidence = _confidence_value(raw.get("confidence") or raw.get("score") or raw.get("probability") or raw.get("judgement"))
             args = raw.get("arguments")
             if args is None:
                 args = raw.get("args")
+            if args is None:
+                args = raw.get("parameters")
             if args is None:
                 args = raw.get("payload")
             if args is None:
                 args = {
                     key: value
                     for key, value in raw.items()
-                    if key not in {"name", "tool", "type", "arguments", "args", "payload"}
+                    if key
+                    not in {
+                        "name",
+                        "tool_name",
+                        "tool",
+                        "type",
+                        "confidence",
+                        "score",
+                        "probability",
+                        "judgement",
+                        "arguments",
+                        "args",
+                        "parameters",
+                        "payload",
+                    }
                 }
         else:
+            continue
+        if confidence < 1.0:
             continue
         canonical = _canonical_tool_name(name)
         if not canonical:
@@ -316,21 +335,23 @@ def requested_location_from_tools(response: Any, fallback: str = "") -> str:
 
 def tool_prompt_instruction() -> str:
     return (
-        "Tool JSON rule: put all game-state side effects in a top-level tools array. "
+        "Tool judgement JSON rule: put all game-state side-effect candidates in a top-level tool_judgements array. "
         "Do not use top-level side-effect keys such as location, hp_delta, sp_delta, item_add, item_remove, item_equip, item_unequip, status_effects, "
         "relationship_change, npc_movements, npc_move, npc_join_party, npc_remove_party, npc_dead, "
         "npc_capture_player, npc_update_memory, npc_update_description, map_reveal, world_home_construction, "
         "world_mainnode_reveal, world_subnode_reveal, discovered_location, quest_update, or combat_started. "
         "Top-level fields are only content_violation, intent, narration, process, finished, speaker, topic, mood, "
-        "quest_name, objective, choices, and tools. "
-        "Each tool item must be {\"name\":\"tool_name\",\"arguments\":{...}}. "
+        "quest_name, objective, choices, and tool_judgements. "
+        "Each tool judgement item must be {\"name\":\"tool_name\",\"confidence\":0.0-1.0,\"arguments\":{...},\"reason\":\"...\"}. "
+        "The game executes only tool judgements whose confidence is exactly 1.0; 0.99 or missing confidence is not executed. "
+        "Set confidence to 1.0 only when the state change is definitely intended by the action and current context. "
         "Supported tools: move_player, status_effects, hp_effects, sp_effects, gold_delta, hunger_delta, "
         "exp_delta, time_passage, game_over, npc_change_relationship, npc_move, npc_join_party, "
         "npc_remove_party, npc_dead, npc_capture_player, npc_update_memory, npc_update_description, "
         "world_home_construction, world_mainnode_reveal, world_subnode_reveal, "
         "crime_risk, item_add, item_remove, item_equip, item_unequip, visual_intent, start_combat, discover_location, generate_quest, spawn_npc, spawn_enemy, "
         "spawn_boss, request_npc_generation, quest_event, quest_progress, quest_update. "
-        "Use an empty tools array when no state changes are needed."
+        "Use an empty tool_judgements array when no state changes are needed."
     )
 
 
@@ -359,6 +380,37 @@ def apply_npc_action_tool(
     if action == "flee":
         return engine._npc_flee_from_encounter(encounter)
     return {"acted": False, "lines": []}
+
+
+def _npc_action_tool_kind(*responses: Any) -> str:
+    surrender_values = {"surrender", "yield", "give_up", "giveup", "降伏", "降参"}
+    flee_values = {"flee", "escape", "run_away", "runaway", "retreat", "withdraw", "逃亡", "逃走", "退却"}
+    for response in responses:
+        if not isinstance(response, dict):
+            continue
+        if _as_bool(response.get("npc_surrender") or response.get("surrender")):
+            return "surrender"
+        if _as_bool(response.get("npc_flee") or response.get("flee")):
+            return "flee"
+        for key in ("npc_action", "action", "kind", "intent"):
+            value = response.get(key)
+            value_text = str(value or "").strip()
+            if not value_text:
+                continue
+            normalized = value_text.casefold().replace("-", "_").replace(" ", "_")
+            if normalized in surrender_values or value_text in surrender_values:
+                return "surrender"
+            if normalized in flee_values or value_text in flee_values:
+                return "flee"
+    return ""
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "1", "はい"}
+    return bool(value)
 
 
 def apply_common_response_tools(
@@ -566,6 +618,25 @@ def _tool_arguments(value: Any) -> dict[str, Any]:
     if value is None:
         return {}
     return {"value": value}
+
+
+def _confidence_value(value: Any) -> float:
+    if isinstance(value, bool):
+        return 1.0 if value else 0.0
+    if isinstance(value, (int, float)):
+        return max(0.0, min(1.0, float(value)))
+    if isinstance(value, str):
+        text = value.strip()
+        if text.endswith("%"):
+            try:
+                return max(0.0, min(1.0, float(text[:-1].strip()) / 100.0))
+            except ValueError:
+                return 0.0
+        try:
+            return max(0.0, min(1.0, float(text)))
+        except ValueError:
+            return 0.0
+    return 0.0
 
 
 def _merge_tool_payload(payload: dict[str, Any], tool_name: LlmToolName, args: dict[str, Any]) -> None:

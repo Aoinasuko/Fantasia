@@ -141,12 +141,52 @@ def _npc_tendency_text(character: Character) -> str:
             "raw_field_event_enemy",
         ):
             if key in character.extra:
-                parts.append(character.extra.get(key))
+                parts.append(_npc_tendency_part(character.extra.get(key)))
     if isinstance(character.flags, dict):
         for key in ("source", "enemy_npc", "hostile", "guard", "generated_dungeon_boss"):
             if key in character.flags:
                 parts.append(character.flags.get(key))
     return json.dumps(parts, ensure_ascii=False, default=str).casefold()
+
+
+def _npc_tendency_part(value: Any, *, max_chars: int = 600, _depth: int = 0, _seen: set[int] | None = None) -> Any:
+    if value in (None, ""):
+        return ""
+    if isinstance(value, (str, int, float, bool)):
+        text = str(value)
+        return text[:max_chars]
+    if _seen is None:
+        _seen = set()
+    ident = id(value)
+    if ident in _seen:
+        return ""
+    _seen.add(ident)
+    if _depth >= 2:
+        return str(value)[:max_chars]
+    if isinstance(value, list):
+        return [_npc_tendency_part(item, max_chars=max(120, max_chars // 2), _depth=_depth + 1, _seen=_seen) for item in value[:8]]
+    if isinstance(value, dict):
+        allowed = (
+            "name",
+            "role",
+            "category",
+            "description",
+            "overview",
+            "summary",
+            "type",
+            "kind",
+            "element",
+            "npc_template_id",
+            "npc_template_source",
+            "generated_dungeon_boss",
+            "boss_npc",
+        )
+        return {
+            key: _npc_tendency_part(value.get(key), max_chars=max(120, max_chars // 2), _depth=_depth + 1, _seen=_seen)
+            for key in allowed
+            if key in value
+        }
+    return str(value)[:max_chars]
 
 
 def _npc_is_boss_like(character: Character) -> bool:
@@ -1325,6 +1365,7 @@ def create_quest_objective_npc(
     skills = [skill for skill in (_normalise_skill(item) for item in _as_list(design.get("skills"))) if skill.get("name")]
     traits = [trait for trait in (_normalise_trait(item) for item in _as_list(design.get("traits"))) if trait.get("name")]
     attacks = [dict(item) for item in _as_list(design.get("attacks")) if isinstance(item, dict)]
+    resistance = [dict(item) for item in _as_list(design.get("resistance")) if isinstance(item, dict)]
     npc_template_payload = design.get("npc_template_payload") if isinstance(design.get("npc_template_payload"), dict) else {}
     npc_template_extra = npc_template_payload.get("extra") if isinstance(npc_template_payload.get("extra"), dict) else {}
     npc_template_flags = npc_template_payload.get("flags") if isinstance(npc_template_payload.get("flags"), dict) else {}
@@ -1344,6 +1385,7 @@ def create_quest_objective_npc(
         image_generation_prompt=[part for part in [*image_prompts, description] if part],
         skills=skills,
         traits=traits,
+        resistance=resistance or _as_list(npc_template_payload.get("resistance")),
         flags={
             "source": "quest_objective",
             "quest_objective": True,
@@ -1434,7 +1476,9 @@ def master_ai_npc_generater(
                 "Fantasiaのmaster_ai_npc_generater相当として、"
                 "master_ai_facilitatorが必要とした未登録NPCを生成してください。"
                 "NPCカテゴリ、説明、性格、外見、職業、archetype、skillsを持つJSONだけを返してください。"
-                "skillsとtraitsを返す場合は各項目にpowerとstrength_levelを1から5で付けてください。"
+                "skillsは必ず name, desc, usesp(1-12), power(1-5), ability, element, type を持つ新形式にしてください。"
+                "typeは heal_single, damage_hp_single, effect_enemy_single 等の戦闘効果ID配列です。"
+                "resistanceを返す場合は [{type, amount}] とし、弱い耐性は0.2、強い耐性は0.5だけを使ってください。"
                 "店主・一般NPCは合計8、通常NPCは8-12、終盤・精鋭・ボス級は16-25を目安にしてください。"
             ),
         },
@@ -1499,7 +1543,8 @@ def npc_detail_generater(
                 "Fantasiaのnpc_detail_generater相当として、"
                 "話し方、archetype、skills、会話トピック、行動方針を補完してください。"
                 "必ずname, talk_style, archetype, skillsを持つJSONだけを返してください。"
-                "skillsにはpowerとstrength_levelを1から5で必ず付けてください。"
+                "skillsは必ず name, desc, usesp(1-12), power(1-5), ability, element, type を持つ新形式にしてください。"
+                "typeは heal_single, damage_hp_single, effect_enemy_single 等の戦闘効果ID配列です。"
             ),
         },
         {
@@ -1610,6 +1655,8 @@ def apply_npc_detail(engine: GameEngine, character: Character, response: dict[st
         character.extra["memory_updates"] = _as_list(response.get("memory_updates"))
     if response.get("relationship") is not None:
         character.extra["relationship"] = response.get("relationship")
+    if response.get("resistance") is not None:
+        character.resistance = [dict(item) for item in _as_list(response.get("resistance")) if isinstance(item, dict)]
     response_location = str(response.get("location") or response.get("current_location") or "").strip()
     if response_location:
         engine._set_character_presence(character, response_location, str(response.get("state") or character.state or "present"))

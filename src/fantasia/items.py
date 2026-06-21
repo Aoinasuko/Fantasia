@@ -1045,6 +1045,7 @@ def calculate_equipment_summary(equipment: dict[str, Any] | None) -> dict[str, A
         "sp_regen": 0,
         "attributes": {"str": 0, "dex": 0, "con": 0, "int": 0, "wis": 0, "cha": 0},
         "status_immunities": [],
+        "resistance": {},
         "element_resistances": {},
         "llm_effects": [],
         "items": [],
@@ -1091,8 +1092,10 @@ def calculate_equipment_summary(equipment: dict[str, Any] | None) -> dict[str, A
             elif effect_type in {"element_resistance", "element_damage_reduction", "resist_element"}:
                 element = str(effect.get("element") or effect.get("target") or effect.get("attribute") or "").strip()
                 if element:
-                    resistances = summary["element_resistances"]
-                    resistances[element] = max(_safe_int(resistances.get(element), 0), value)
+                    amount = max(0.0, min(1.0, _safe_float(effect.get("amount"), 0.0)))
+                    resistances = summary["resistance"]
+                    resistances[element] = max(_safe_float(resistances.get(element), 0.0), amount)
+                    summary["element_resistances"] = dict(resistances)
         if isinstance(item.get("llm_effects"), list):
             llm_effects.extend(item.get("llm_effects") or [])
     summary["status_immunities"] = _dedupe_texts(immunities)
@@ -1558,8 +1561,8 @@ def _equipment_effects(category: str, rarity: str, name: str) -> list[dict[str, 
         elif effect_type == "element_resistance":
             elements = [element_id for element_id in ELEMENT_IDS if element_id != "none"]
             element_id = rng.choice(elements)
-            value = max(10, min(50, 10 + power * 2 + rng.randrange(0, 11)))
-            effects.append({"type": "element_resistance", "element": element_id, "value": value})
+            amount = 0.5 if power >= 7 else 0.2
+            effects.append({"type": "element_resistance", "element": element_id, "amount": amount})
     return effects
 
 
@@ -1610,9 +1613,10 @@ def _equipment_effect_label(effect: Any, language: str = "ja") -> str:
     if effect_type in {"element_resistance", "element_damage_reduction", "resist_element"}:
         element = str(effect.get("element") or effect.get("target") or effect.get("attribute") or "").strip()
         label = tr_enum("element", element, language, fallback=element)
+        percent = int(round(max(0.0, min(1.0, _safe_float(effect.get("amount"), 0.0))) * 100))
         if str(language or "").strip().lower().startswith("en"):
-            return f"{label} damage reduction {value}%"
-        return f"{label}ダメージ軽減 {value}%"
+            return f"{label} damage reduction {percent}%"
+        return f"{label}ダメージ軽減 {percent}%"
     label = labels.get(effect_type)
     if not label:
         return ""
@@ -1818,5 +1822,12 @@ def _rng(*parts: object) -> random.Random:
 def _safe_int(value: Any, default: int = 0) -> int:
     try:
         return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
     except (TypeError, ValueError):
         return default

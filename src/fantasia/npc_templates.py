@@ -30,6 +30,15 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _as_list(value: Any) -> list[Any]:
     if value in (None, ""):
         return []
@@ -99,6 +108,19 @@ def _normalise_attacks(value: Any) -> list[dict[str, Any]]:
     return attacks
 
 
+def _normalise_resistance(value: Any) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for item in _as_list(value):
+        if not isinstance(item, dict):
+            continue
+        element = str(item.get("type") or "").strip()
+        if not element:
+            continue
+        amount = max(0.0, min(1.0, _safe_float(item.get("amount"), 0.0)))
+        result.append({"type": element, "amount": amount})
+    return result
+
+
 def _normalise_npc_template(raw: Any, source_path: Path) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
@@ -128,6 +150,7 @@ def _normalise_npc_template(raw: Any, source_path: Path) -> dict[str, Any] | Non
         "atk": max(0, _safe_int(raw.get("atk"), 0)),
         "def": max(0, _safe_int(raw.get("def", raw.get("defense")), 0)),
         "attributes": _normalise_attributes(raw.get("attributes")),
+        "resistance": _normalise_resistance(raw.get("resistance")),
         "attacks": _normalise_attacks(raw.get("attacks")),
         "skills": _normalise_named_entries(raw.get("skills")) if skills_defined else None,
         "traits": _normalise_named_entries(raw.get("traits")) if traits_defined else None,
@@ -307,6 +330,7 @@ def npc_template_ai_context(template: dict[str, Any] | None) -> dict[str, Any]:
         "atk": template.get("atk"),
         "def": template.get("def"),
         "attributes": template.get("attributes") or {},
+        "resistance": template.get("resistance") or [],
         "attacks": template.get("attacks") or [],
         "skills": template.get("skills") if template.get("skills_defined") else "generate_if_needed",
         "traits": template.get("traits") if template.get("traits_defined") else "generate_if_needed",
@@ -332,6 +356,7 @@ def npc_template_prompt_summaries(
                 "look": template.get("look"),
                 "personality": template.get("personality"),
                 "attacks": template.get("attacks") or [],
+                "resistance": template.get("resistance") or [],
             }
         )
     return summaries
@@ -403,6 +428,7 @@ def npc_template_to_character_payload(
         "attack": max(0, attack),
         "defense": max(0, defense),
         "attributes": attributes,
+        "resistance": deepcopy(template.get("resistance") or []),
         "extra": {
             "npc_template_id": str(template.get("id") or ""),
             "npc_template_category": category,

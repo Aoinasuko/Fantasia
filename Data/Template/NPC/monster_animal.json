@@ -24,7 +24,7 @@
       {"name": "牙で噛んで攻撃", "type": "physical"}
     ],
     "skills": [
-      {"name": "吸血", "description": "相手の血を吸い取り、ダメージを与えると同時に自身を回復する。", "power": 1, "sp": 3}
+      {"name": "吸血", "desc": "相手の血を吸い取り、ダメージを与えると同時に自身を回復する。", "usesp": 3, "power": 1, "ability": "str", "element": "physical", "type": ["absorption_single"]}
     ],
     "traits": [
       {"name": "飛行", "description": "空を飛んでおり、近接攻撃が届きにくい。", "power": 2}
@@ -63,7 +63,7 @@
     "name": "野生の狼",
     "role": "肉食動物",
     "look": "四足歩行の狼。",
-    "personality": "飢えており、肉を食べたいと考えている。",
+    "personality": "縄張り意識が強く、縄張りに入ったものを警戒する。",
     "image_prompt": ["wolf", "fantasy RPG monster"],
     "gender": "none",
     "age": "adult",

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -690,11 +690,12 @@ class FixtureLlmBackend(BaseLlmBackend):
                         "skills": [
                             {
                                 "name": "薬草鑑定",
-                                "description": "周辺の薬草や毒草を見分ける。",
-                                "skill_type": "support",
-                                "effects": [{"name": "治療手がかり", "value": 1}],
-                                "sp_cost": 3,
-                                "usefulness": "探索と会話で追加情報を出せる。",
+                                "desc": "周辺の薬草や毒草を見分け、必要に応じて手当てする。",
+                                "usesp": 3,
+                                "power": 2,
+                                "ability": "wis",
+                                "element": "nature",
+                                "type": ["heal_single"],
                             }
                         ],
                         "aliases": ["薬師", "巡回薬師"],
@@ -712,11 +713,12 @@ class FixtureLlmBackend(BaseLlmBackend):
                 "skills": [
                     {
                         "name": "雨避けの処方",
-                        "description": "雨で悪化する状態異常を一時的に和らげる。",
-                        "skill_type": "support",
-                        "effects": [{"name": "状態異常緩和", "value": 1}],
-                        "sp_cost": 2,
-                        "usefulness": "探索前の準備や会話イベントに使える。",
+                        "desc": "雨で悪化する傷を一時的に和らげる。",
+                        "usesp": 2,
+                        "power": 1,
+                        "ability": "wis",
+                        "element": "water",
+                        "type": ["heal_single"],
                     }
                 ],
                 "memory_updates": [{"target": name, "memory": "プレイヤーと初対面。まだ警戒している。"}],
@@ -820,138 +822,59 @@ class FixtureLlmBackend(BaseLlmBackend):
                 "confidence": 80 if target_name else 20,
                 "reason": "fixture: プレイヤー行動と一時コンテキストログから曖昧参照を推定した。",
             }
-        elif manager_name == "referee_player_attack_new_new":
-            action = _extract_action(user_text) or "攻撃する"
-            target = _extract_referee_target(user_text) or "硝子森の影"
-            content = {
-                "target": target,
-                "hit": True,
-                "damage": 3,
-                "narration": f"あなたの攻撃「{action}」は霧を裂き、{target}の輪郭をわずかに揺らした。",
-                "encounter_update": {
-                    "opponent_hp_delta": -3,
-                    "opponent_status": "wounded",
-                    "player_status": "armed",
-                },
-                "effects": [{"name": "牽制", "duration": 1}],
-                "finished": False,
-                "choices": ["距離を取る", "追撃する", "降伏する"],
-            }
-        elif manager_name == "referee_player_any_input_new_new":
-            action = _extract_action(user_text) or "様子を見る"
-            surrendering = any(word in action for word in ("降伏", "降参", "屈服", "武器を捨て", "両手", "身を委ね", "服を脱"))
+        elif manager_name == "combat_player_action":
+            payload = _extract_fixture_payload(user_text)
+            action = str(payload.get("action") or "").strip() or _extract_action(user_text) or "身構える"
+            surrendering = any(word in action for word in ("降伏", "降参", "無抵抗", "抵抗しない", "武器を捨て", "両手", "surrender", "nonresistance"))
             content = {
                 "intent": "surrender" if surrendering else "free_action",
                 "narration": (
-                    "あなたは武器を下ろし、敵意がないことを示した。"
+                    "あなたは無抵抗の姿勢を保ち、相手の反応を待った。"
                     if surrendering
-                    else f"あなたは戦闘中に「{action}」を試みた。"
+                    else f"あなたは戦闘中に「{action}」を試み、相手の出方をうかがった。"
                 ),
-                "encounter_update": (
-                    {"player_status": "surrendering", "player_surrendered": True}
-                    if surrendering
-                    else {"player_status": "acting"}
-                ),
-                "effects": [],
-                "finished": False,
-                "content_violation": False,
-                "choices": ["両手を上げる", "事情を説明する", "相手の反応を待つ"] if surrendering else ["身構える", "距離を取る", "降伏する"],
+                "choices": ["相手の反応を待つ", "事情を説明する"] if surrendering else ["攻撃", "スキル", "行動", "逃走"],
+                "tool_judgements": [
+                    {
+                        "name": "player_surrender",
+                        "confidence": 1.0 if surrendering else 0.0,
+                        "arguments": {"reason": "fixture combat player action"},
+                        "reason": "fixture surrender classification.",
+                    }
+                ],
             }
-        elif manager_name == "referee_npc":
-            target = _extract_referee_target(user_text) or "硝子森の影"
-            surrendering = (
-                '"intent": "surrender"' in user_text
-                or '"player_surrendered": true' in user_text
-                or '"player_status": "surrendering"' in user_text
-            )
-            if surrendering:
-                content = {
-                    "npc_action": "accept_surrender",
-                    "intent": "mercy",
-                    "target": "Player",
-                    "narration": f"{target}はすぐには踏み込まず、あなたが本当に武器を捨てたかを見極めている。",
-                    "encounter_update": {
-                        "opponent_status": "guarded",
-                        "player_status": "surrender_accepted",
-                    },
-                    "combat_judgement": {"offensive": False, "weakness_multiplier": 0.0, "reason": "降伏受諾のためHPダメージなし。"},
-                    "effects": [{"name": "戦闘停止", "duration": 1}],
-                    "finished": True,
-                    "should_end_encounter": True,
-                    "choices": ["事情を説明する", "ゆっくり離れる"],
-                }
-            else:
-                content = {
-                    "npc_action": "counterattack",
-                    "intent": "self_defense",
-                    "target": "Player",
-                    "narration": f"{target}は傷ついた輪郭を震わせ、反撃の姿勢を取った。",
-                    "combat_judgement": {"offensive": True, "weakness_multiplier": 1.0, "reason": "通常の反撃。"},
-                    "encounter_update": {"opponent_status": "hostile", "player_status": "threatened"},
-                    "effects": [{"name": "圧迫", "duration": 1}],
-                    "finished": False,
-                    "should_end_encounter": False,
-                    "choices": ["防御する", "距離を取る", "降伏する"],
-                }
-        elif manager_name == "referee_npc_rewrite":
-            target = _extract_referee_target(user_text) or "硝子森の影"
-            accepting = (
-                '"npc_action": "accept_surrender"' in user_text
-                or '"player_status": "surrender_accepted"' in user_text
-            )
-            content = {
-                "npc_action": "accept_surrender" if accepting else "counterattack",
-                "narration": (
-                    f"{target}は攻撃を止めた。雨音の中、低く唸るだけで、あなたに武器を遠ざけろと促している。"
-                    if accepting
-                    else f"{target}は霧をまとって踏み込み、あなたを追い払うための一撃を放とうとする。"
-                ),
-                "encounter_update": (
-                    {"opponent_status": "watching", "player_status": "surrender_accepted"}
-                    if accepting
-                    else {"opponent_status": "attacking", "player_status": "under_attack"}
-                ),
-                "combat_judgement": (
-                    {"offensive": False, "weakness_multiplier": 0.0, "reason": "降伏後の警戒でHPダメージなし。"}
-                    if accepting
-                    else {"offensive": True, "weakness_multiplier": 1.0, "reason": "攻撃行動。"}
-                ),
-                "finished": accepting,
-                "rewrite_reason": (
-                    "降伏の意思と相手の慎重な性格を反映し、即時攻撃ではなく拘束/警戒に変えた。"
-                    if accepting
-                    else "相手の敵対状態を自然文として整えた。"
-                ),
-                "choices": ["事情を説明する", "ゆっくり離れる"] if accepting else ["防御する", "反撃する", "降伏する"],
-            }
-        elif manager_name == "combat_damage_narrator":
+        elif manager_name == "combat_enemy_action":
             payload = _extract_fixture_payload(user_text)
-            result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
-            lethal = bool(result.get("lethal"))
-            damage = int(result.get("damage") or 0)
+            surrender_required = bool(payload.get("player_surrender_resolution_required"))
+            content = {
+                "action_type": "free_action" if surrender_required else "attack",
+                "attack_name": "" if surrender_required else "攻撃",
+                "element": "" if surrender_required else "physical",
+                "narration": "相手はあなたの無抵抗を見て、攻撃を止めた。" if surrender_required else "相手は短く間合いを詰め、反撃の姿勢を取った。",
+                "choices": ["攻撃", "スキル", "行動", "逃走"],
+                "reason": "fixture enemy action.",
+                "tool_judgements": [
+                    {
+                        "name": "accept_player_surrender",
+                        "confidence": 1.0 if surrender_required else 0.0,
+                        "arguments": {"reason": "fixture accepts player surrender"},
+                        "reason": "fixture surrender response.",
+                    }
+                ],
+            }
+        elif manager_name == "combat_log_narrator":
+            payload = _extract_fixture_payload(user_text)
+            event = str(payload.get("event") or "combat")
             actor = str(payload.get("actor") or "攻撃者")
             target = str(payload.get("target") or "相手")
-            action = str(payload.get("action") or "攻撃")
-            if lethal:
-                narration = f"{actor}は{target}へ{action}を放った。決定的な一撃を受け、{target}はその場で力尽きた。"
-            elif damage <= 2:
-                narration = f"{actor}は{target}へ{action}を試みたが、傷は浅く、体勢を崩す程度に留まった。"
+            skill_payload = payload.get("skill") if isinstance(payload.get("skill"), dict) else {}
+            action = str(payload.get("action") or skill_payload.get("name") or "行動")
+            if "miss" in event:
+                narration = f"{actor}の{action}は{target}にかわされた。"
+            elif event == "skill":
+                narration = f"{actor}は{action}を使い、戦況を動かした。"
             else:
-                narration = f"{actor}は{target}へ{action}を繰り出し、確かな手応えとともに傷を負わせた。"
-            content = {"narration": narration}
-        elif manager_name == "combat_heal_narrator":
-            payload = _extract_fixture_payload(user_text)
-            result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
-            amount = int(result.get("healing") or 0)
-            actor = str(payload.get("actor") or "術者")
-            target = str(payload.get("target") or actor)
-            action = str(payload.get("skill") or payload.get("action") or "回復")
-            if amount <= 0:
-                narration = f"{actor}は{action}を試みたが、{target}の傷はほとんど癒えなかった。"
-            elif amount <= 5:
-                narration = f"{actor}は{action}を使った。{target}の傷は少しふさがり、呼吸がわずかに落ち着いた。"
-            else:
-                narration = f"{actor}は{action}を使った。温かな光が{target}を包み、傷が目に見えて癒えていく。"
+                narration = f"{actor}の{action}が{target}に命中した。"
             content = {"narration": narration}
         elif manager_name == "create_initial_character_profile":
             name = _extract_character_name(user_text) or "Mira"
@@ -991,14 +914,12 @@ class FixtureLlmBackend(BaseLlmBackend):
                 "skills": [
                     {
                         "name": "Lantern Signal",
-                        "description": "Uses a lantern flash to guide allies or distract threats.",
-                        "element": "none",
-                        "skill_type": "support",
-                        "effects": [{"name": "guidance", "value": 1}],
-                        "sp_cost": 3,
+                        "desc": "Uses a lantern flash to guide allies or distract threats.",
+                        "usesp": 3,
                         "power": 2,
-                        "strength_level": 2,
-                        "usefulness": "Useful for exploration, conversation, and opening combat support.",
+                        "ability": "wis",
+                        "element": "none",
+                        "type": ["effect_ally_party"],
                     }
                 ],
             }
@@ -1054,20 +975,22 @@ class FixtureLlmBackend(BaseLlmBackend):
             content = {
                 "skills": [
                     {
-                        "name": "噂の照合",
-                        "description": "複数の証言を照らし合わせ、探索先の候補を絞る。",
-                        "skill_type": "support",
-                        "effects": [{"name": "手がかり発見", "value": 1}],
-                        "sp_cost": 3,
-                        "usefulness": "会話や探索前の情報収集に役立つ。",
+                        "name": "三連突き",
+                        "desc": "鋭い突きを三度続けて放つ。",
+                        "usesp": 3,
+                        "power": 2,
+                        "ability": "dex",
+                        "element": "physical",
+                        "type": ["damage_hp_single", "damage_hp_single", "damage_hp_single"],
                     },
                     {
                         "name": "雨音読み",
-                        "description": "雨や霧の変化から危険の接近を察する。",
-                        "skill_type": "passive",
-                        "effects": [{"name": "危険察知", "value": 1}],
-                        "sp_cost": 0,
-                        "usefulness": "フィールドイベントや戦闘前兆の説明に使える。",
+                        "desc": "雨や霧の変化から危険の接近を察して身をかわす。",
+                        "usesp": 2,
+                        "power": 1,
+                        "ability": "dex",
+                        "element": "wind",
+                        "type": ["effect_self"],
                     },
                 ]
             }
@@ -1162,12 +1085,19 @@ def _fixture_intent_tool_response(manager_name: str, content: Any) -> Any:
     }:
         return content
 
-    tools: list[dict[str, Any]] = []
+    tool_judgements: list[dict[str, Any]] = []
 
     def add_tool(name: str, arguments: Any) -> None:
         if arguments in (None, "", [], {}):
             return
-        tools.append({"name": name, "arguments": arguments if isinstance(arguments, dict) else {"value": arguments}})
+        tool_judgements.append(
+            {
+                "name": name,
+                "confidence": 1.0,
+                "arguments": arguments if isinstance(arguments, dict) else {"value": arguments},
+                "reason": "fixture-converted side effect",
+            }
+        )
 
     if content.get("location"):
         add_tool("move_player", {"location": content.get("location")})
@@ -1271,7 +1201,7 @@ def _fixture_intent_tool_response(manager_name: str, content: Any) -> Any:
         "intent": content.get("intent") or {"kind": manager_name, "summary": str(content.get("think") or content.get("summary") or "")},
         "narration": str(content.get("narration") or content.get("text") or content.get("message") or ""),
         "choices": list(content.get("choices") or []),
-        "tools": tools,
+        "tool_judgements": tool_judgements,
     }
     for key in (
         "content_violation",
@@ -2079,3 +2009,4 @@ def _extract_monster_name(user_text: str) -> str:
     if marker in user_text:
         return user_text.split(marker, 1)[-1].splitlines()[0].strip()
     return ""
+
