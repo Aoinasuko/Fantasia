@@ -68,7 +68,8 @@ from .prompt_templates import PromptTemplateStore, resolve_prompt_template_dir
 from .save_store import SaveStore
 from .text_encoding import check_project_encoding, configure_stdio_encoding, format_encoding_report
 from .ui_font import configure_ui_fonts
-from .world_model import CharacterData, GameStateData, LocationData, WorldData
+from .character import Character
+from .world_model import GameStateData, LocationData, WorldData
 
 
 MAX_EXPLORATION_CHOICES = 5
@@ -2196,7 +2197,7 @@ class FantasiaApp(tk.Tk):
         )
 
     def _character_setup_preview_image(self) -> Image.Image | None:
-        character = self.engine.state.world_data.characters.get(self.player_var.get().strip())
+        character = self.engine.state.world_data.character(self.player_var.get().strip())
         if character:
             image_path = _subject_image_path(
                 character.image_paths,
@@ -2220,7 +2221,7 @@ class FantasiaApp(tk.Tk):
         def task():
             character.flags["is_player"] = True
             character.flags.setdefault("source", "character_setup_preview")
-            self.engine.state.world_data.characters[character.name] = character
+            self.engine.state.world_data.add_character(character)
             return self.engine.generate_character_image(character.name, save_game=False)
 
         def done(result) -> None:
@@ -2689,10 +2690,12 @@ class FantasiaApp(tk.Tk):
                 y += line_height
 
     def _player_character_dict(self) -> dict[str, object]:
+        player = self.engine.player_character()
+        if player:
+            return player.to_dict()
         if self.engine.state.party and isinstance(self.engine.state.party[0], dict):
             return self.engine.state.party[0]
-        player = self.engine.state.world_data.characters.get(self.engine.state.player_name)
-        return player.to_dict() if player else {}
+        return {}
 
     def _render_actor_rosters(self) -> None:
         if not hasattr(self, "npc_roster_canvas"):
@@ -2867,7 +2870,7 @@ class FantasiaApp(tk.Tk):
         name = str(item.get("name") or "")
         encounter = item.get("encounter") if isinstance(item.get("encounter"), dict) else {}
         if kind in {"player", "character", "companion"}:
-            character = self.engine.state.world_data.characters.get(name)
+            character = self.engine.state.world_data.character(name)
             if character and kind != "player":
                 self.engine._ensure_character_runtime_data(character)
             data = character.to_dict() if character else {}
@@ -2898,6 +2901,7 @@ class FantasiaApp(tk.Tk):
             for item in state.party[1:]
             if isinstance(item, dict)
         }
+        party_uuids.update(str(item or "") for item in state.party_uuids[1:])
         active_encounter = state.flags.get("active_encounter")
         if isinstance(active_encounter, dict) and active_encounter.get("status") != "ended":
             raw_opponents = active_encounter.get("opponents")
@@ -2914,11 +2918,12 @@ class FantasiaApp(tk.Tk):
                 ]
             for entry in opponents[:3]:
                 name = str(entry.get("name") or tr_enum("roster", "unknown", language))
+                uuid = str(entry.get("uuid") or "").strip()
                 opponent_type = str(entry.get("opponent_type") or active_encounter.get("opponent_type") or "")
                 hp = entry.get("opponent_hp")
                 max_hp = entry.get("opponent_max_hp")
                 image: Image.Image | None = None
-                character = state.world_data.characters.get(name)
+                character = state.world_data.character(uuid or name)
                 if character:
                     image = self._actor_image_from_paths(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image"))
                     opponent_type = self._character_roster_subtitle(character, fallback=opponent_type or "enemy")
@@ -2939,7 +2944,7 @@ class FantasiaApp(tk.Tk):
 
         current_location = self._current_location_name()
 
-        def append_character(character: CharacterData) -> None:
+        def append_character(character: Character) -> None:
             if len(items) >= 3:
                 return
             if character.flags.get("is_player"):
@@ -2964,7 +2969,7 @@ class FantasiaApp(tk.Tk):
         active_conversation = state.flags.get("active_conversation")
         if isinstance(active_conversation, dict):
             name = str(active_conversation.get("character") or "")
-            character = state.world_data.characters.get(name)
+            character = state.world_data.character(name)
             if character:
                 append_character(character)
 
@@ -2974,7 +2979,7 @@ class FantasiaApp(tk.Tk):
                 break
         return items
 
-    def _character_roster_subtitle(self, character: CharacterData, *, fallback: str = "NPC") -> str:
+    def _character_roster_subtitle(self, character: Character, *, fallback: str = "NPC") -> str:
         internal_labels = {
             "rescue_target": "救出対象",
             "blocker": "妨害者",
@@ -3007,16 +3012,15 @@ class FantasiaApp(tk.Tk):
 
     def _companion_character_dict(self) -> dict[str, object]:
         state = self.engine.state
+        for uuid in state.party_uuids[1:2]:
+            character = state.world_data.character(str(uuid))
+            if character:
+                return character.to_dict()
         if len(state.party) > 1 and isinstance(state.party[1], dict):
             party_entry = dict(state.party[1])
             name = str(party_entry.get("name") or party_entry.get("character_name") or "").strip()
             uuid = str(party_entry.get("uuid") or "").strip()
-            character = state.world_data.characters.get(name) if name else None
-            if not character and uuid:
-                for candidate in state.world_data.characters.values():
-                    if str(candidate.uuid) == uuid:
-                        character = candidate
-                        break
+            character = state.world_data.character(uuid or name)
             if character:
                 data = character.to_dict()
                 data.update(party_entry)
@@ -3029,7 +3033,7 @@ class FantasiaApp(tk.Tk):
         image_paths = player.get("image_paths")
         name = str(player.get("name") or (self.engine.state.player_name if kind == "player" else ""))
         if (not isinstance(image_paths, dict) or not _subject_image_path(image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image"))) and name:
-            character = self.engine.state.world_data.characters.get(name)
+            character = self.engine.state.world_data.character(name)
             if character and character.image_paths:
                 image_paths = character.image_paths
         image = self._actor_image_from_paths(image_paths if isinstance(image_paths, dict) else {}, ("face_image", "add_border_image", "no_bg_image", "generated_image"))
@@ -3069,7 +3073,7 @@ class FantasiaApp(tk.Tk):
                 return f"{location} / {name}"
         return location
 
-    def _character_is_present_at(self, character: CharacterData, location: str) -> bool:
+    def _character_is_present_at(self, character: Character, location: str) -> bool:
         actor_location = character.location or str(character.flags.get("current_location") or "")
         if not actor_location:
             return False
@@ -3098,7 +3102,7 @@ class FantasiaApp(tk.Tk):
                 return node_id
         return ""
 
-    def _character_matches_current_subnode(self, character: CharacterData, location: str) -> bool:
+    def _character_matches_current_subnode(self, character: Character, location: str) -> bool:
         extra = character.extra if isinstance(character.extra, dict) else {}
         flags = character.flags if isinstance(character.flags, dict) else {}
         assigned_subnode = str(extra.get(ACTOR_SUBNODE_ID_FLAG) or flags.get(ACTOR_SUBNODE_ID_FLAG) or "").strip()
@@ -3114,7 +3118,7 @@ class FantasiaApp(tk.Tk):
         current_subnode = self._current_subnode_id(location)
         return not current_subnode or assigned_subnode == current_subnode
 
-    def _character_matches_current_facility(self, character: CharacterData) -> bool:
+    def _character_matches_current_facility(self, character: Character) -> bool:
         extra = character.extra if isinstance(character.extra, dict) else {}
         flags = character.flags if isinstance(character.flags, dict) else {}
         facility_name = str(extra.get("facility") or flags.get("facility_name") or "").strip()
@@ -3590,7 +3594,7 @@ class FantasiaApp(tk.Tk):
             self.engine.save_game()
         self._open_inventory_window(_ui_text(self.config_data, "trade_title"), character.name, character.inventory, mode="shop", target_character=character)
 
-    def _trade_target_character(self, action: str = "") -> CharacterData | None:
+    def _trade_target_character(self, action: str = "") -> Character | None:
         candidates = self._current_trade_candidates()
         action_text = str(action or "")
         if action_text:
@@ -3600,17 +3604,17 @@ class FantasiaApp(tk.Tk):
         active = self.engine.state.flags.get("active_conversation")
         if isinstance(active, dict):
             name = str(active.get("character") or "")
-            character = self.engine.state.world_data.characters.get(name)
+            character = self.engine.state.world_data.character(name)
             if character:
                 for candidate in candidates:
                     if candidate.name == character.name or str(candidate.uuid) == str(character.uuid):
                         return candidate
         return candidates[0] if len(candidates) == 1 else None
 
-    def _current_trade_candidates(self) -> list[CharacterData]:
+    def _current_trade_candidates(self) -> list[Character]:
         current_location = self._current_location_name()
         can_trade = getattr(self.engine, "_character_can_trade", None)
-        candidates: list[CharacterData] = []
+        candidates: list[Character] = []
         for character in self.engine.state.world_data.characters.values():
             if character.flags.get("is_player"):
                 continue
@@ -3620,7 +3624,7 @@ class FantasiaApp(tk.Tk):
                 candidates.append(character)
         return candidates
 
-    def _character_action_text_matches(self, character: CharacterData, action_text: str) -> bool:
+    def _character_action_text_matches(self, character: Character, action_text: str) -> bool:
         text = str(action_text or "").strip()
         if not text:
             return False
@@ -3850,7 +3854,7 @@ class FantasiaApp(tk.Tk):
         target_inventory: list[dict[str, object]],
         *,
         mode: str,
-        target_character: CharacterData | None = None,
+        target_character: Character | None = None,
     ) -> None:
         player_inventory = self._player_inventory()
         language = self.config_data.language
@@ -4207,7 +4211,7 @@ class FantasiaApp(tk.Tk):
         self.engine.state.gold = gold
         if self.engine.state.party and isinstance(self.engine.state.party[0], dict):
             self.engine.state.party[0]["gold"] = gold
-        character = self.engine.state.world_data.characters.get(self.engine.state.player_name)
+        character = self.engine.player_character()
         if character:
             character.gold = gold
 
@@ -4215,7 +4219,7 @@ class FantasiaApp(tk.Tk):
         inventory = self._player_inventory()
         if self.engine.state.party and isinstance(self.engine.state.party[0], dict):
             self.engine.state.party[0]["inventory"] = inventory
-        character = self.engine.state.world_data.characters.get(self.engine.state.player_name)
+        character = self.engine.player_character()
         if character:
             character.inventory = inventory
         self.engine._sync_player_equipment()
@@ -5165,9 +5169,9 @@ class FantasiaApp(tk.Tk):
             + "\n"
         )
 
-    def _character_from_setup(self) -> CharacterData:
+    def _character_from_setup(self) -> Character:
         name = self.player_var.get().strip() or "Player"
-        character = CharacterData(
+        character = Character(
             name=name,
             role="Player",
             category=self.character_category_var.get().strip() or "player",
@@ -5197,7 +5201,7 @@ class FantasiaApp(tk.Tk):
         character.extra["ability"] = {"attributes": attributes}
         character.extra["attributes"] = attributes
         character.image_generation_prompt = _prompt_parts_from_look(character.look)
-        existing = self.engine.state.world_data.characters.get(name)
+        existing = self.engine.state.world_data.character(name)
         if existing:
             character.image_paths.update(existing.image_paths)
             character.prompts.update(existing.prompts)
@@ -5554,7 +5558,7 @@ class FantasiaApp(tk.Tk):
         if not isinstance(active, dict):
             return label("no_active_conversation")
         name = str(active.get("character") or tr_enum("roster", "unknown", language))
-        character = self.engine.state.world_data.characters.get(name)
+        character = self.engine.state.world_data.character(name)
         lines = [
             f"{label('state')}: {label('conversation')}",
             f"{label('speaker')}: {name}",
@@ -5741,7 +5745,7 @@ class FantasiaApp(tk.Tk):
         for name in names:
             if not name or name in seen:
                 continue
-            character = state.world_data.characters.get(name)
+            character = state.world_data.character(name)
             if not character:
                 continue
             image_path = _subject_image_path(character.image_paths, ("no_bg_image", "add_border_image", "generated_image", "face_image"))
@@ -5771,7 +5775,7 @@ class FantasiaApp(tk.Tk):
         for name in names:
             if not name or name in seen:
                 continue
-            monster = state.world_data.characters.get(name)
+            monster = state.world_data.character(name)
             if not monster:
                 continue
             image_path = _subject_image_path(monster.image_paths, ("no_bg_image", "add_border_image", "base_image", "generated_image", "face_image"))
@@ -6279,10 +6283,10 @@ class FantasiaApp(tk.Tk):
 
         encounter = state.flags.get("active_encounter")
         if isinstance(encounter, dict) and encounter.get("status") != "ended":
-            missing_character: CharacterData | None = None
+            missing_character: Character | None = None
             for entry in self._battle_target_entries(encounter):
                 character = entry.get("character")
-                if isinstance(character, CharacterData) and not _subject_image_path(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image")):
+                if isinstance(character, Character) and not _subject_image_path(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image")):
                     missing_character = character
                     break
             if missing_character is not None:
@@ -6296,7 +6300,7 @@ class FantasiaApp(tk.Tk):
         active_conversation = state.flags.get("active_conversation")
         if isinstance(active_conversation, dict):
             name = str(active_conversation.get("character") or "")
-            character = state.world_data.characters.get(name)
+            character = state.world_data.character(name)
             if character and not _subject_image_path(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image")):
                 self._run_visual_task(
                     _ui_text(self.config_data, "task_generating_character_image"),
@@ -6305,7 +6309,7 @@ class FantasiaApp(tk.Tk):
                 )
                 return
 
-        player = state.world_data.characters.get(state.player_name)
+        player = self.engine.player_character()
         if player and not _subject_image_path(player.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image")):
             self._run_visual_task(
                 _ui_text(self.config_data, "task_generating_player_image"),
@@ -6331,12 +6335,7 @@ class FantasiaApp(tk.Tk):
         for entry in entries[:3]:
             name = str(entry.get("name") or "").strip()
             uuid = str(entry.get("uuid") or "").strip()
-            character = state.world_data.characters.get(name) if name else None
-            if character is None and uuid:
-                for candidate in state.world_data.characters.values():
-                    if str(candidate.uuid) == uuid:
-                        character = candidate
-                        break
+            character = state.world_data.character(uuid or name)
             hp = entry.get("opponent_hp")
             max_hp = entry.get("opponent_max_hp")
             status = str(entry.get("status") or "").strip().lower()
@@ -6587,7 +6586,7 @@ def run_save_smoke_test() -> None:
         print(engine.create_world("SaveSmokeWorld", "霧深い辺境と古い魔法", save_game=False))
         print(
             engine.apply_player_character(
-                CharacterData(
+                Character(
                     name="SaveSmoke",
                     role="Player",
                     category="young woman",

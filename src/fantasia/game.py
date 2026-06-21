@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
 
+from . import npc_generate
 from .image_pipeline import process_subject_image
 from .imagegen import BaseImageBackend, ImageResult
 from .i18n import ELEMENT_IDS, tr_enum
@@ -70,13 +71,7 @@ from .llm_tool import (
 from .npc_templates import (
     ENEMY_NPC_TEMPLATE_CATEGORIES,
     FRIENDLY_NPC_TEMPLATE_CATEGORIES,
-    choose_npc_template,
-    merge_npc_template_payload,
-    npc_template_ai_context,
-    npc_template_ids_from_payloads,
     npc_template_prompt_summaries,
-    npc_templates_for_categories,
-    npc_template_to_character_payload,
     used_npc_template_ids,
 )
 from .paths import GENERATED_DIR
@@ -224,7 +219,8 @@ from .world_generation import (
     _world_location_target_count,
     _world_overview_max_tokens,
 )
-from .world_model import CharacterData, GameStateData, LocationData, QuestData, WorldData
+from .character import Character
+from .world_model import GameStateData, LocationData, QuestData, WorldData
 
 
 SEASONS = ("春", "夏", "秋", "冬")
@@ -307,16 +303,34 @@ PLAYER_HOME_TOWN_HALL_PLANS = {500: 3, 1000: 5, 10000: 7}
 PLAYER_HOME_CHOICES = ("休息する", "クラフトをする", "家の保存箱を開く", "外に出る")
 SKILL_TRAIT_POWER_MIN = 1
 SKILL_TRAIT_POWER_MAX = 5
-NPC_DEFAULT_POWER_BUDGET = 8
+NPC_DEFAULT_POWER_BUDGET = npc_generate.NPC_DEFAULT_POWER_BUDGET
 PLAYER_UNLIMITED_POWER_BUDGET = 999
-CHARACTER_DEFAULT_ATTRIBUTES = {"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10}
-NPC_ATTRIBUTE_GENERATED_FLAG = "npc_attributes_generated"
-NPC_ATTRIBUTE_PROFILE_KEY = "npc_attribute_profile"
-NPC_MAX_LEVEL = 50
+CHARACTER_DEFAULT_ATTRIBUTES = npc_generate.CHARACTER_DEFAULT_ATTRIBUTES
+NPC_ATTRIBUTE_GENERATED_FLAG = npc_generate.NPC_ATTRIBUTE_GENERATED_FLAG
+NPC_ATTRIBUTE_PROFILE_KEY = npc_generate.NPC_ATTRIBUTE_PROFILE_KEY
+NPC_MAX_LEVEL = npc_generate.NPC_MAX_LEVEL
 NPC_AFFINITY_MIN = -100
 NPC_AFFINITY_MAX = 100
 NPC_AFFINITY_DELTA_MIN = -10
 NPC_AFFINITY_DELTA_MAX = 10
+_character_runtime_attributes = npc_generate._character_runtime_attributes
+_npc_level_tendency_attributes = npc_generate._npc_level_tendency_attributes
+_character_calculated_max_hp = npc_generate._character_calculated_max_hp
+_character_calculated_max_sp = npc_generate._character_calculated_max_sp
+_character_calculated_attack = npc_generate._character_calculated_attack
+_character_calculated_defense = npc_generate._character_calculated_defense
+_danger_scaled_placeholder_enemy = npc_generate._danger_scaled_placeholder_enemy
+_scale_character_for_danger = npc_generate._scale_character_for_danger
+_character_state_is_dead = npc_generate._character_state_is_dead
+_npc_from_raw = npc_generate._npc_from_raw
+_enemy_npc_from_raw = npc_generate._enemy_npc_from_raw
+_npc_generation_requests = npc_generate.npc_generation_requests
+_infer_npc_generation_requests = npc_generate.infer_npc_generation_requests
+_dedupe_npc_requests = npc_generate.dedupe_npc_requests
+_filter_npc_generation_requests = npc_generate.filter_npc_generation_requests
+_npc_request_name = npc_generate.npc_request_name
+_should_generate_npc_name = npc_generate.should_generate_npc_name
+_world_has_dead_npc_identity = npc_generate.world_has_dead_npc_identity
 COMPANION_WAIT_RETURN_DAYS = 3
 PLAYER_INVENTORY_MAX_SLOTS = 27
 
@@ -485,7 +499,7 @@ class GameEngine:
         self,
         world_name: str,
         premise: str,
-        player_character: CharacterData | None = None,
+        player_character: Character | None = None,
         save_game: bool = True,
         location_count: int = DEFAULT_WORLD_LOCATION_COUNT,
         crime_risk: str = DEFAULT_WORLD_CRIME_RISK,
@@ -739,7 +753,7 @@ class GameEngine:
         self,
         world_name: str,
         premise: str,
-        player_character: CharacterData | None = None,
+        player_character: Character | None = None,
         save_game: bool = True,
         location_count: int = DEFAULT_WORLD_LOCATION_COUNT,
         crime_risk: str = DEFAULT_WORLD_CRIME_RISK,
@@ -1746,12 +1760,23 @@ class GameEngine:
         size = max(1, int(size or 1))
         return [values[index : index + size] for index in range(0, len(values), size)]
 
-    def apply_player_character(self, character: CharacterData) -> str:
+    def apply_player_character(self, character: Character) -> str:
         if not self.state.world_data or self.state.world_data.world_name == "unknown":
             raise RuntimeError("No generated world is waiting for character setup.")
         self._install_player_character(character)
         self.save_game()
         return self.state.log_text()
+
+    def player_character(self) -> Character | None:
+        player_uuid = str(self.state.player_uuid or "").strip()
+        if player_uuid:
+            player = self.state.world_data.character(player_uuid)
+            if player:
+                return player
+        for character in self.state.world_data.characters.values():
+            if character.flags.get("is_player"):
+                return character
+        return None
 
     def _emit_world_generation_progress(
         self,
@@ -1786,7 +1811,7 @@ class GameEngine:
 
     def generate_character_setup_traits(
         self,
-        character: CharacterData,
+        character: Character,
         seed_name: str = "",
         seed_description: str = "",
     ) -> list[dict[str, Any]]:
@@ -1802,7 +1827,7 @@ class GameEngine:
 
     def generate_character_setup_skills(
         self,
-        character: CharacterData,
+        character: Character,
         desired_element: str = "",
         seed_name: str = "",
         seed_description: str = "",
@@ -1818,7 +1843,7 @@ class GameEngine:
         self._apply_character_skills(character, response)
         return character.skills
 
-    def _install_player_character(self, character: CharacterData) -> None:
+    def _install_player_character(self, character: Character) -> None:
         name = character.name.strip() or "Player"
         character.name = name
         character.role = character.role or "Player"
@@ -1827,6 +1852,7 @@ class GameEngine:
         character.flags.setdefault("source", "character_setup")
         _normalise_actor_power_loadout(character)
         self.state.player_name = name
+        self.state.player_uuid = character.uuid
         self.state.gold = int(character.gold or 0)
         self.state.inventory = list(character.inventory)
         character.inventory = self.state.inventory
@@ -1834,8 +1860,9 @@ class GameEngine:
         character.state = "present"
         self._ensure_character_runtime_data(character)
         self._ensure_player_progress(character)
+        self.state.party_uuids = [character.uuid]
         self.state.party = [character.to_dict()]
-        self.state.world_data.characters[name] = character
+        self.state.world_data.add_character(character)
         self.state.flags["player_character"] = character.to_dict()
         max_hp = self._player_max_hp(character)
         current_hp = self._player_current_hp(max_hp)
@@ -1865,6 +1892,12 @@ class GameEngine:
         self.state.display_log.extend(self._apply_starvation_turn_penalty())
 
     def _player_inventory(self) -> list[dict[str, Any]]:
+        character = self.player_character()
+        if character:
+            inventory = character.inventory if isinstance(character.inventory, list) else []
+            character.inventory = inventory
+            self.state.inventory = inventory
+            return inventory
         inventory = self.state.inventory
         if not isinstance(inventory, list):
             inventory = []
@@ -1876,7 +1909,7 @@ class GameEngine:
         if self.state.party and isinstance(self.state.party[0], dict):
             self.state.party[0]["inventory"] = inventory
             self.state.party[0]["gold"] = self.state.gold
-        character = self.state.world_data.characters.get(self.state.player_name)
+        character = self.player_character()
         if character:
             character.inventory = inventory
             character.gold = self.state.gold
@@ -2151,7 +2184,7 @@ class GameEngine:
             if location and _is_settlement_location(location):
                 self._set_current_subnode(location_name, DEFAULT_SUBNODE_ID)
 
-    def _set_character_subnode_fields(self, character: CharacterData, location_name: str, subnode_id: str) -> None:
+    def _set_character_subnode_fields(self, character: Character, location_name: str, subnode_id: str) -> None:
         location_name = str(location_name or "").strip()
         subnode_id = str(subnode_id or "").strip()
         if not location_name or not subnode_id:
@@ -2161,20 +2194,20 @@ class GameEngine:
         character.extra[ACTOR_SUBNODE_ID_FLAG] = subnode_id
         character.extra[ACTOR_SUBNODE_LOCATION_FLAG] = location_name
 
-    def _clear_character_subnode_fields(self, character: CharacterData) -> None:
+    def _clear_character_subnode_fields(self, character: Character) -> None:
         for mapping in (character.flags, character.extra):
             if isinstance(mapping, dict):
                 mapping.pop(ACTOR_SUBNODE_ID_FLAG, None)
                 mapping.pop(ACTOR_SUBNODE_LOCATION_FLAG, None)
 
-    def _character_subnode_assignment(self, character: CharacterData) -> tuple[str, str]:
+    def _character_subnode_assignment(self, character: Character) -> tuple[str, str]:
         extra = character.extra if isinstance(character.extra, dict) else {}
         flags = character.flags if isinstance(character.flags, dict) else {}
         subnode_id = str(extra.get(ACTOR_SUBNODE_ID_FLAG) or flags.get(ACTOR_SUBNODE_ID_FLAG) or "").strip()
         location_name = str(extra.get(ACTOR_SUBNODE_LOCATION_FLAG) or flags.get(ACTOR_SUBNODE_LOCATION_FLAG) or "").strip()
         return location_name, subnode_id
 
-    def _ensure_character_subnode_assignment_for_location(self, character: CharacterData, location_name: str) -> str:
+    def _ensure_character_subnode_assignment_for_location(self, character: Character, location_name: str) -> str:
         location_name = str(location_name or "").strip()
         if not location_name or character.flags.get("is_player"):
             return ""
@@ -2194,7 +2227,7 @@ class GameEngine:
         except Exception:
             return ""
 
-    def _character_matches_current_subnode(self, character: CharacterData, location_name: str | None = None) -> bool:
+    def _character_matches_current_subnode(self, character: Character, location_name: str | None = None) -> bool:
         location_name = str(location_name or self.state.current_location or self.state.world_data.starting_location or "").strip()
         assigned_location, assigned_subnode = self._character_subnode_assignment(character)
         if not assigned_subnode:
@@ -2209,7 +2242,7 @@ class GameEngine:
             return True
         return assigned_subnode == current_subnode
 
-    def _character_matches_active_facility(self, character: CharacterData) -> bool:
+    def _character_matches_active_facility(self, character: Character) -> bool:
         if not self._character_matches_current_subnode(character):
             return False
         extra = character.extra if isinstance(character.extra, dict) else {}
@@ -2344,7 +2377,7 @@ class GameEngine:
             extra = self.state.party[0].setdefault("extra", {})
             if isinstance(extra, dict):
                 extra["equipment"] = equipment
-        character = self.state.world_data.characters.get(self.state.player_name)
+        character = self.player_character()
         if character:
             character.extra["equipment"] = equipment
 
@@ -2366,7 +2399,7 @@ class GameEngine:
         active = self._active_encounter()
         effects: list[Any] = []
         effects.extend(self.state.status_effects)
-        player = self.state.world_data.characters.get(self.state.player_name)
+        player = self.player_character()
         if player:
             effects.extend(player.status_effects)
         if isinstance(active, dict):
@@ -3886,7 +3919,7 @@ class GameEngine:
         response: dict[str, Any],
         source: str,
         *,
-        default_character: CharacterData | None = None,
+        default_character: Character | None = None,
         encounter: dict[str, Any] | None = None,
     ) -> list[str]:
         if not isinstance(response, dict):
@@ -3971,7 +4004,7 @@ class GameEngine:
 
     def _apply_character_exp(
         self,
-        character: CharacterData,
+        character: Character,
         amount: Any,
         *,
         source: str,
@@ -4058,9 +4091,9 @@ class GameEngine:
         self,
         response: dict[str, Any],
         *,
-        default_character: CharacterData | None = None,
+        default_character: Character | None = None,
         encounter: dict[str, Any] | None = None,
-    ) -> CharacterData | None:
+    ) -> Character | None:
         target_uuid = str(response.get("target_uuid") or response.get("uuid") or response.get("character_uuid") or "").strip()
         target_name = str(
             response.get("target")
@@ -4074,7 +4107,7 @@ class GameEngine:
         if not target_name and not target_uuid:
             return None
         if target_name.casefold() in {"player", "pc", "self", "主人公", "プレイヤー", self.state.player_name.casefold()}:
-            return self.state.world_data.characters.get(self.state.player_name)
+            return self.player_character()
         character = self._character_from_reference(target_name, target_uuid)
         if character:
             return character
@@ -4088,11 +4121,11 @@ class GameEngine:
             return default_character
         if encounter is not None:
             opponent = self._encounter_opponent(encounter)
-            if isinstance(opponent, CharacterData) and target_name and target_name == opponent.name:
+            if isinstance(opponent, Character) and target_name and target_name == opponent.name:
                 return opponent
         return None
 
-    def _raise_random_character_attributes(self, character: CharacterData) -> dict[str, int]:
+    def _raise_random_character_attributes(self, character: Character) -> dict[str, int]:
         attrs = _character_runtime_attributes(character)
         keys = ["str", "dex", "con", "int", "wis", "cha"]
         count = random.randint(1, 3)
@@ -4110,7 +4143,7 @@ class GameEngine:
             ability["attributes"] = dict(attrs)
         return gains
 
-    def _sync_encounter_character_after_exp(self, encounter: dict[str, Any], character: CharacterData) -> None:
+    def _sync_encounter_character_after_exp(self, encounter: dict[str, Any], character: Character) -> None:
         active_uuid = str(encounter.get("active_opponent_uuid") or encounter.get("opponent_uuid") or "")
         active_name = str(encounter.get("active_opponent_name") or encounter.get("opponent_name") or "")
         opponents = encounter.get("opponents") if isinstance(encounter.get("opponents"), list) else []
@@ -4346,16 +4379,13 @@ class GameEngine:
         return self._world_customization().get("enemy_strength", DEFAULT_WORLD_ENEMY_STRENGTH)
 
     def _npc_template_used_ids(self, world: WorldData | None = None) -> set[str]:
-        return used_npc_template_ids(world or self.state.world_data)
+        return npc_generate.npc_template_used_ids(self, world)
 
     def _npc_template_categories_for_objective(self, objective_role: str) -> tuple[str, ...]:
-        role = str(objective_role or "").strip()
-        if role in {"defeat_target", "blocker", "boss", "enemy", "opponent"}:
-            return ENEMY_NPC_TEMPLATE_CATEGORIES
-        return FRIENDLY_NPC_TEMPLATE_CATEGORIES
+        return npc_generate.npc_template_categories_for_objective(objective_role)
 
     def _npc_template_danger_for_location(self, location_name: str) -> int:
-        return self._current_location_danger(location_name)
+        return npc_generate.npc_template_danger_for_location(self, location_name)
 
     def _select_npc_template(
         self,
@@ -4365,13 +4395,12 @@ class GameEngine:
         seed: str,
         payloads: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        preferred_ids = npc_template_ids_from_payloads(*payloads)
-        return choose_npc_template(
-            categories,
+        return npc_generate.select_npc_template(
+            self,
+            categories=categories,
             danger_level=danger_level,
-            preferred_ids=preferred_ids,
-            used_ids=self._npc_template_used_ids(),
             seed=seed,
+            payloads=payloads,
         )
 
     def _npc_template_character_payload(
@@ -4383,86 +4412,20 @@ class GameEngine:
         hostile: bool | None = None,
         boss: bool = False,
     ) -> dict[str, Any]:
-        return npc_template_to_character_payload(
+        return npc_generate.npc_template_character_payload(
+            self,
             template,
             danger_level=danger_level,
-            enemy_strength=self._enemy_strength_setting(),
             seed=seed,
             hostile=hostile,
             boss=boss,
         )
 
     def _npc_template_selection_text(self, raw: Any) -> tuple[str, str, str, str]:
-        if isinstance(raw, dict):
-            text_parts = [
-                raw.get("name"),
-                raw.get("role"),
-                raw.get("category"),
-                raw.get("npc_category"),
-                raw.get("job"),
-                raw.get("occupation"),
-                raw.get("description"),
-                raw.get("personality"),
-                raw.get("look"),
-                raw.get("appearance"),
-            ]
-            extra = raw.get("extra") if isinstance(raw.get("extra"), dict) else {}
-            flags = raw.get("flags") if isinstance(raw.get("flags"), dict) else {}
-            text_parts.extend([extra.get("role_label"), extra.get("internal_role"), flags.get("source")])
-            text = " ".join(str(part or "") for part in text_parts).casefold()
-            gender = str(raw.get("gender") or "").strip().casefold()
-            age = str(raw.get("age") or "").strip().casefold()
-            role = " ".join(str(part or "") for part in (raw.get("role"), raw.get("category"), raw.get("job"), raw.get("occupation"))).casefold()
-            return text, gender, age, role
-        text = str(raw or "").casefold()
-        return text, "", "", text
+        return npc_generate.npc_template_selection_text(raw)
 
     def _score_npc_template_for_raw(self, template: dict[str, Any], raw: Any) -> int:
-        text, gender, age, role = self._npc_template_selection_text(raw)
-        template_id = str(template.get("id") or "").casefold()
-        template_text = " ".join(
-            str(part or "")
-            for part in (
-                template.get("id"),
-                template.get("name"),
-                template.get("role"),
-                template.get("gender"),
-                template.get("age"),
-                template.get("category"),
-            )
-        ).casefold()
-        score = 0
-        template_gender = str(template.get("gender") or "").strip().casefold()
-        binary_genders = {"male", "female"}
-        if gender and template_gender:
-            if gender == template_gender:
-                score += 8
-            elif gender in binary_genders and template_gender in binary_genders:
-                score -= 10
-        raw_child = any(term in f"{age} {role} {text}" for term in ("child", "kid", "boy", "girl", "teen", "young", "子供", "少年", "少女"))
-        raw_adult = any(term in f"{age} {role} {text}" for term in ("adult", "grown", "elder", "old", "20", "30", "40", "50", "60", "大人", "成人", "老人"))
-        template_child = "child" in template_id or any(term in template_text for term in ("child", "kid", "子供", "少年", "少女"))
-        if raw_child:
-            score += 7 if template_child else -2
-        if raw_adult and template_child:
-            score -= 9
-        if any(term in role or term in text for term in ("merchant", "shop", "keeper", "store", "vendor", "facility")):
-            score += 6 if "merchant" in template_id or "merchant" in template_text else 0
-        if any(term in role or term in text for term in ("resident", "villager", "civilian")):
-            score += 5 if "resident" in template_id or "residents" in template_id else 0
-        if any(term in role or term in text for term in ("adventurer", "guard", "soldier", "hunter", "mercenary")):
-            if not template_child:
-                score += 3
-        raw_elf = "elf" in text or "エルフ" in text
-        template_elf = "elf" in template_id or "elf" in template_text or "エルフ" in template_text
-        if raw_elf:
-            score += 6 if template_elf else 0
-        elif template_elf:
-            score -= 2
-        for term in re.split(r"[^a-z0-9_]+", role):
-            if len(term) >= 4 and term in template_text:
-                score += 2
-        return score
+        return npc_generate.score_npc_template_for_raw(template, raw)
 
     def _choose_npc_template_for_raw(
         self,
@@ -4473,28 +4436,14 @@ class GameEngine:
         seed: str,
         preferred_ids: list[str] | tuple[str, ...] | None = None,
     ) -> dict[str, Any] | None:
-        if preferred_ids:
-            return choose_npc_template(
-                categories,
-                danger_level=danger_level,
-                preferred_ids=preferred_ids,
-                used_ids=self._npc_template_used_ids(),
-                seed=seed,
-            )
-        candidates = npc_templates_for_categories(
-            categories,
+        return npc_generate.choose_npc_template_for_raw(
+            self,
+            raw,
+            categories=categories,
             danger_level=danger_level,
-            used_ids=self._npc_template_used_ids(),
+            seed=seed,
+            preferred_ids=preferred_ids,
         )
-        if not candidates:
-            return None
-        rng = random.Random(seed or f"npc-template:{danger_level}:{','.join(categories)}")
-        scored = [
-            (self._score_npc_template_for_raw(template, raw), rng.random(), template)
-            for template in candidates
-        ]
-        scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
-        return scored[0][2]
 
     def _template_augmented_npc_raw(
         self,
@@ -4507,106 +4456,38 @@ class GameEngine:
         boss: bool = False,
         select_without_id: bool = True,
     ) -> dict[str, Any]:
-        payloads = (raw,) if isinstance(raw, dict) else ()
-        preferred_ids = npc_template_ids_from_payloads(*payloads)
-        if not preferred_ids and not select_without_id:
-            return dict(raw) if isinstance(raw, dict) else {"name": str(raw or "")}
-        template = self._choose_npc_template_for_raw(
+        return npc_generate.template_augmented_npc_raw(
+            self,
             raw,
             categories=categories,
-            danger_level=danger_level,
-            preferred_ids=preferred_ids,
-            seed=seed,
-        )
-        template_payload = self._npc_template_character_payload(
-            template,
             danger_level=danger_level,
             seed=seed,
             hostile=hostile,
             boss=boss,
+            select_without_id=select_without_id,
         )
-        return merge_npc_template_payload(template_payload, raw)
 
     def _generated_npc_level(
         self,
-        character: CharacterData,
+        character: Character,
         *,
         location_name: str = "",
         danger_level: int | None = None,
         role_hint: str = "",
         boss: bool = False,
     ) -> int:
-        danger = _clamp_world_danger(
-            danger_level if danger_level is not None else self._npc_template_danger_for_location(location_name)
+        return npc_generate.generated_npc_level(
+            self,
+            character,
+            location_name=location_name,
+            danger_level=danger_level,
+            role_hint=role_hint,
+            boss=boss,
         )
-        role_text = " ".join(
-            str(part or "")
-            for part in (
-                role_hint,
-                character.category,
-                character.role,
-                character.flags.get("source"),
-                character.flags.get("quest_objective_role"),
-                character.extra.get("role_label"),
-                character.extra.get("internal_role"),
-                character.extra.get("npc_template_category"),
-            )
-        ).casefold()
-        boss = bool(boss or _npc_is_boss_like(character) or "boss" in role_text)
-        if boss:
-            target_level = _danger_scaled_level_floor(danger, boss=True)
-        else:
-            target_level = _danger_scaled_level_floor(danger)
-            hostile = bool(
-                character.flags.get("hostile")
-                or character.extra.get("hostile")
-                or character.flags.get("enemy_npc")
-                or character.category == "enemy_npc"
-            )
-            combat_terms = (
-                "adventurer",
-                "blocker",
-                "captain",
-                "defeat_target",
-                "enemy",
-                "fighter",
-                "guard",
-                "guardian",
-                "hunter",
-                "mercenary",
-                "monster",
-                "opponent",
-                "soldier",
-                "warrior",
-            )
-            civilian_terms = (
-                "child",
-                "delivery_target",
-                "facility",
-                "keeper",
-                "merchant",
-                "resident",
-                "rescue_target",
-                "shop",
-                "villager",
-            )
-            if hostile:
-                target_level += max(1, danger // 5)
-            elif any(term in role_text for term in combat_terms):
-                target_level += 1
-            elif any(term in role_text for term in civilian_terms):
-                target_level = max(1, target_level - 2)
-
-        base_level = max(
-            _safe_int(character.level, 1),
-            _safe_int(character.extra.get("base_level"), 1) if isinstance(character.extra, dict) else 1,
-            _safe_int(character.extra.get("level"), 1) if isinstance(character.extra, dict) else 1,
-        )
-        return max(1, min(NPC_MAX_LEVEL, max(base_level, target_level)))
 
     def _finalize_generated_npc(
         self,
-        character: CharacterData,
+        character: Character,
         *,
         location_name: str = "",
         danger_level: int | None = None,
@@ -4614,26 +4495,15 @@ class GameEngine:
         boss: bool = False,
         sync_vitals_to_formula: bool = True,
     ) -> None:
-        danger = _clamp_world_danger(
-            danger_level if danger_level is not None else self._npc_template_danger_for_location(location_name)
-        )
-        boss = bool(boss or _npc_is_boss_like(character))
-        character.level = self._generated_npc_level(
+        npc_generate.finalize_generated_npc(
+            self,
             character,
             location_name=location_name,
-            danger_level=danger,
+            danger_level=danger_level,
             role_hint=role_hint,
             boss=boss,
-        )
-        _scale_character_for_danger(character, danger, boss=boss)
-        self._ensure_character_runtime_data(
-            character,
-            level=character.level,
             sync_vitals_to_formula=sync_vitals_to_formula,
         )
-        character.flags["danger_level"] = danger
-        character.extra["danger_level"] = danger
-
     def _ensure_settlement_crime_profile(self, settlement: LocationData) -> dict[str, Any]:
         profile = settlement.extra.setdefault("crime", {})
         if not isinstance(profile, dict):
@@ -4719,40 +4589,8 @@ class GameEngine:
         self.save_game()
         return self.state.log_text(16)
 
-    def _ensure_guard_character(self, settlement: LocationData) -> CharacterData:
-        base_name = f"{settlement.name}の衛兵"
-        character = self.state.world_data.characters.get(base_name)
-        if character is None or _character_state_is_dead(character):
-            name = base_name if character is None else _unique_character_name(self.state.world_data, base_name)
-            danger_level = self._npc_template_danger_for_location(settlement.name)
-            npc_raw = self._template_augmented_npc_raw(
-                {
-                    "name": name,
-                    "role": "衛兵",
-                    "category": "guard",
-                    "description": f"{settlement.name}の治安を守る衛兵。",
-                    "personality": "職務に忠実で、街中の犯罪者を見逃さない。",
-                    "flags": {"source": "crime_guard", "guard": True},
-                },
-                categories=FRIENDLY_NPC_TEMPLATE_CATEGORIES,
-                danger_level=danger_level,
-                seed=f"crime-guard:{self.state.world_name}:{settlement.name}:{name}",
-                hostile=False,
-            )
-            character = _npc_from_raw(npc_raw, len(self.state.world_data.characters))
-            character.name = name
-            character.category = "guard"
-            character.flags["source"] = "crime_guard"
-            character.flags["guard"] = True
-            self._finalize_generated_npc(
-                character,
-                location_name=settlement.name,
-                danger_level=danger_level,
-                role_hint="guard",
-            )
-            self.state.world_data.characters[character.name] = character
-        self._set_character_presence(character, self.state.current_location or settlement.name)
-        return character
+    def _ensure_guard_character(self, settlement: LocationData) -> Character:
+        return npc_generate.ensure_guard_character(self, settlement)
 
     def _current_location_danger(self, location_name: str = "") -> int:
         name = location_name or self.state.current_location or self.state.world_data.starting_location
@@ -4784,8 +4622,8 @@ class GameEngine:
         else:
             attack = base_attack
             defense = base_defense
-        opponent = self.state.world_data.characters.get(opponent_name)
-        if isinstance(opponent, CharacterData):
+        opponent = self.state.world_data.character(opponent_name)
+        if isinstance(opponent, Character):
             has_normal_hp = _safe_int(opponent.max_hp, 0) > 0
             if not has_normal_hp:
                 _scale_character_for_danger(opponent, danger)
@@ -4812,11 +4650,11 @@ class GameEngine:
             "opponent_max_hp": max(1, int(hp)),
         }
 
-    def _encounter_opponent_names_for_start(self, primary: CharacterData | None, location: str) -> list[str]:
+    def _encounter_opponent_names_for_start(self, primary: Character | None, location: str) -> list[str]:
         names: list[str] = []
-        if isinstance(primary, CharacterData) and primary.name:
+        if isinstance(primary, Character) and primary.name:
             names.append(primary.name)
-        if isinstance(primary, CharacterData) and not _character_is_hostile_actor(primary):
+        if isinstance(primary, Character) and not _character_is_hostile_actor(primary):
             return names[:1]
         for character in self._hostile_characters_at(location, limit=COMBAT_MAX_OPPONENTS + 2):
             if len(names) >= COMBAT_MAX_OPPONENTS:
@@ -4828,7 +4666,7 @@ class GameEngine:
             names.append(character.name)
         return names[:COMBAT_MAX_OPPONENTS]
 
-    def _encounter_opponent_entry(self, character: CharacterData, *, location: str) -> dict[str, Any]:
+    def _encounter_opponent_entry(self, character: Character, *, location: str) -> dict[str, Any]:
         profile = self._opponent_combat_profile("character", character.name, location=location)
         if _safe_int(character.max_hp, 0) <= 0 or _safe_int(character.current_hp, 0) > 0:
             self._ensure_character_runtime_data(character)
@@ -4849,7 +4687,7 @@ class GameEngine:
             "enemy_strength": profile.get("enemy_strength"),
         }
 
-    def _sync_encounter_opponent_entry(self, encounter: dict[str, Any], character: CharacterData) -> dict[str, Any]:
+    def _sync_encounter_opponent_entry(self, encounter: dict[str, Any], character: Character) -> dict[str, Any]:
         opponents = encounter.setdefault("opponents", [])
         if not isinstance(opponents, list):
             opponents = []
@@ -4879,8 +4717,8 @@ class GameEngine:
             entry["status"] = str(entry.get("status") or "active")
         return entry
 
-    def _set_encounter_active_opponent(self, encounter: dict[str, Any], character: CharacterData | None) -> None:
-        if not isinstance(character, CharacterData):
+    def _set_encounter_active_opponent(self, encounter: dict[str, Any], character: Character | None) -> None:
+        if not isinstance(character, Character):
             return
         entry = self._sync_encounter_opponent_entry(encounter, character)
         encounter["opponent_type"] = "character"
@@ -4894,8 +4732,8 @@ class GameEngine:
         encounter["active_opponent_uuid"] = str(character.uuid or "")
         encounter["active_opponent_name"] = character.name
 
-    def _encounter_opponents(self, encounter: dict[str, Any]) -> list[CharacterData]:
-        opponents: list[CharacterData] = []
+    def _encounter_opponents(self, encounter: dict[str, Any]) -> list[Character]:
+        opponents: list[Character] = []
         raw = encounter.get("opponents")
         entries = raw if isinstance(raw, list) else []
         for entry in entries:
@@ -4909,8 +4747,8 @@ class GameEngine:
             opponents.insert(0, primary)
         return opponents[:COMBAT_MAX_OPPONENTS]
 
-    def _living_encounter_opponents(self, encounter: dict[str, Any]) -> list[CharacterData]:
-        living: list[CharacterData] = []
+    def _living_encounter_opponents(self, encounter: dict[str, Any]) -> list[Character]:
+        living: list[Character] = []
         for character in self._encounter_opponents(encounter):
             entry = self._sync_encounter_opponent_entry(encounter, character)
             combat_status = str(entry.get("status") or entry.get("opponent_status") or character.extra.get("combat_status") or "").strip().lower()
@@ -4925,11 +4763,11 @@ class GameEngine:
             living.append(character)
         return living
 
-    def _acting_encounter_opponents(self, encounter: dict[str, Any]) -> list[CharacterData]:
+    def _acting_encounter_opponents(self, encounter: dict[str, Any]) -> list[Character]:
         return [character for character in self._living_encounter_opponents(encounter) if not self._character_has_surrendered(character, encounter)]
 
-    def _character_has_surrendered(self, character: CharacterData, encounter: dict[str, Any] | None = None) -> bool:
-        if not isinstance(character, CharacterData):
+    def _character_has_surrendered(self, character: Character, encounter: dict[str, Any] | None = None) -> bool:
+        if not isinstance(character, Character):
             return False
         flags = character.flags if isinstance(character.flags, dict) else {}
         extra = character.extra if isinstance(character.extra, dict) else {}
@@ -4952,7 +4790,7 @@ class GameEngine:
     def _encounter_has_surrendered_opponents(self, encounter: dict[str, Any]) -> bool:
         return any(self._character_has_surrendered(character, encounter) for character in self._living_encounter_opponents(encounter))
 
-    def _select_encounter_target_from_action(self, encounter: dict[str, Any], action: str) -> CharacterData | None:
+    def _select_encounter_target_from_action(self, encounter: dict[str, Any], action: str) -> Character | None:
         living = self._living_encounter_opponents(encounter)
         if not living:
             return None
@@ -4981,7 +4819,7 @@ class GameEngine:
         self._set_encounter_active_opponent(encounter, living[0])
         return living[0]
 
-    def _character_from_reference(self, name: str = "", uuid: str = "") -> CharacterData | None:
+    def _character_from_reference(self, name: str = "", uuid: str = "") -> Character | None:
         uuid = str(uuid or "").strip()
         if uuid:
             for character in self.state.world_data.characters.values():
@@ -4989,7 +4827,7 @@ class GameEngine:
                     return character
         name = str(name or "").strip()
         if name:
-            return self.state.world_data.characters.get(name)
+            return self.state.world_data.character(name)
         return None
 
     def _build_encounter(self, opponent_type: str, opponent_name: str, *, location: str = "") -> dict[str, Any]:
@@ -5001,12 +4839,12 @@ class GameEngine:
         combat_stats = self.player_combat_stats()
         equipment_summary = self.player_equipment_summary()
         opponent_profile = self._opponent_combat_profile(opponent_type, opponent_name, location=location_name)
-        opponent = self.state.world_data.characters.get(opponent_name)
-        opponent_names = self._encounter_opponent_names_for_start(opponent if isinstance(opponent, CharacterData) else None, location_name)
+        opponent = self.state.world_data.character(opponent_name)
+        opponent_names = self._encounter_opponent_names_for_start(opponent if isinstance(opponent, Character) else None, location_name)
         opponent_entries: list[dict[str, Any]] = []
         for name in opponent_names:
-            character = self.state.world_data.characters.get(name)
-            if isinstance(character, CharacterData):
+            character = self.state.world_data.character(name)
+            if isinstance(character, Character):
                 opponent_entries.append(self._encounter_opponent_entry(character, location=location_name))
         encounter = {
             "status": "active",
@@ -5033,7 +4871,7 @@ class GameEngine:
             "log": [],
         }
         encounter.update(opponent_profile)
-        if isinstance(opponent, CharacterData):
+        if isinstance(opponent, Character):
             self._set_encounter_active_opponent(encounter, opponent)
         self._sync_encounter_status_effects(encounter)
         self._update_encounter_presence(encounter, "present")
@@ -5281,7 +5119,7 @@ class GameEngine:
     def _match_settlement_facility_for_character(
         self,
         settlement: LocationData,
-        character: CharacterData,
+        character: Character,
     ) -> dict[str, Any] | None:
         facilities = self._ensure_settlement_facilities(settlement)
         extra = character.extra if isinstance(character.extra, dict) else {}
@@ -5351,7 +5189,7 @@ class GameEngine:
 
     def _stamp_character_facility_subnode(
         self,
-        character: CharacterData,
+        character: Character,
         settlement: LocationData,
         facility: dict[str, Any],
     ) -> str:
@@ -5370,7 +5208,7 @@ class GameEngine:
         self,
         world: WorldData,
         settlement: LocationData,
-        character: CharacterData,
+        character: Character,
     ) -> str:
         facility = self._match_settlement_facility_for_character(settlement, character)
         if facility:
@@ -5381,82 +5219,11 @@ class GameEngine:
         self._set_character_subnode_fields(character, settlement.name, subnode_id)
         return subnode_id
 
-    def _ensure_facility_npc(self, settlement: LocationData, facility: dict[str, Any], location_name: str) -> CharacterData | None:
-        npc_name = str(facility.get("npc_name") or "").strip()
-        if not npc_name:
-            npc_name = _default_facility_npc_name(str(facility.get("name") or ""), str(facility.get("type") or ""))
-            facility["npc_name"] = npc_name
-        npc_payload = facility.get("npc") if isinstance(facility.get("npc"), dict) else {}
-        npc_gender = str(facility.get("npc_gender") or npc_payload.get("gender") or "").strip()
-        npc_age = str(facility.get("npc_age") or npc_payload.get("age") or "").strip()
-        npc_look = str(
-            facility.get("npc_look")
-            or facility.get("npc_appearance")
-            or npc_payload.get("look")
-            or npc_payload.get("appearance")
-            or ""
-        ).strip()
-        npc_personality = str(facility.get("npc_personality") or npc_payload.get("personality") or "").strip()
-        if _world_has_dead_npc_identity(self.state.world_data, name=npc_name):
-            return None
-        character = self.state.world_data.characters.get(npc_name)
-        if character is None:
-            danger_level = self._npc_template_danger_for_location(settlement.name or location_name)
-            npc_raw = self._template_augmented_npc_raw(
-                {
-                    "name": npc_name,
-                    "role": str(facility.get("npc_role") or _default_facility_role(str(facility.get("type") or ""))),
-                    "category": "facility_npc",
-                    "gender": npc_gender,
-                    "age": npc_age,
-                    "description": str(facility.get("description") or ""),
-                    "personality": npc_personality,
-                    "look": npc_look,
-                    "facility": str(facility.get("name") or ""),
-                    "facility_type": str(facility.get("type") or _facility_type_from_name(str(facility.get("name") or ""))),
-                },
-                categories=FRIENDLY_NPC_TEMPLATE_CATEGORIES,
-                danger_level=danger_level,
-                seed=f"facility-npc:{self.state.world_name}:{settlement.name}:{npc_name}",
-                hostile=False,
-            )
-            character = _npc_from_raw(npc_raw, len(self.state.world_data.characters))
-            character.name = _unique_character_name(self.state.world_data, character.name)
-            character.category = "facility_npc"
-            facility["npc_name"] = character.name
-            character.flags["source"] = "facility"
-            character.flags["facility_name"] = str(facility.get("name") or "")
-            character.flags["facility_type"] = str(facility.get("type") or _facility_type_from_name(str(facility.get("name") or "")))
-            character.extra["facility"] = str(facility.get("name") or "")
-            character.extra["facility_type"] = str(facility.get("type") or _facility_type_from_name(str(facility.get("name") or "")))
-            character.extra["parent_settlement"] = settlement.name
-            self._finalize_generated_npc(
-                character,
-                location_name=settlement.name or location_name,
-                danger_level=danger_level,
-                role_hint="facility_npc",
-            )
-            self.state.world_data.characters[character.name] = character
-        else:
-            character.flags["facility_name"] = str(facility.get("name") or character.flags.get("facility_name") or "")
-            character.flags["facility_type"] = str(facility.get("type") or character.flags.get("facility_type") or _facility_type_from_name(str(facility.get("name") or "")))
-            character.extra["facility"] = str(facility.get("name") or character.extra.get("facility") or "")
-            character.extra["facility_type"] = str(facility.get("type") or character.extra.get("facility_type") or _facility_type_from_name(str(facility.get("name") or "")))
-            character.extra["parent_settlement"] = settlement.name
-            if npc_gender and not character.gender:
-                character.gender = npc_gender
-            if npc_age and not character.age:
-                character.age = npc_age
-            if npc_look and not character.look:
-                character.look = npc_look
-            if npc_personality and not character.personality:
-                character.personality = npc_personality
-        subnode_id = self._stamp_character_facility_subnode(character, settlement, facility)
-        self._set_character_presence(character, location_name, subnode_id=subnode_id)
-        return character
+    def _ensure_facility_npc(self, settlement: LocationData, facility: dict[str, Any], location_name: str) -> Character | None:
+        return npc_generate.ensure_facility_npc(self, settlement, facility, location_name)
 
     def _set_player_presence(self, location: str) -> None:
-        player = self.state.world_data.characters.get(self.state.player_name)
+        player = self.player_character()
         subnode_id = self._runtime_subnode_for_presence(location)
         if player:
             self._set_character_presence(player, location, subnode_id=subnode_id)
@@ -5766,7 +5533,7 @@ class GameEngine:
         character.flags.setdefault("first_seen_location", location.name)
         character.extra.setdefault("origin_location", location.name)
         self._set_character_subnode_fields(character, location.name, target_subnode)
-        world.characters[character.name] = character
+        world.add_character(character)
         generated_bosses = location.extra.get("generated_bosses")
         if not isinstance(generated_bosses, list):
             generated_bosses = []
@@ -8056,7 +7823,7 @@ class GameEngine:
             result.append(text)
         return result
 
-    def _set_character_presence(self, character: CharacterData, location: str, state: str = "present", subnode_id: str = "") -> None:
+    def _set_character_presence(self, character: Character, location: str, state: str = "present", subnode_id: str = "") -> None:
         self._ensure_character_runtime_data(character)
         requested_state = state or character.state or "present"
         if _character_state_is_dead(character) and requested_state not in {"dead", "corpse"}:
@@ -8094,7 +7861,7 @@ class GameEngine:
 
     def _ensure_character_runtime_data(
         self,
-        character: CharacterData,
+        character: Character,
         *,
         level: int | None = None,
         sync_vitals_to_formula: bool = False,
@@ -8160,30 +7927,31 @@ class GameEngine:
         character.flags["alive"] = not _character_state_is_dead(character)
         character.flags["uuid"] = character.uuid
 
-    def _party_companions(self) -> list[CharacterData]:
-        names: list[str] = []
+    def _party_companions(self) -> list[Character]:
+        refs = [str(item or "").strip() for item in self.state.party_uuids[1:2] if str(item or "").strip()]
         for item in self.state.party[1:2]:
             if not isinstance(item, dict):
                 continue
-            name = str(item.get("name") or item.get("character_name") or "").strip()
-            if name:
-                names.append(name)
-                continue
             uuid = str(item.get("uuid") or "").strip()
             if uuid:
-                for character in self.state.world_data.characters.values():
-                    if character.uuid == uuid:
-                        names.append(character.name)
-                        break
-        result: list[CharacterData] = []
-        for name in names:
-            character = self.state.world_data.characters.get(name)
+                refs.append(uuid)
+                continue
+            name = str(item.get("name") or item.get("character_name") or "").strip()
+            if name:
+                refs.append(name)
+        result: list[Character] = []
+        seen: set[str] = set()
+        for ref in refs:
+            character = self.state.world_data.character(ref)
             if not character or character.flags.get("is_player") or _character_state_is_dead(character):
                 continue
+            if character.uuid in seen:
+                continue
+            seen.add(character.uuid)
             result.append(character)
         return result[:1]
 
-    def _sync_companion_party_entry(self, character: CharacterData) -> None:
+    def _sync_companion_party_entry(self, character: Character) -> None:
         if character.flags.get("is_player"):
             return
         for index, item in enumerate(self.state.party[1:], start=1):
@@ -8196,15 +7964,21 @@ class GameEngine:
             self.state.party[index] = entry
             return
 
-    def _set_party_companion(self, character: CharacterData | None, *, source: str, reason: str = "") -> list[str]:
-        player_entry = self.state.party[0] if self.state.party and isinstance(self.state.party[0], dict) else None
+    def _set_party_companion(self, character: Character | None, *, source: str, reason: str = "") -> list[str]:
+        player = self.player_character()
+        player_entry = player.to_dict() if player else None
         if character is None:
-            if len(self.state.party) > 1:
+            if len(self.state.party_uuids) > 1 or len(self.state.party) > 1:
                 removed = self.state.party[1:]
+                for uuid in self.state.party_uuids[1:]:
+                    npc = self.state.world_data.character(uuid)
+                    if npc and not _character_state_is_dead(npc):
+                        self._return_companion_to_origin(npc, source=source, reason=reason)
+                self.state.party_uuids = [player.uuid] if player else []
                 self.state.party = [player_entry] if player_entry else []
                 for item in removed:
                     if isinstance(item, dict):
-                        npc = self.state.world_data.characters.get(str(item.get("name") or ""))
+                        npc = self.state.world_data.character(str(item.get("uuid") or item.get("name") or ""))
                         if npc and not _character_state_is_dead(npc):
                             self._return_companion_to_origin(npc, source=source, reason=reason)
                 return ["> [Party] Companion left the party."]
@@ -8219,6 +7993,7 @@ class GameEngine:
         self._set_character_presence(character, self.state.current_location or character.location or self.state.world_data.starting_location, "party")
         entry = character.to_dict()
         entry["party_role"] = "companion"
+        self.state.party_uuids = ([player.uuid] if player else []) + [character.uuid]
         self.state.party = ([player_entry] if player_entry else []) + [entry]
         event = {
             "source": source,
@@ -8234,20 +8009,21 @@ class GameEngine:
 
     def _remove_party_companion(
         self,
-        character: CharacterData,
+        character: Character,
         *,
         source: str,
         reason: str = "",
         wait_at_current: bool = False,
     ) -> list[str]:
-        before = len(self.state.party)
+        before = (len(self.state.party), len(self.state.party_uuids))
+        self.state.party_uuids = [uuid for uuid in self.state.party_uuids if uuid != character.uuid]
         self.state.party = [
             item
             for index, item in enumerate(self.state.party)
             if _party_entry_is_player(item, self.state.player_name)
             or not (isinstance(item, dict) and (item.get("name") == character.name or item.get("uuid") == character.uuid))
         ]
-        if len(self.state.party) == before:
+        if (len(self.state.party), len(self.state.party_uuids)) == before:
             return []
         if not _character_state_is_dead(character):
             if wait_at_current:
@@ -8268,7 +8044,7 @@ class GameEngine:
         action_text = "waits here" if wait_at_current else "returned home"
         return [f"> [Party] {character.name} left the party and {action_text}.{reason_text}"]
 
-    def _set_companion_waiting(self, character: CharacterData, *, source: str, reason: str = "") -> None:
+    def _set_companion_waiting(self, character: Character, *, source: str, reason: str = "") -> None:
         day = self.current_absolute_day()
         location = self.state.current_location or character.location or self.state.world_data.starting_location
         origin = self._character_origin_location(character)
@@ -8282,7 +8058,7 @@ class GameEngine:
             "origin_location": origin,
         }
 
-    def _return_companion_to_origin(self, character: CharacterData, *, source: str, reason: str = "") -> str:
+    def _return_companion_to_origin(self, character: Character, *, source: str, reason: str = "") -> str:
         origin = self._character_origin_location(character)
         origin_subnode = self._character_origin_subnode_id(character)
         character.extra.pop("party_waiting", None)
@@ -8301,7 +8077,7 @@ class GameEngine:
         )
         return character.location
 
-    def _character_origin_location(self, character: CharacterData) -> str:
+    def _character_origin_location(self, character: Character) -> str:
         extra = character.extra if isinstance(character.extra, dict) else {}
         flags = character.flags if isinstance(character.flags, dict) else {}
         for value in (
@@ -8318,7 +8094,7 @@ class GameEngine:
                 return text
         return ""
 
-    def _character_origin_subnode_id(self, character: CharacterData) -> str:
+    def _character_origin_subnode_id(self, character: Character) -> str:
         extra = character.extra if isinstance(character.extra, dict) else {}
         flags = character.flags if isinstance(character.flags, dict) else {}
         for value in (
@@ -8371,7 +8147,7 @@ class GameEngine:
             lines.append(line)
         return lines
 
-    def _companion_can_return_to_origin(self, character: CharacterData) -> bool:
+    def _companion_can_return_to_origin(self, character: Character) -> bool:
         world = self.state.world_data
         origin = self._character_origin_location(character)
         current = character.location or str(character.flags.get("current_location") or "")
@@ -8385,7 +8161,7 @@ class GameEngine:
             return False
         return bool(self._shortest_world_path(world, current, origin, visited_only=False))
 
-    def _mark_character_dead(self, character: CharacterData, *, source: str) -> None:
+    def _mark_character_dead(self, character: Character, *, source: str) -> None:
         if character.flags.get("is_player"):
             character.state = "dead"
             character.flags["state"] = "dead"
@@ -8409,7 +8185,7 @@ class GameEngine:
             if not (isinstance(item, dict) and (item.get("name") == character.name or item.get("uuid") == character.uuid))
         ]
 
-    def prepare_vendor_inventory(self, character: CharacterData) -> dict[str, Any]:
+    def prepare_vendor_inventory(self, character: Character) -> dict[str, Any]:
         day = self.current_absolute_day()
         extra = character.extra if isinstance(character.extra, dict) else {}
         if character.extra is not extra:
@@ -8454,7 +8230,7 @@ class GameEngine:
         self.state.world_data.extra.setdefault("vendor_inventory_events", []).append(event)
         return {"changed": True, "day": day, "event": event}
 
-    def vendor_price_multiplier(self, character: CharacterData | None) -> float:
+    def vendor_price_multiplier(self, character: Character | None) -> float:
         if character is None or not isinstance(character.extra, dict):
             return 1.0
         try:
@@ -8468,9 +8244,9 @@ class GameEngine:
         value = base * negotiation
         return max(0.5, min(4.5, value))
 
-    def _current_trade_candidates(self) -> list[CharacterData]:
+    def _current_trade_candidates(self) -> list[Character]:
         current_location = self.state.current_location or self.state.world_data.starting_location
-        candidates: list[CharacterData] = []
+        candidates: list[Character] = []
         for character in self.state.world_data.characters.values():
             if character.flags.get("is_player") or _character_state_is_dead(character):
                 continue
@@ -8482,7 +8258,7 @@ class GameEngine:
                 candidates.append(character)
         return candidates
 
-    def _character_matches_trade_action(self, character: CharacterData, action: str) -> bool:
+    def _character_matches_trade_action(self, character: Character, action: str) -> bool:
         action_text = str(action or "").strip()
         if not action_text:
             return False
@@ -8501,7 +8277,7 @@ class GameEngine:
                 return True
         return False
 
-    def _trade_negotiation_target(self, action: str) -> CharacterData | None:
+    def _trade_negotiation_target(self, action: str) -> Character | None:
         if not _is_trade_negotiation_action(action):
             return None
         candidates = self._current_trade_candidates()
@@ -8524,7 +8300,7 @@ class GameEngine:
             return resolved_character
         return candidates[0] if len(candidates) == 1 else None
 
-    def _character_can_trade(self, character: CharacterData) -> bool:
+    def _character_can_trade(self, character: Character) -> bool:
         if character.flags.get("is_player") or _character_state_is_dead(character):
             return False
         extra = character.extra if isinstance(character.extra, dict) else {}
@@ -8584,7 +8360,7 @@ class GameEngine:
             )
         )
 
-    def _resolve_trade_negotiation_action(self, action: str, input_type: str, character: CharacterData) -> str:
+    def _resolve_trade_negotiation_action(self, action: str, input_type: str, character: Character) -> str:
         location = self.state.current_location or character.location or self.state.world_data.starting_location
         vendor_event = self.prepare_vendor_inventory(character)
         event = self.roll_trade_negotiation(character, action)
@@ -8627,7 +8403,7 @@ class GameEngine:
         self.save_game()
         return self.state.log_text(16)
 
-    def roll_trade_negotiation(self, character: CharacterData, action: str = "") -> dict[str, Any]:
+    def roll_trade_negotiation(self, character: Character, action: str = "") -> dict[str, Any]:
         day = self.current_absolute_day()
         extra = character.extra if isinstance(character.extra, dict) else {}
         if character.extra is not extra:
@@ -8698,13 +8474,13 @@ class GameEngine:
             "relationship_lines": relationship_lines,
         }
 
-    def _npc_affinity(self, character: CharacterData) -> int:
+    def _npc_affinity(self, character: Character) -> int:
         if not isinstance(character.extra, dict):
             character.extra = {}
         value = character.extra.get("affinity", character.extra.get("trust", 0))
         return max(NPC_AFFINITY_MIN, min(NPC_AFFINITY_MAX, _safe_int(value, 0)))
 
-    def _apply_npc_affinity_delta(self, character: CharacterData, delta: Any, *, source: str, reason: str = "") -> list[str]:
+    def _apply_npc_affinity_delta(self, character: Character, delta: Any, *, source: str, reason: str = "") -> list[str]:
         if character.flags.get("is_player"):
             return []
         requested_delta = max(NPC_AFFINITY_DELTA_MIN, min(NPC_AFFINITY_DELTA_MAX, _safe_int(delta, 0)))
@@ -8737,7 +8513,7 @@ class GameEngine:
         response: dict[str, Any],
         source: str,
         *,
-        default_character: CharacterData | None = None,
+        default_character: Character | None = None,
         default_location: str = "",
         encounter: dict[str, Any] | None = None,
     ) -> list[str]:
@@ -8768,7 +8544,7 @@ class GameEngine:
         response: dict[str, Any],
         source: str,
         *,
-        default_character: CharacterData | None = None,
+        default_character: Character | None = None,
         default_location: str = "",
     ) -> list[str]:
         if not isinstance(response, dict):
@@ -8810,7 +8586,7 @@ class GameEngine:
         response: dict[str, Any],
         source: str,
         *,
-        default_character: CharacterData | None = None,
+        default_character: Character | None = None,
     ) -> list[str]:
         if not isinstance(response, dict):
             return []
@@ -8830,7 +8606,7 @@ class GameEngine:
         response: dict[str, Any],
         source: str,
         *,
-        default_character: CharacterData | None = None,
+        default_character: Character | None = None,
         default_location: str = "",
     ) -> list[str]:
         if not isinstance(response, dict):
@@ -8858,7 +8634,7 @@ class GameEngine:
         response: dict[str, Any],
         source: str,
         *,
-        default_character: CharacterData | None = None,
+        default_character: Character | None = None,
     ) -> list[str]:
         if not isinstance(response, dict):
             return []
@@ -8880,7 +8656,7 @@ class GameEngine:
         response: dict[str, Any],
         source: str,
         *,
-        default_character: CharacterData | None = None,
+        default_character: Character | None = None,
     ) -> list[str]:
         if not isinstance(response, dict):
             return []
@@ -8906,7 +8682,7 @@ class GameEngine:
         response: dict[str, Any],
         source: str,
         *,
-        default_character: CharacterData | None = None,
+        default_character: Character | None = None,
     ) -> list[str]:
         if not isinstance(response, dict):
             return []
@@ -8936,7 +8712,7 @@ class GameEngine:
         response: dict[str, Any],
         source: str,
         *,
-        default_character: CharacterData | None = None,
+        default_character: Character | None = None,
         default_location: str = "",
         encounter: dict[str, Any] | None = None,
     ) -> list[str]:
@@ -8961,7 +8737,7 @@ class GameEngine:
             return []
 
         opponent_name = ""
-        if isinstance(default_character, CharacterData):
+        if isinstance(default_character, Character):
             opponent_name = default_character.name
         if not opponent_name and isinstance(encounter, dict):
             opponent_name = str(encounter.get("opponent_name") or encounter.get("active_opponent_name") or "")
@@ -8996,7 +8772,7 @@ class GameEngine:
             self._set_current_subnode(location.name, node_id)
         self.state.current_location = location.name
         self._set_player_presence(location.name)
-        if isinstance(default_character, CharacterData):
+        if isinstance(default_character, Character):
             self._set_character_presence(default_character, location.name, "present", subnode_id=node_id)
         if isinstance(encounter, dict):
             encounter["location"] = location.name
@@ -9504,7 +9280,7 @@ class GameEngine:
         response: dict[str, Any],
         source: str,
         *,
-        default_character: CharacterData | None = None,
+        default_character: Character | None = None,
     ) -> list[str]:
         if not isinstance(response, dict):
             return []
@@ -9535,7 +9311,7 @@ class GameEngine:
         response: dict[str, Any],
         source: str,
         *,
-        default_character: CharacterData | None = None,
+        default_character: Character | None = None,
         default_location: str = "",
     ) -> list[str]:
         if not isinstance(response, dict):
@@ -9611,8 +9387,8 @@ class GameEngine:
                 lines.append(f"> [NPC移動] {character.name}: {old_location or '-'} -> {target_location}")
         return lines
 
-    def _character_from_effect_target(self, value: Any, default_character: CharacterData | None = None) -> CharacterData | None:
-        if isinstance(value, CharacterData):
+    def _character_from_effect_target(self, value: Any, default_character: Character | None = None) -> Character | None:
+        if isinstance(value, Character):
             return value
         if isinstance(value, dict):
             target = str(
@@ -9628,8 +9404,9 @@ class GameEngine:
             target = str(value or "").strip()
         if not target or target.lower() in {"npc", "character", "speaker", "target", "companion", "follower"}:
             return default_character
-        if target in self.state.world_data.characters:
-            return self.state.world_data.characters[target]
+        direct = self.state.world_data.character(target)
+        if direct:
+            return direct
         lowered = target.casefold()
         for character in self.state.world_data.characters.values():
             if character.flags.get("is_player"):
@@ -9641,31 +9418,31 @@ class GameEngine:
             return default_character
         return None
 
-    def _active_visual_subjects(self, location: str) -> tuple[list[CharacterData], list[CharacterData]]:
-        characters: list[CharacterData] = []
-        enemies: list[CharacterData] = []
+    def _active_visual_subjects(self, location: str) -> tuple[list[Character], list[Character]]:
+        characters: list[Character] = []
+        enemies: list[Character] = []
         seen_characters: set[str] = set()
         seen_enemies: set[str] = set()
         current_location = location or self.state.current_location or self.state.world_data.starting_location
 
-        def add_character(character: CharacterData | None) -> None:
+        def add_character(character: Character | None) -> None:
             if not character or not character.name or character.name in seen_characters:
                 return
             seen_characters.add(character.name)
             characters.append(character)
 
-        def add_enemy(character: CharacterData | None) -> None:
+        def add_enemy(character: Character | None) -> None:
             if not character or not character.name or character.name in seen_enemies:
                 return
             seen_enemies.add(character.name)
             enemies.append(character)
 
-        add_character(self.state.world_data.characters.get(self.state.player_name))
+        add_character(self.player_character())
 
         active_encounter = self._active_encounter()
         if active_encounter:
             opponent_name = str(active_encounter.get("opponent_name") or "")
-            opponent = self.state.world_data.characters.get(opponent_name)
+            opponent = self.state.world_data.character(opponent_name)
             add_enemy(opponent)
             add_character(opponent)
 
@@ -10114,7 +9891,7 @@ class GameEngine:
             )
             subnode_id = self._assign_settlement_character_subnode(world, location, character)
             self._set_character_presence(character, settlement_name, subnode_id=subnode_id)
-            world.characters[character.name] = character
+            world.add_character(character)
         for index, item in enumerate(_as_list(response.get("adventurers"))):
             item = self._template_augmented_npc_raw(
                 item,
@@ -10135,7 +9912,7 @@ class GameEngine:
             )
             subnode_id = self._assign_settlement_character_subnode(world, location, character)
             self._set_character_presence(character, settlement_name, subnode_id=subnode_id)
-            world.characters[character.name] = character
+            world.add_character(character)
 
     def _apply_settlement_quests(self, world: WorldData, response: dict[str, Any], settlement_name: str = "") -> None:
         generated = response.get("quests") or response.get("settlement_quests") or response.get("story_quests")
@@ -10283,7 +10060,7 @@ class GameEngine:
         player_name: str,
         premise: str,
         world: WorldData,
-        character: CharacterData,
+        character: Character,
     ) -> None:
         try:
             profile = self._create_character(player_name, premise, world, character)
@@ -10321,7 +10098,7 @@ class GameEngine:
         self,
         world: WorldData,
         manager_name: str,
-        character: CharacterData,
+        character: Character,
         exc: JsonResponseError,
     ) -> None:
         error = {
@@ -10350,7 +10127,7 @@ class GameEngine:
         player_name: str,
         premise: str,
         world: WorldData,
-        character: CharacterData,
+        character: Character,
     ) -> dict[str, Any]:
         premise_context = _short_text(premise, 5000)
         world_payload = _ai_json(
@@ -10400,7 +10177,7 @@ class GameEngine:
         player_name: str,
         premise: str,
         world: WorldData,
-        character: CharacterData,
+        character: Character,
     ) -> dict[str, Any]:
         premise_context = _short_text(premise, 5000)
         world_payload = _ai_json(
@@ -10437,7 +10214,7 @@ class GameEngine:
             player_name=player_name,
         )
 
-    def _create_look(self, player_name: str, world: WorldData, character: CharacterData) -> dict[str, Any]:
+    def _create_look(self, player_name: str, world: WorldData, character: Character) -> dict[str, Any]:
         world_payload = _ai_json(
             _world_ai_context(
                 world,
@@ -10481,7 +10258,7 @@ class GameEngine:
         self,
         player_name: str,
         world: WorldData,
-        character: CharacterData,
+        character: Character,
         seed_name: str = "",
         seed_description: str = "",
     ) -> dict[str, Any]:
@@ -10532,7 +10309,7 @@ class GameEngine:
         self,
         player_name: str,
         world: WorldData,
-        character: CharacterData,
+        character: Character,
         desired_element: str = "",
         seed_name: str = "",
         seed_description: str = "",
@@ -10587,7 +10364,7 @@ class GameEngine:
             player_name=player_name,
         )
 
-    def _apply_character_profile(self, character: CharacterData, response: dict[str, Any]) -> None:
+    def _apply_character_profile(self, character: Character, response: dict[str, Any]) -> None:
         generated_name = str(response.get("name") or "").strip()
         if generated_name and character.name in {"unknown", ""}:
             character.name = generated_name
@@ -10603,7 +10380,7 @@ class GameEngine:
             character.extra["ability"] = response.get("ability")
         character.extra["raw_create_character"] = _strip_response_metadata(response)
 
-    def _apply_character_look(self, character: CharacterData, response: dict[str, Any]) -> None:
+    def _apply_character_look(self, character: Character, response: dict[str, Any]) -> None:
         character.category = str(response.get("category") or character.category)
         character.look = str(response.get("look") or character.look)
         prompt = _as_str_list(response.get("image_generation_prompt"))
@@ -10615,7 +10392,7 @@ class GameEngine:
         }
         character.extra["raw_create_look"] = _strip_response_metadata(response)
 
-    def _apply_character_traits(self, character: CharacterData, response: dict[str, Any]) -> None:
+    def _apply_character_traits(self, character: Character, response: dict[str, Any]) -> None:
         traits = [_normalise_trait(item) for item in _as_list(response.get("traits"))]
         traits = [trait for trait in traits if trait.get("name")]
         traits = _limit_power_entries_for_actor(character, traits, used_power=0)
@@ -10623,7 +10400,7 @@ class GameEngine:
             character.traits = traits
         character.extra["raw_create_trait"] = _strip_response_metadata(response)
 
-    def _apply_character_skills(self, character: CharacterData, response: dict[str, Any]) -> None:
+    def _apply_character_skills(self, character: Character, response: dict[str, Any]) -> None:
         skills = [_normalise_skill(item) for item in _as_list(response.get("skills"))]
         skills = [skill for skill in skills if skill.get("name")]
         skills = _limit_power_entries_for_actor(character, skills, used_power=_entry_power_total(character.traits))
@@ -10635,7 +10412,7 @@ class GameEngine:
         self,
         world: WorldData,
         manager_name: str,
-        character: CharacterData,
+        character: Character,
         response: dict[str, Any],
     ) -> None:
         world.history.append(
@@ -10831,8 +10608,8 @@ class GameEngine:
     def _manual_cg_request(
         self,
         location: str,
-        visual_characters: list[CharacterData],
-        visual_monsters: list[CharacterData],
+        visual_characters: list[Character],
+        visual_monsters: list[Character],
     ) -> dict[str, Any]:
         world = self.state.world_data
         location_data = world.locations.get(location)
@@ -11037,7 +10814,7 @@ class GameEngine:
         self.save_game()
         return ImageResult(path=saved_border, backend=image.backend, prompt=image.prompt, metadata=image.metadata)
 
-    def _character_image_creator(self, character: CharacterData) -> dict[str, Any]:
+    def _character_image_creator(self, character: Character) -> dict[str, Any]:
         world_payload = _ai_json(_world_ai_context(self.state.world_data, include_characters=False, include_monsters=False))
         character_payload = _ai_json(_character_ai_context(character))
         messages = [
@@ -11069,7 +10846,7 @@ class GameEngine:
             player_name=self.state.player_name,
         )
 
-    def _monster_image_creator(self, monster: CharacterData) -> dict[str, Any]:
+    def _monster_image_creator(self, monster: Character) -> dict[str, Any]:
         world_payload = _ai_json(_world_ai_context(self.state.world_data, include_characters=False, include_monsters=False))
         monster_payload = _ai_json(_character_ai_context(monster))
         messages = [
@@ -11103,8 +10880,8 @@ class GameEngine:
         self,
         request: dict[str, Any],
         location: str,
-        visual_characters: list[CharacterData] | None = None,
-        visual_monsters: list[CharacterData] | None = None,
+        visual_characters: list[Character] | None = None,
+        visual_monsters: list[Character] | None = None,
     ) -> dict[str, Any]:
         world_payload = _ai_json(self._cg_world_context(location))
         subject_payload = _ai_json(_visual_subjects_context(visual_characters or [], visual_monsters or []))
@@ -11296,7 +11073,7 @@ class GameEngine:
         }
         self.state.world_data.history.append(history_entry)
 
-        generated_npcs: list[CharacterData] = []
+        generated_npcs: list[Character] = []
         if not content_violation:
             generated_npcs = self._generate_master_ai_npcs(action, input_type, response, location)
             if generated_npcs:
@@ -11374,7 +11151,7 @@ class GameEngine:
         input_type: str,
         facilitator_response: dict[str, Any],
         location: str,
-    ) -> list[CharacterData]:
+    ) -> list[Character]:
         requests = _dedupe_npc_requests(
             _npc_generation_requests(tool_effect_payload(facilitator_response))
         )
@@ -11418,86 +11195,13 @@ class GameEngine:
         requests: list[Any],
         location: str,
     ) -> dict[str, Any]:
-        world_payload = _ai_json(self._focused_world_ai_context(include_recent_log=False))
-        facilitator_payload = json.dumps(_strip_response_metadata(facilitator_response), ensure_ascii=False)
-        request_payload = json.dumps(requests, ensure_ascii=False)
-        npc_template_payload = json.dumps(
-            {
-                "friendly_templates": npc_template_prompt_summaries(
-                    FRIENDLY_NPC_TEMPLATE_CATEGORIES,
-                    danger_level=self._current_location_danger(location),
-                    used_ids=self._npc_template_used_ids(),
-                    limit=12,
-                )
-            },
-            ensure_ascii=False,
-        )
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "あなたはAI駆動RPGのNPC生成担当です。"
-                    "Fantasiaのmaster_ai_npc_generater相当として、"
-                    "master_ai_facilitatorが必要とした未登場NPCを生成してください。"
-                    "NPCカテゴリ、説明、性格、外見、職業、archetype、skillsを持つJSONだけを返してください。"
-                    "skillsやtraitsを返す場合は各項目にpowerとstrength_levelを1から5で付け、"
-                    "序盤・一般NPCは合計4〜8、通常NPCは8〜12、終盤・精鋭・ボス級は16〜25を目安にしてください。"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"世界データ: {world_payload}\n"
-                    f"現在地: {location}\n"
-                    f"入力種別: {input_type}\n"
-                    f"プレイヤー行動: {action}\n"
-                    f"master_ai_facilitator応答: {facilitator_payload}\n"
-                    f"NPC生成要求: {request_payload}\n"
-                    "既存NPCと重複しない、現在の場面で自然に登場できるNPCを生成してください。"
-                ),
-            },
-        ]
-        messages.append(
-            {
-                "role": "system",
-                "content": (
-                    "NPC completeness rule: every generated NPC in npcs must include gender, age, look, and personality. "
-                    "Do not leave these blank. gender must be female, male, none, or a localized equivalent. age must be "
-                    "a visible age or age range; for monsters/non-humans use adult, young, ancient, or unknown if exact "
-                    "age is not meaningful. look must be concrete enough for character image generation."
-                ),
-            }
-        )
-        messages.append(
-            {
-                "role": "system",
-                "content": (
-                    f"NPC template candidates: {npc_template_payload}\n"
-                    "Generate NPCs as world- and role-specific variations of these templates. "
-                    "If a generated NPC matches a template, include npc_template_id on that NPC object. "
-                    "The game will select a template locally if the id is absent. Keep the same character type "
-                    "and use the template as the base."
-                ),
-            }
-        )
-        messages.append(
-            {
-                "role": "system",
-                "content": (
-                    f"NPC template candidates: {npc_template_payload}\n"
-                    "Generate residents, adventurers, and facility keepers as variations of these templates. "
-                    "When a template fits, include npc_template_id on the person or facility npc object; the game "
-                    "will still select a template locally if the id is absent. Preserve the settlement tone, job, "
-                    "and role while filling name, appearance, personality, and local flavor."
-                ),
-            }
-        )
-        return self._chat_json(
-            "master_ai_npc_generater",
-            messages,
-            max_tokens=900,
-            world_name=self.state.world_name,
-            player_name=self.state.player_name,
+        return npc_generate.master_ai_npc_generater(
+            self,
+            action,
+            input_type,
+            facilitator_response,
+            requests,
+            location,
         )
 
     def _npc_detail_generater(
@@ -11505,145 +11209,21 @@ class GameEngine:
         action: str,
         input_type: str,
         facilitator_response: dict[str, Any],
-        character: CharacterData,
+        character: Character,
     ) -> dict[str, Any]:
-        world_payload = _ai_json(self._focused_world_ai_context(include_recent_log=False))
-        character_payload = _ai_json(_character_ai_context(character))
-        facilitator_payload = json.dumps(_strip_response_metadata(facilitator_response), ensure_ascii=False)
-        power_instruction = _skill_trait_power_instruction(character)
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "あなたはAI駆動RPGのNPC詳細補完担当です。"
-                    "Fantasiaのnpc_detail_generater相当として、"
-                    "話し方、archetype、skills、会話トピック、行動方針を補完してください。"
-                    "必ず name, talk_style, archetype, skills を持つJSONだけを返してください。"
-                    "skillsにはpowerとstrength_levelを1から5で必ず付けてください。"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"世界データ: {world_payload}\n"
-                    f"入力種別: {input_type}\n"
-                    f"プレイヤー行動: {action}\n"
-                    f"master_ai_facilitator応答: {facilitator_payload}\n"
-                    f"対象キャラクター: {character.name}\n"
-                    f"キャラクターデータ: {character_payload}\n"
-                    f"{power_instruction}\n"
-                    "このNPCを会話、探索、戦闘判断で使えるように詳細化してください。"
-                ),
-            },
-        ]
-        messages.append(
-            {
-                "role": "user",
-                "content": (
-                    "Base profile repair rule: if the target character is missing gender, age, look, personality, or "
-                    "image_generation_prompt, fill those fields in this response. Preserve already established facts. "
-                    "look must describe visible appearance and clothing/species traits; image_generation_prompt should "
-                    "be usable by a character image generator."
-                ),
-            }
-        )
-        return self._chat_json(
-            "npc_detail_generater",
-            messages,
-            max_tokens=750,
-            world_name=self.state.world_name,
-            player_name=self.state.player_name,
+        return npc_generate.npc_detail_generater(
+            self,
+            action,
+            input_type,
+            facilitator_response,
+            character,
         )
 
-    def _apply_master_ai_npcs(self, response: dict[str, Any], location: str) -> list[CharacterData]:
-        raw_npcs = _as_list(response.get("npcs") or response.get("characters") or response.get("npc"))
-        generated: list[CharacterData] = []
-        danger_level = self._current_location_danger(location)
-        for item in raw_npcs:
-            item = self._template_augmented_npc_raw(
-                item,
-                categories=FRIENDLY_NPC_TEMPLATE_CATEGORIES,
-                danger_level=danger_level,
-                seed=f"master-ai-npc:{self.state.world_name}:{location}:{len(generated)}",
-                hostile=False,
-            )
-            character = _npc_from_raw(item, len(self.state.world_data.characters) + len(generated))
-            if _world_has_dead_npc_identity(self.state.world_data, name=character.name, uuid=character.uuid):
-                continue
-            character.name = _unique_character_name(self.state.world_data, character.name)
-            character.flags.setdefault("source", "master_ai_npc_generater")
-            character.flags.setdefault("generated", True)
-            if location:
-                character.flags.setdefault("first_seen_location", location)
-                self._set_character_presence(character, location)
-            self._finalize_generated_npc(
-                character,
-                location_name=location,
-                danger_level=danger_level,
-                role_hint="master_ai_npc",
-            )
-            character.extra["raw_master_ai_npc_generater"] = _strip_response_metadata(response)
-            self.state.world_data.characters[character.name] = character
-            generated.append(character)
+    def _apply_master_ai_npcs(self, response: dict[str, Any], location: str) -> list[Character]:
+        return npc_generate.apply_master_ai_npcs(self, response, location)
 
-            self.state.world_data.extra.setdefault("generated_npcs", []).append(
-                {
-                    "manager": "master_ai_npc_generater",
-                    "name": character.name,
-                    "location": location,
-                    "response": _strip_response_metadata(response),
-                }
-            )
-        return generated
-
-    def _apply_npc_detail(self, character: CharacterData, response: dict[str, Any]) -> None:
-        generated_name = str(response.get("name") or "").strip()
-        if generated_name and generated_name != character.name:
-            character.extra["detail_generated_name"] = generated_name
-        if response.get("talk_style") is not None:
-            character.extra["talk_style"] = str(response.get("talk_style") or "")
-        if response.get("archetype") is not None:
-            character.extra["archetype"] = str(response.get("archetype") or "")
-        if response.get("gender") is not None and not character.gender:
-            character.gender = str(response.get("gender") or "").strip()
-        if response.get("age") is not None and not character.age:
-            character.age = str(response.get("age") or "").strip()
-        if response.get("personality") is not None and not character.personality:
-            character.personality = str(response.get("personality") or "").strip()
-        detail_look = str(response.get("look") or response.get("appearance") or "").strip()
-        if detail_look and not character.look:
-            character.look = detail_look
-        if response.get("image_generation_prompt") is not None:
-            prompt_parts = _as_str_list(response.get("image_generation_prompt"))
-            if prompt_parts and not character.image_generation_prompt:
-                character.image_generation_prompt = prompt_parts
-                character.prompts["image_generation_prompt"] = prompt_parts
-        if response.get("behavior_policy") is not None:
-            character.extra["behavior_policy"] = str(response.get("behavior_policy") or "")
-        if response.get("conversation_topics") is not None:
-            character.extra["conversation_topics"] = _as_str_list(response.get("conversation_topics"))
-        if response.get("memory_updates") is not None:
-            character.extra["memory_updates"] = _as_list(response.get("memory_updates"))
-        if response.get("relationship") is not None:
-            character.extra["relationship"] = response.get("relationship")
-        response_location = str(response.get("location") or response.get("current_location") or "").strip()
-        if response_location:
-            self._set_character_presence(character, response_location, str(response.get("state") or character.state or "present"))
-        elif character.location:
-            self._set_character_presence(character, character.location, character.state or "present")
-
-        detail_skills = [_normalise_skill(item) for item in _as_list(response.get("skills"))]
-        detail_skills = [skill for skill in detail_skills if skill.get("name")]
-        if detail_skills:
-            merged_skills = _merge_named_dicts(character.skills, detail_skills)
-            character.skills = _limit_power_entries_for_actor(
-                character,
-                merged_skills,
-                used_power=_entry_power_total(character.traits),
-            )
-        self._apply_response_status_effects(response, "npc_detail_generater", default_target=character.name, context_character=character)
-        character.extra["raw_npc_detail_generater"] = _strip_response_metadata(response)
-
+    def _apply_npc_detail(self, character: Character, response: dict[str, Any]) -> None:
+        npc_generate.apply_npc_detail(self, character, response)
     def _master_ai_facilitator(
         self,
         action: str,
@@ -11945,7 +11525,7 @@ class GameEngine:
 
     def _player_skills(self) -> list[dict[str, Any]]:
         skills: list[dict[str, Any]] = []
-        player = self.state.world_data.characters.get(self.state.player_name)
+        player = self.player_character()
         if player:
             skills.extend(player.skills)
         if self.state.party and isinstance(self.state.party[0], dict):
@@ -12118,7 +11698,7 @@ class GameEngine:
         message: str = "",
     ) -> dict[str, Any]:
         opponent = self._encounter_opponent(encounter)
-        if isinstance(opponent, CharacterData):
+        if isinstance(opponent, Character):
             if _safe_int(opponent.max_hp, 0) <= 0:
                 self._ensure_character_runtime_data(opponent)
             old_hp = max(0, min(opponent.max_hp, _safe_int(opponent.current_hp, opponent.max_hp)))
@@ -12130,14 +11710,14 @@ class GameEngine:
         actual_delta = new_hp - old_hp
         encounter["opponent_hp"] = new_hp
         encounter["opponent_max_hp"] = max_hp
-        if isinstance(opponent, CharacterData):
+        if isinstance(opponent, Character):
             opponent.current_hp = new_hp
             opponent.max_hp = max_hp
             opponent.extra["current_hp"] = new_hp
             opponent.extra["max_hp"] = max_hp
             self._sync_encounter_opponent_entry(encounter, opponent)
         sign = f"+{actual_delta}" if actual_delta > 0 else str(actual_delta)
-        name = str((opponent.name if isinstance(opponent, CharacterData) else "") or encounter.get("opponent_name") or "相手")
+        name = str((opponent.name if isinstance(opponent, Character) else "") or encounter.get("opponent_name") or "相手")
         lines: list[str] = []
         if message:
             lines.append(f"> [戦闘] {message}")
@@ -12159,7 +11739,7 @@ class GameEngine:
     def _set_encounter_opponent_combat_status(
         self,
         encounter: dict[str, Any],
-        character: CharacterData,
+        character: Character,
         status: str,
     ) -> None:
         entry = self._sync_encounter_opponent_entry(encounter, character)
@@ -12171,7 +11751,7 @@ class GameEngine:
             encounter["opponent_hp"] = max(0, _safe_int(character.current_hp, encounter.get("opponent_hp") or 0))
             encounter["opponent_max_hp"] = max(1, _safe_int(character.max_hp, encounter.get("opponent_max_hp") or 1))
 
-    def _encounter_opponent_combat_status(self, encounter: dict[str, Any], character: CharacterData) -> str:
+    def _encounter_opponent_combat_status(self, encounter: dict[str, Any], character: Character) -> str:
         entry = self._sync_encounter_opponent_entry(encounter, character)
         status = str(
             entry.get("opponent_status")
@@ -12198,7 +11778,7 @@ class GameEngine:
 
     def _npc_surrender_from_encounter(self, encounter: dict[str, Any]) -> dict[str, Any]:
         opponent = self._encounter_opponent(encounter)
-        if not isinstance(opponent, CharacterData):
+        if not isinstance(opponent, Character):
             encounter["opponent_status"] = SURRENDERED_STATUS_ID
             return {"acted": True, "kind": "surrender", "lines": ["> [戦闘] 相手は降伏し、行動を止めた。"]}
         effect = _normalise_status_effect(
@@ -12221,7 +11801,7 @@ class GameEngine:
 
     def _npc_flee_from_encounter(self, encounter: dict[str, Any]) -> dict[str, Any]:
         opponent = self._encounter_opponent(encounter)
-        if not isinstance(opponent, CharacterData):
+        if not isinstance(opponent, Character):
             encounter["opponent_status"] = FLED_STATUS_ID
             encounter["status"] = "ended"
             return {"acted": True, "kind": "flee", "lines": ["> [戦闘] 相手は逃亡し、戦闘から外れた。"]}
@@ -12246,7 +11826,7 @@ class GameEngine:
             line = f"> [戦闘] {opponent.name}はその場から逃げ去り、戦闘から外れた。"
         return {"acted": True, "kind": "flee", "lines": [line]}
 
-    def _npc_flee_destination(self, character: CharacterData, location: str) -> dict[str, str]:
+    def _npc_flee_destination(self, character: Character, location: str) -> dict[str, str]:
         world = self.state.world_data
         location = str(location or self.state.current_location or world.starting_location).strip()
         assigned_location, assigned_subnode = self._character_subnode_assignment(character)
@@ -12339,7 +11919,7 @@ class GameEngine:
         if int(encounter.get("opponent_hp") or 0) <= 0:
             return []
         opponent = self._encounter_opponent(encounter)
-        if isinstance(opponent, CharacterData) and self._character_has_surrendered(opponent, encounter):
+        if isinstance(opponent, Character) and self._character_has_surrendered(opponent, encounter):
             return []
         if _surrender_control_prevents_npc_damage(encounter, npc_response, rewrite_response):
             return []
@@ -12715,14 +12295,14 @@ class GameEngine:
             self._apply_response_state_side_effects(
                 player_response,
                 player_manager,
-                default_character=opponent if isinstance(opponent, CharacterData) else None,
+                default_character=opponent if isinstance(opponent, Character) else None,
                 default_location=str(encounter.get("location") or self.state.current_location),
                 encounter=encounter,
             )
         )
         if len(self._encounter_opponents(encounter)) > 1:
             return self._resolve_group_npc_turn(action, input_type, encounter, player_response, player_manager, status_lines)
-        opponent_surrendered = isinstance(opponent, CharacterData) and self._character_has_surrendered(opponent, encounter)
+        opponent_surrendered = isinstance(opponent, Character) and self._character_has_surrendered(opponent, encounter)
         if int(encounter.get("opponent_hp") or 0) <= 0:
             npc_response = {"finished": True, "narration": ""}
         elif opponent_surrendered:
@@ -12735,7 +12315,7 @@ class GameEngine:
             self._apply_encounter_update(
                 encounter,
                 npc_response.get("encounter_update"),
-                context_actor=opponent if isinstance(opponent, CharacterData) else None,
+                context_actor=opponent if isinstance(opponent, Character) else None,
                 action_context=action,
                 response_context=npc_response,
             )
@@ -12745,7 +12325,7 @@ class GameEngine:
                 encounter,
                 npc_response,
                 "player",
-                context_actor=opponent if isinstance(opponent, CharacterData) else None,
+                context_actor=opponent if isinstance(opponent, Character) else None,
                 action_context=action,
             )
         )
@@ -12760,12 +12340,12 @@ class GameEngine:
             self._apply_response_state_side_effects(
                 npc_response,
                 "referee_npc",
-                default_character=opponent if isinstance(opponent, CharacterData) else None,
+                default_character=opponent if isinstance(opponent, Character) else None,
                 default_location=str(encounter.get("location") or self.state.current_location),
                 encounter=encounter,
             )
         )
-        opponent_surrendered = isinstance(opponent, CharacterData) and self._character_has_surrendered(opponent, encounter)
+        opponent_surrendered = isinstance(opponent, Character) and self._character_has_surrendered(opponent, encounter)
         if int(encounter.get("opponent_hp") or 0) <= 0 or opponent_surrendered:
             rewrite_response = {}
         elif self._should_referee_npc_rewrite(encounter, player_response, npc_response):
@@ -12777,7 +12357,7 @@ class GameEngine:
             self._apply_encounter_update(
                 encounter,
                 rewrite_response.get("encounter_update"),
-                context_actor=opponent if isinstance(opponent, CharacterData) else None,
+                context_actor=opponent if isinstance(opponent, Character) else None,
                 action_context=action,
                 response_context=rewrite_response,
             )
@@ -12787,7 +12367,7 @@ class GameEngine:
                 encounter,
                 rewrite_response,
                 "player",
-                context_actor=opponent if isinstance(opponent, CharacterData) else None,
+                context_actor=opponent if isinstance(opponent, Character) else None,
                 action_context=action,
             )
         )
@@ -12802,7 +12382,7 @@ class GameEngine:
             self._apply_response_state_side_effects(
                 rewrite_response,
                 "referee_npc_rewrite",
-                default_character=opponent if isinstance(opponent, CharacterData) else None,
+                default_character=opponent if isinstance(opponent, Character) else None,
                 default_location=str(encounter.get("location") or self.state.current_location),
                 encounter=encounter,
             )
@@ -13350,11 +12930,11 @@ class GameEngine:
             return None
         return active
 
-    def _hostile_characters_at(self, location: str, *, limit: int = 4) -> list[CharacterData]:
+    def _hostile_characters_at(self, location: str, *, limit: int = 4) -> list[Character]:
         location_name = str(location or self.state.current_location or self.state.world_data.starting_location or "").strip()
         if not location_name:
             return []
-        result: list[CharacterData] = []
+        result: list[Character] = []
         for character in self.state.world_data.characters.values():
             if character.flags.get("is_player") or _character_state_is_dead(character):
                 continue
@@ -13374,7 +12954,7 @@ class GameEngine:
                 break
         return result
 
-    def _select_hostile_opponent(self, requested_name: str, candidates: list[CharacterData]) -> CharacterData | None:
+    def _select_hostile_opponent(self, requested_name: str, candidates: list[Character]) -> Character | None:
         target = _clean_generated_name(requested_name, "", kind="monster")
         if target:
             folded = target.casefold()
@@ -13389,7 +12969,7 @@ class GameEngine:
                         return character
         return candidates[0] if candidates else None
 
-    def _start_encounter_with_character(self, character: CharacterData, *, source: str, action: str, location: str) -> dict[str, Any]:
+    def _start_encounter_with_character(self, character: Character, *, source: str, action: str, location: str) -> dict[str, Any]:
         location_name = str(location or self.state.current_location or self.state.world_data.starting_location)
         subnode_id = self._current_subnode_id(location_name) if location_name else ""
         self._set_character_presence(character, location_name, "present", subnode_id=subnode_id)
@@ -13411,7 +12991,7 @@ class GameEngine:
         )
         return encounter
 
-    def _hostile_encounter_context(self, location: str, candidates: list[CharacterData], narration: str = "") -> dict[str, Any]:
+    def _hostile_encounter_context(self, location: str, candidates: list[Character], narration: str = "") -> dict[str, Any]:
         world = self.state.world_data
         location_name = str(location or self.state.current_location or world.starting_location)
         location_data = world.locations.get(location_name)
@@ -13578,7 +13158,7 @@ class GameEngine:
             opponent_type, opponent_name = self._find_or_create_encounter_opponent(
                 "\n".join(part for part in (action, narration, str(detector.get("opponent_name") or "")) if str(part).strip())
             )
-            opponent = self.state.world_data.characters.get(opponent_name)
+            opponent = self.state.world_data.character(opponent_name)
         if opponent is None:
             return narration, choices, detector
         line = str(detector.get("narration") or "").strip()
@@ -13623,7 +13203,8 @@ class GameEngine:
                     continue
                 return "character", character.name
         target_name = target_name or "未知の魔物"
-        if target_name not in self.state.world_data.characters:
+        existing = self.state.world_data.character(target_name)
+        if existing is None:
             profile = self._encounter_monster_profile(target_name, current_location, resolved_target)
             danger_level = self._npc_template_danger_for_location(current_location)
             npc_raw = self._template_augmented_npc_raw(
@@ -13665,11 +13246,11 @@ class GameEngine:
                 danger_level=danger_level,
                 role_hint="encounter_target",
             )
-            self.state.world_data.characters[character.name] = character
+            self.state.world_data.add_character(character)
             target_name = character.name
         else:
-            self._set_character_presence(self.state.world_data.characters[target_name], current_location, "present")
-            self._ensure_character_runtime_data(self.state.world_data.characters[target_name])
+            self._set_character_presence(existing, current_location, "present")
+            self._ensure_character_runtime_data(existing)
         return "character", target_name
 
     def _match_present_encounter_target(self, target_name: str, location: str) -> tuple[str, str] | None:
@@ -13986,8 +13567,8 @@ class GameEngine:
 
     def _encounter_opponent_payload(self, encounter: dict[str, Any]) -> dict[str, Any]:
         name = str(encounter.get("opponent_name") or "")
-        if name in self.state.world_data.characters:
-            character = self.state.world_data.characters[name]
+        character = self.state.world_data.character(str(encounter.get("opponent_uuid") or name))
+        if character:
             payload = _character_ai_context(character, details=True)
             payload["attack"] = character.attack
             payload["defense"] = character.defense
@@ -14001,7 +13582,7 @@ class GameEngine:
         current_hp = max(0, min(max_hp, _safe_int(encounter.get("player_hp"), self._player_current_hp(max_hp))))
         max_sp = max(1, _safe_int(encounter.get("player_max_sp"), self._player_max_sp()))
         current_sp = max(0, min(max_sp, _safe_int(encounter.get("player_sp"), self._player_current_sp(max_sp))))
-        player = self.state.world_data.characters.get(self.state.player_name)
+        player = self.player_character()
         return _drop_empty(
             {
                 "name": self.state.player_name,
@@ -14025,7 +13606,7 @@ class GameEngine:
         encounter: dict[str, Any],
         update: Any,
         *,
-        context_actor: CharacterData | str | None = None,
+        context_actor: Character | str | None = None,
         action_context: str = "",
         response_context: Any = None,
     ) -> list[dict[str, Any]]:
@@ -14162,7 +13743,7 @@ class GameEngine:
         *,
         encounter: dict[str, Any] | None = None,
         source: str = "",
-        context_actor: CharacterData | str | None = None,
+        context_actor: Character | str | None = None,
         action_context: str = "",
         response_context: Any = None,
     ) -> list[dict[str, Any]]:
@@ -14194,7 +13775,7 @@ class GameEngine:
         effect: dict[str, Any],
         *,
         target: str,
-        context_actor: CharacterData | str | None = None,
+        context_actor: Character | str | None = None,
         action_context: str = "",
         response_context: Any = None,
     ) -> dict[str, Any]:
@@ -14202,7 +13783,7 @@ class GameEngine:
             return effect
         if not _status_effect_has_generic_incapacitated_text(effect):
             return effect
-        actor_name = context_actor.name if isinstance(context_actor, CharacterData) else str(context_actor or "")
+        actor_name = context_actor.name if isinstance(context_actor, Character) else str(context_actor or "")
         context_text = "\n".join(
             part
             for part in (
@@ -14230,7 +13811,7 @@ class GameEngine:
         value: Any,
         *,
         source: str = "",
-        context_actor: CharacterData | str | None = None,
+        context_actor: Character | str | None = None,
         action_context: str = "",
         response_context: Any = None,
     ) -> list[dict[str, Any]]:
@@ -14307,7 +13888,7 @@ class GameEngine:
         if target == "player":
             return self.state.status_effects
         opponent = self._encounter_opponent(encounter or {})
-        if isinstance(opponent, CharacterData):
+        if isinstance(opponent, Character):
             return opponent.status_effects
         raw = (encounter or {}).get("opponent_status_effects")
         return raw if isinstance(raw, list) else []
@@ -14417,7 +13998,7 @@ class GameEngine:
     ) -> None:
         if target == "player":
             self.state.status_effects = status_list
-            player = self.state.world_data.characters.get(self.state.player_name)
+            player = self.player_character()
             if player:
                 player.status_effects = list(status_list)
             if self.state.party and isinstance(self.state.party[0], dict):
@@ -14427,7 +14008,7 @@ class GameEngine:
             return
 
         opponent = self._encounter_opponent(encounter or {})
-        if isinstance(opponent, CharacterData):
+        if isinstance(opponent, Character):
             opponent.status_effects = list(status_list)
         if encounter is not None:
             encounter["opponent_status_effects"] = list(status_list)
@@ -14442,7 +14023,7 @@ class GameEngine:
         response: dict[str, Any],
         target: str,
         *,
-        context_actor: CharacterData | str | None = None,
+        context_actor: Character | str | None = None,
         action_context: str = "",
     ) -> list[dict[str, Any]]:
         applied: list[dict[str, Any]] = []
@@ -14507,7 +14088,7 @@ class GameEngine:
         source: str,
         *,
         default_target: str = "player",
-        context_character: CharacterData | None = None,
+        context_character: Character | None = None,
     ) -> list[str]:
         applied: list[dict[str, Any]] = []
         removed: list[dict[str, Any]] = []
@@ -14571,7 +14152,7 @@ class GameEngine:
         self,
         response: dict[str, Any],
         default_target: str,
-        context_character: CharacterData | None,
+        context_character: Character | None,
     ) -> list[tuple[str, Any]]:
         context_target = context_character.name if context_character else default_target
         entries: list[tuple[str, Any]] = []
@@ -14593,7 +14174,7 @@ class GameEngine:
         self,
         response: dict[str, Any],
         default_target: str,
-        context_character: CharacterData | None,
+        context_character: Character | None,
     ) -> list[tuple[str, Any]]:
         context_target = context_character.name if context_character else default_target
         entries: list[tuple[str, Any]] = []
@@ -14731,33 +14312,36 @@ class GameEngine:
         text = str(target or "").strip()
         lowered = text.lower()
         if lowered in {"", "player", "pc", "hero", "protagonist", "you", "あなた", "プレイヤー"} or text == self.state.player_name:
-            player = self.state.world_data.characters.get(self.state.player_name)
+            player = self.player_character()
             if player and player.status_effects and not self.state.status_effects:
                 self.state.status_effects = list(player.status_effects)
             return ("player", self.state.player_name, self.state.status_effects, self.state.player_name or "Player")
-        character = self.state.world_data.characters.get(text)
+        character = self.state.world_data.character(text)
         if character:
             return ("character", character.name, character.status_effects, character.name)
         if lowered in {"monster", "enemy", "opponent"}:
             active = self._active_encounter()
             if active:
                 opponent = self._encounter_opponent(active)
-                if isinstance(opponent, CharacterData):
+                if isinstance(opponent, Character):
                     return ("character", opponent.name, opponent.status_effects, opponent.name)
         return None
 
     def _sync_status_target(self, kind: str, name: str, status_list: list[dict[str, Any]]) -> None:
         if kind == "player":
             self.state.status_effects = list(status_list)
-            player = self.state.world_data.characters.get(self.state.player_name)
+            player = self.player_character()
             if player:
                 player.status_effects = list(status_list)
             if self.state.party and isinstance(self.state.party[0], dict):
                 self.state.party[0]["status_effects"] = list(status_list)
             return
-        if kind == "character" and name in self.state.world_data.characters:
-            self.state.world_data.characters[name].status_effects = list(status_list)
-            if name == self.state.player_name:
+        if kind == "character":
+            character = self.state.world_data.character(name)
+            if not character:
+                return
+            character.status_effects = list(status_list)
+            if character.flags.get("is_player") or character.uuid == self.state.player_uuid:
                 self._sync_status_target("player", name, status_list)
             return
 
@@ -14837,7 +14421,7 @@ class GameEngine:
         opponent_hp = int(encounter.get("opponent_hp") or 0)
         if player_hp > 0:
             opponent = self._encounter_opponent(encounter)
-            if isinstance(opponent, CharacterData):
+            if isinstance(opponent, Character):
                 self._sync_encounter_opponent_entry(encounter, opponent)
                 opponent_hp = max(0, _safe_int(opponent.current_hp, 0))
             living = self._living_encounter_opponents(encounter)
@@ -14849,8 +14433,8 @@ class GameEngine:
                     "narration": "相手は戦闘を続けられる状態ではなくなった。戦闘は終了した。",
                 }
             if opponent_hp <= 0:
-                defeated_name = str((opponent.name if isinstance(opponent, CharacterData) else "") or encounter.get("opponent_name") or "Opponent")
-                defeated_uuid = str((opponent.uuid if isinstance(opponent, CharacterData) else "") or encounter.get("opponent_uuid") or "")
+                defeated_name = str((opponent.name if isinstance(opponent, Character) else "") or encounter.get("opponent_name") or "Opponent")
+                defeated_uuid = str((opponent.uuid if isinstance(opponent, Character) else "") or encounter.get("opponent_uuid") or "")
                 encounter["opponent_status"] = "defeated"
                 self._add_actor_status_effects(
                     "opponent",
@@ -14858,7 +14442,7 @@ class GameEngine:
                     encounter=encounter,
                     source="defeated",
                 )
-                if isinstance(opponent, CharacterData):
+                if isinstance(opponent, Character):
                     self._mark_character_dead(opponent, source="encounter_defeated")
                     self._sync_encounter_opponent_entry(encounter, opponent)
                 living = self._living_encounter_opponents(encounter)
@@ -14885,7 +14469,7 @@ class GameEngine:
             encounter["status"] = "ended"
             encounter["player_status"] = "dead"
             self._add_actor_status_effects("player", {"name": "死亡", "id": "dead", "duration": 0}, encounter=encounter, source="game_over")
-            player = self.state.world_data.characters.get(self.state.player_name)
+            player = self.player_character()
             if player:
                 player.state = "dead"
                 player.flags["state"] = "dead"
@@ -14939,7 +14523,7 @@ class GameEngine:
         self.state.extra["max_hp"] = max_hp
         self.state.extra["current_sp"] = sp
         self.state.extra["max_sp"] = max_sp
-        player = self.state.world_data.characters.get(self.state.player_name)
+        player = self.player_character()
         if player:
             player.current_hp = hp
             player.max_hp = max_hp
@@ -15081,7 +14665,7 @@ class GameEngine:
         self.state.extra["current_hp"] = resolved_hp
         self.state.extra["max_hp"] = resolved_max_hp
         self.state.extra["base_max_hp"] = base_max_hp
-        player = self.state.world_data.characters.get(self.state.player_name)
+        player = self.player_character()
         if player:
             player.current_hp = resolved_hp
             player.max_hp = resolved_max_hp
@@ -15268,7 +14852,7 @@ class GameEngine:
         self.state.extra["current_sp"] = resolved_sp
         self.state.extra["max_sp"] = resolved_max_sp
         self.state.extra["base_max_sp"] = base_max_sp
-        player = self.state.world_data.characters.get(self.state.player_name)
+        player = self.player_character()
         if player:
             player.current_sp = resolved_sp
             player.max_sp = resolved_max_sp
@@ -15429,7 +15013,7 @@ class GameEngine:
         self.state.extra["player_hunger"] = resolved
         self.state.extra["max_hunger"] = PLAYER_MAX_HUNGER
         self.state.extra["player_max_hunger"] = PLAYER_MAX_HUNGER
-        player = self.state.world_data.characters.get(self.state.player_name)
+        player = self.player_character()
         if player:
             player.extra["hunger"] = resolved
             player.extra["max_hunger"] = PLAYER_MAX_HUNGER
@@ -15510,13 +15094,13 @@ class GameEngine:
         match = re.search(r"[-+]?\d+", text)
         return int(match.group(0)) if match else fallback
 
-    def _ensure_player_progress(self, character: CharacterData | None = None) -> None:
+    def _ensure_player_progress(self, character: Character | None = None) -> None:
         level = self._player_level(character)
         exp = self._player_exp(character)
         self._set_player_progress(level, exp, character=character)
 
-    def _player_level(self, character: CharacterData | None = None) -> int:
-        player = character or self.state.world_data.characters.get(self.state.player_name)
+    def _player_level(self, character: Character | None = None) -> int:
+        player = character or self.player_character()
         candidates: list[Any] = [self.state.flags.get("player_level"), self.state.extra.get("level")]
         if player:
             candidates.extend([player.level, player.extra.get("level"), player.flags.get("level")])
@@ -15529,8 +15113,8 @@ class GameEngine:
                 return max(1, min(PLAYER_MAX_LEVEL, _safe_int(value, 1)))
         return 1
 
-    def _player_exp(self, character: CharacterData | None = None) -> int:
-        player = character or self.state.world_data.characters.get(self.state.player_name)
+    def _player_exp(self, character: Character | None = None) -> int:
+        player = character or self.player_character()
         candidates: list[Any] = [self.state.flags.get("player_exp"), self.state.extra.get("exp")]
         if player:
             candidates.extend([player.extra.get("exp"), player.extra.get("experience"), player.flags.get("exp")])
@@ -15553,7 +15137,7 @@ class GameEngine:
             required = min(PLAYER_MAX_EXP_TO_NEXT, int(required * 1.5))
         return max(1, min(PLAYER_MAX_EXP_TO_NEXT, int(required)))
 
-    def _set_player_progress(self, level: int, exp: int, *, character: CharacterData | None = None) -> None:
+    def _set_player_progress(self, level: int, exp: int, *, character: Character | None = None) -> None:
         resolved_level = max(1, min(PLAYER_MAX_LEVEL, int(level or 1)))
         resolved_exp = max(0, int(exp or 0))
         if resolved_level >= PLAYER_MAX_LEVEL:
@@ -15563,7 +15147,7 @@ class GameEngine:
         self.state.extra["level"] = resolved_level
         self.state.extra["exp"] = resolved_exp
         self.state.extra["next_exp"] = self._exp_to_next(resolved_level)
-        player = character or self.state.world_data.characters.get(self.state.player_name)
+        player = character or self.player_character()
         if player:
             player.level = resolved_level
             player.extra["level"] = resolved_level
@@ -15579,13 +15163,13 @@ class GameEngine:
     def _sync_player_progress_to_character(self) -> None:
         self._set_player_progress(self._player_level(), self._player_exp())
 
-    def _player_max_hp(self, character: CharacterData | None = None) -> int:
+    def _player_max_hp(self, character: Character | None = None) -> int:
         equipment_bonus = 0 if character is not None else _safe_int(self.player_equipment_summary().get("max_hp"), 0)
         base = self._player_base_max_hp(character)
         return max(1, base + equipment_bonus)
 
-    def _player_base_max_hp(self, character: CharacterData | None = None) -> int:
-        player = character or self.state.world_data.characters.get(self.state.player_name)
+    def _player_base_max_hp(self, character: Character | None = None) -> int:
+        player = character or self.player_character()
         if player:
             if player.max_hp:
                 return max(1, _safe_int(player.max_hp, 10))
@@ -15602,7 +15186,7 @@ class GameEngine:
     def _calculated_player_max_hp(
         self,
         *,
-        character: CharacterData | None = None,
+        character: Character | None = None,
         level: int | None = None,
         attrs: dict[str, int] | None = None,
     ) -> int:
@@ -15620,7 +15204,7 @@ class GameEngine:
         ):
             if value is not None:
                 return max(0, min(max_hp, _safe_int(value, max_hp)))
-        player = self.state.world_data.characters.get(self.state.player_name)
+        player = self.player_character()
         if player:
             value = player.current_hp
             if value:
@@ -15630,13 +15214,13 @@ class GameEngine:
                 return max(0, min(max_hp, _safe_int(value, max_hp)))
         return max_hp
 
-    def _player_max_sp(self, character: CharacterData | None = None) -> int:
+    def _player_max_sp(self, character: Character | None = None) -> int:
         equipment_bonus = 0 if character is not None else _safe_int(self.player_equipment_summary().get("max_sp"), 0)
         base = self._player_base_max_sp(character)
         return max(1, base + equipment_bonus)
 
-    def _player_base_max_sp(self, character: CharacterData | None = None) -> int:
-        player = character or self.state.world_data.characters.get(self.state.player_name)
+    def _player_base_max_sp(self, character: Character | None = None) -> int:
+        player = character or self.player_character()
         if player:
             if player.max_sp:
                 return max(1, _safe_int(player.max_sp, 12))
@@ -15653,7 +15237,7 @@ class GameEngine:
     def _calculated_player_max_sp(
         self,
         *,
-        character: CharacterData | None = None,
+        character: Character | None = None,
         level: int | None = None,
         max_hp: int | None = None,
         attrs: dict[str, int] | None = None,
@@ -15672,7 +15256,7 @@ class GameEngine:
         ):
             if value is not None:
                 return max(0, min(max_sp, _safe_int(value, max_sp)))
-        player = self.state.world_data.characters.get(self.state.player_name)
+        player = self.player_character()
         if player:
             value = player.current_sp
             if value:
@@ -15682,8 +15266,8 @@ class GameEngine:
                 return max(0, min(max_sp, _safe_int(value, max_sp)))
         return max_sp
 
-    def _player_attributes(self, character: CharacterData | None = None) -> dict[str, int]:
-        player = character or self.state.world_data.characters.get(self.state.player_name)
+    def _player_attributes(self, character: Character | None = None) -> dict[str, int]:
+        player = character or self.player_character()
         attrs: dict[str, Any] = {}
         if player and isinstance(player.attributes, dict):
             attrs.update(player.attributes)
@@ -15799,7 +15383,7 @@ class GameEngine:
             if key in {"str", "dex", "con", "int", "wis", "cha", "magic", "will"}
         }
         self.state.extra["attributes"] = dict(cleaned)
-        player = self.state.world_data.characters.get(self.state.player_name)
+        player = self.player_character()
         if player:
             player.attributes.update(cleaned)
             player.extra.setdefault("attributes", {}).update(cleaned)
@@ -15828,7 +15412,7 @@ class GameEngine:
         self._set_player_attributes(attrs)
         return gains
 
-    def _encounter_opponent(self, encounter: dict[str, Any]) -> CharacterData | None:
+    def _encounter_opponent(self, encounter: dict[str, Any]) -> Character | None:
         return self._character_from_reference(
             str(encounter.get("opponent_name") or ""),
             str(encounter.get("opponent_uuid") or encounter.get("active_opponent_uuid") or ""),
@@ -15870,7 +15454,7 @@ class GameEngine:
             latest = self.state.narration_log[-1]
             if isinstance(latest, dict):
                 latest["choices"] = _game_over_choices()
-        player = self.state.world_data.characters.get(self.state.player_name)
+        player = self.player_character()
         if player:
             player.flags["game_over"] = True
             player.extra["game_over_reason"] = reason
@@ -15887,11 +15471,11 @@ class GameEngine:
         opponents = self._encounter_opponents(encounter)
         if not opponents:
             opponent_name = str(encounter.get("opponent_name") or "")
-            character = self.state.world_data.characters.get(opponent_name)
-            opponents = [character] if isinstance(character, CharacterData) else []
+            character = self.state.world_data.character(opponent_name)
+            opponents = [character] if isinstance(character, Character) else []
         current_subnode = self._runtime_subnode_for_presence(location)
         for character in opponents:
-            if not isinstance(character, CharacterData):
+            if not isinstance(character, Character):
                 continue
             entry = self._sync_encounter_opponent_entry(encounter, character)
             entry_status = str(entry.get("status") or entry.get("opponent_status") or character.extra.get("combat_status") or "").strip().lower()
@@ -15918,7 +15502,7 @@ class GameEngine:
         opponent_uuid = str(outcome.get("defeated_opponent_uuid") or encounter.get("opponent_uuid") or "").strip()
         if not opponent_uuid:
             opponent_name = str(outcome.get("defeated_opponent_name") or encounter.get("opponent_name") or "")
-            opponent = self.state.world_data.characters.get(opponent_name)
+            opponent = self.state.world_data.character(opponent_name)
             opponent_uuid = str(opponent.uuid if opponent else "")
         if not opponent_uuid:
             return []
@@ -15977,7 +15561,7 @@ class GameEngine:
         if self._encounter_has_surrendered_opponents(encounter):
             choices.append("降伏を受け入れる")
         return choices
-    def _start_conversation(self, action: str, input_type: str, character: CharacterData) -> str:
+    def _start_conversation(self, action: str, input_type: str, character: Character) -> str:
         previous_location = self.state.current_location
         response = self._conversation_starter(character, action, input_type)
         if _as_bool(response.get("content_violation")):
@@ -16036,7 +15620,7 @@ class GameEngine:
         self.save_game()
         return self.state.log_text(16)
 
-    def _conversation_character_reference_rule(self, character: CharacterData) -> str:
+    def _conversation_character_reference_rule(self, character: Character) -> str:
         gender = str(character.gender or "").strip().casefold()
         if gender in {"male", "man", "boy"} or "男" in gender:
             reference = "The conversation target is male. Use his name, role, 男性, or 彼. Do not call him 彼女 or describe him as female."
@@ -16056,7 +15640,7 @@ class GameEngine:
 
     def _conversation_starter(
         self,
-        character: CharacterData,
+        character: Character,
         action: str,
         input_type: str,
     ) -> dict[str, Any]:
@@ -16101,7 +15685,7 @@ class GameEngine:
         self,
         action: str,
         input_type: str,
-        character: CharacterData,
+        character: Character,
         action_roll: dict[str, Any] | None = None,
     ) -> str:
         previous_location = self.state.current_location
@@ -16196,7 +15780,7 @@ class GameEngine:
 
     def _conversation_facilitator(
         self,
-        character: CharacterData,
+        character: Character,
         action: str,
         input_type: str,
         action_roll: dict[str, Any] | None = None,
@@ -16246,7 +15830,7 @@ class GameEngine:
 
     def _conversation_resolver(
         self,
-        character: CharacterData,
+        character: Character,
         action: str,
         facilitator_response: dict[str, Any],
     ) -> dict[str, Any]:
@@ -16285,7 +15869,7 @@ class GameEngine:
             player_name=self.state.player_name,
         )
 
-    def _apply_conversation_resolution(self, character: CharacterData, response: dict[str, Any]) -> None:
+    def _apply_conversation_resolution(self, character: Character, response: dict[str, Any]) -> None:
         tool_payload = tool_effect_payload(response)
         summary = str(response.get("summary") or "")
         if summary:
@@ -16304,7 +15888,7 @@ class GameEngine:
 
     def _record_conversation(
         self,
-        character: CharacterData,
+        character: Character,
         manager_name: str,
         action: str,
         input_type: str,
@@ -16793,7 +16377,7 @@ class GameEngine:
             boss=True,
         )
         self._set_character_presence(character, location.name, "present", subnode_id=target_subnode)
-        self.state.world_data.characters[character.name] = character
+        self.state.world_data.add_character(character)
         generated_bosses = location.extra.get("generated_bosses")
         if not isinstance(generated_bosses, list):
             generated_bosses = []
@@ -16845,7 +16429,7 @@ class GameEngine:
                 danger_level=danger_level,
                 role_hint="field_event_npc",
             )
-            self.state.world_data.characters[character.name] = character
+            self.state.world_data.add_character(character)
             generated.append({"type": "character", "name": character.name})
 
         raw_opponents = _as_list(response.get("opponents") or response.get("enemies") or response.get("enemy_npcs") or response.get("enemy"))
@@ -16869,7 +16453,7 @@ class GameEngine:
                 danger_level=danger_level,
                 role_hint="field_event_enemy",
             )
-            self.state.world_data.characters[character.name] = character
+            self.state.world_data.add_character(character)
             generated.append({"type": "character", "name": character.name})
         return generated
 
@@ -17043,7 +16627,7 @@ class GameEngine:
             )
             if len(nearby_npcs) >= 6:
                 break
-        player = world.characters.get(self.state.player_name)
+        player = self.player_character()
         return {
             "world": {
                 "name": world.world_name,
@@ -17421,144 +17005,14 @@ class GameEngine:
         *,
         objective_role: str,
     ) -> dict[str, Any]:
-        fallback = _quest_objective_npc_fallback_design(quest, response, objective_role=objective_role)
-        danger_level = self._npc_template_danger_for_location(location_name)
-        template = self._choose_npc_template_for_raw(
-            {
-                "role": objective_role,
-                "category": fallback.get("category") or objective_role,
-                "name": fallback.get("name"),
-                "description": fallback.get("description") or quest.overview,
-                "gender": fallback.get("gender"),
-                "age": fallback.get("age"),
-                "extra": {
-                    "role_label": fallback.get("role_label"),
-                    "internal_role": objective_role,
-                },
-            },
-            categories=self._npc_template_categories_for_objective(objective_role),
-            danger_level=danger_level,
-            seed=f"quest-objective:{self.state.world_name}:{quest.name}:{objective_role}:{location_name}:{subnode_id}",
-            preferred_ids=npc_template_ids_from_payloads(quest.extra, response),
+        return npc_generate.quest_objective_npc_design(
+            self,
+            quest,
+            location_name,
+            subnode_id,
+            response,
+            objective_role=objective_role,
         )
-        template_payload = self._npc_template_character_payload(
-            template,
-            danger_level=danger_level,
-            seed=f"quest-objective-payload:{self.state.world_name}:{quest.name}:{objective_role}:{location_name}:{subnode_id}",
-            hostile=objective_role in {"defeat_target", "blocker"},
-        )
-        if template_payload:
-            fallback.update(
-                {
-                    "name": template_payload.get("name") or fallback.get("name"),
-                    "display_alias": template_payload.get("name") or fallback.get("display_alias"),
-                    "role_label": template_payload.get("role") or fallback.get("role_label"),
-                    "description": template_payload.get("description") or fallback.get("description"),
-                    "personality": template_payload.get("personality") or fallback.get("personality"),
-                    "gender": template_payload.get("gender") or fallback.get("gender"),
-                    "age": template_payload.get("age") or fallback.get("age"),
-                    "look": template_payload.get("look") or fallback.get("look"),
-                    "category": template_payload.get("category") or fallback.get("category"),
-                    "image_prompt": ", ".join(_as_str_list(template_payload.get("image_generation_prompt"))),
-                    "attack": template_payload.get("attack"),
-                    "defense": template_payload.get("defense"),
-                    "attributes": template_payload.get("attributes"),
-                    "skills": template_payload.get("skills") if "skills" in template_payload else fallback.get("skills"),
-                    "traits": template_payload.get("traits") if "traits" in template_payload else fallback.get("traits"),
-                    "attacks": (template_payload.get("extra") or {}).get("attacks") if isinstance(template_payload.get("extra"), dict) else [],
-                    "npc_template_id": (template_payload.get("extra") or {}).get("npc_template_id") if isinstance(template_payload.get("extra"), dict) else "",
-                    "npc_template_category": (template_payload.get("extra") or {}).get("npc_template_category") if isinstance(template_payload.get("extra"), dict) else "",
-                    "npc_template_payload": template_payload,
-                }
-            )
-        location = self.state.world_data.locations.get(location_name)
-        subnode_context: dict[str, Any] = {}
-        if location:
-            try:
-                graph = self._ensure_location_subnode_graph(self.state.world_data, location_name)
-                node = graph.get("nodes", {}).get(subnode_id) if isinstance(graph, dict) else None
-                if isinstance(node, dict):
-                    subnode_context = {
-                        "id": subnode_id,
-                        "name": str(node.get("name") or subnode_id),
-                        "kind": str(node.get("kind") or ""),
-                        "description": str(node.get("description") or ""),
-                    }
-            except Exception:
-                subnode_context = {"id": subnode_id}
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You design one concrete quest objective NPC for Fantasia. Return JSON only. "
-                    "Use the world tone, quest request, destination, and objective role to decide a player-facing name, "
-                    "epithet, role label, description, personality, age, gender, appearance, and whether the NPC is hostile. "
-                    "For a rescue blocker/captor/obstacle, make it match the request: if the quest implies tentacles, beasts, "
-                    "spirits, bandits, curses, or another non-human threat, do not default to a generic human. "
-                    "Do not output UUIDs or internal ids such as rescue_target, blocker, defeat_target, or delivery_target. "
-                    "Always include gender and age. Use gender=none and age=adult/ancient/unknown for non-human entities "
-                    "when a human age or binary gender is not meaningful. "
-                    "If npc_template is supplied, keep the same creature/person type and use it as the base; fill only "
-                    "missing flavor such as a concrete name variant, look details, personality details, skills, or traits."
-                ),
-            },
-            {
-                "role": "user",
-                "content": _ai_json(
-                    {
-                        "objective_role": objective_role,
-                        "fallback": fallback,
-                        "quest": _quest_ai_context(quest, include_log=False, include_extra=True),
-                        "destination": {
-                            "location": location_name,
-                            "location_kind": str((location.extra if location else {}).get("location_kind") or ""),
-                            "danger_level": _safe_int((location.extra if location else {}).get("danger_level"), 0),
-                            "description": str(location.description if location else ""),
-                            "subnode": subnode_context,
-                        },
-                        "quest_response_hints": _compact_value(response, max_chars=1200),
-                        "source_text": _quest_destination_source_text(quest, response),
-                        "npc_template": npc_template_ai_context(template),
-                    }
-                ),
-            },
-        ]
-        try:
-            generated = self._chat_json(
-                "quest_objective_npc_designer",
-                messages,
-                max_tokens=600,
-                world_name=self.state.world_name,
-                player_name=self.state.player_name,
-            )
-        except Exception as exc:
-            fallback["designer_error"] = str(exc)
-            return fallback
-
-        design = dict(fallback)
-        for key in ("name", "display_alias", "role_label", "description", "personality", "gender", "age", "look", "species", "category"):
-            value = str(generated.get(key) or "").strip()
-            if value:
-                design[key] = value
-        for key in ("skills", "traits", "attacks"):
-            if key in generated and isinstance(generated.get(key), list):
-                design[key] = generated.get(key)
-        image_prompt = generated.get("image_prompt")
-        if isinstance(image_prompt, list):
-            image_prompt = ", ".join(str(item).strip() for item in image_prompt if str(item).strip())
-        if str(image_prompt or "").strip():
-            design["image_prompt"] = str(image_prompt).strip()
-        aliases = [str(item).strip() for item in _as_list(generated.get("aliases")) if str(item).strip()]
-        if aliases:
-            design["aliases"] = aliases
-        if "hostile" in generated:
-            design["hostile"] = _as_bool(generated.get("hostile"))
-        design["name"] = _clean_generated_name(design.get("name"), fallback.get("name") or "依頼対象", kind="character")
-        if not str(design.get("display_alias") or "").strip():
-            design["display_alias"] = design["name"]
-        if not str(design.get("role_label") or "").strip():
-            design["role_label"] = INTERNAL_QUEST_TOKEN_LABELS.get(objective_role, "依頼対象")
-        return design
 
     def _create_quest_objective_npc(
         self,
@@ -17569,103 +17023,14 @@ class GameEngine:
         *,
         objective_role: str = "rescue_target",
     ) -> dict[str, Any]:
-        response = response or {}
-        design = self._quest_objective_npc_design(quest, location_name, subnode_id, response, objective_role=objective_role)
-        base_name = str(design.get("name") or _quest_objective_npc_name(quest, response, objective_role=objective_role))
-        name = _unique_character_name(self.state.world_data, base_name)
-        role_label = str(design.get("role_label") or INTERNAL_QUEST_TOKEN_LABELS.get(objective_role, "依頼対象"))
-        display_alias = str(design.get("display_alias") or name)
-        aliases = _dedupe_strs([display_alias, role_label, *[str(item) for item in _as_list(design.get("aliases"))]])
-        hostile = bool(design.get("hostile")) if "hostile" in design else objective_role in {"defeat_target", "blocker"}
-        description = str(design.get("description") or response.get("objective_npc_description") or response.get("objective") or quest.overview)
-        personality = str(design.get("personality") or response.get("objective_npc_personality") or "")
-        look = str(design.get("look") or design.get("image_prompt") or "")
-        image_prompts = _as_str_list(design.get("image_prompt") or design.get("image_generation_prompt"))
-        if not image_prompts and look:
-            image_prompts = [look]
-        attributes = {
-            key: max(1, _safe_int(value, CHARACTER_DEFAULT_ATTRIBUTES.get(key, 10)))
-            for key, value in (design.get("attributes") if isinstance(design.get("attributes"), dict) else {}).items()
-            if key in CHARACTER_DEFAULT_ATTRIBUTES
-        }
-        skills = [skill for skill in (_normalise_skill(item) for item in _as_list(design.get("skills"))) if skill.get("name")]
-        traits = [trait for trait in (_normalise_trait(item) for item in _as_list(design.get("traits"))) if trait.get("name")]
-        attacks = [dict(item) for item in _as_list(design.get("attacks")) if isinstance(item, dict)]
-        npc_template_payload = design.get("npc_template_payload") if isinstance(design.get("npc_template_payload"), dict) else {}
-        npc_template_extra = npc_template_payload.get("extra") if isinstance(npc_template_payload.get("extra"), dict) else {}
-        npc_template_flags = npc_template_payload.get("flags") if isinstance(npc_template_payload.get("flags"), dict) else {}
-        npc_template_id = str(design.get("npc_template_id") or npc_template_extra.get("npc_template_id") or "").strip()
-        character = CharacterData(
-            name=name,
-            role=role_label,
-            category=str(design.get("category") or "quest_objective"),
-            attack=max(0, _safe_int(design.get("attack"), 0)),
-            defense=max(0, _safe_int(design.get("defense"), 0)),
-            attributes=attributes,
-            gender=str(design.get("gender") or ""),
-            age=str(design.get("age") or ""),
-            backstory=description,
-            personality=personality,
-            look=look,
-            image_generation_prompt=[part for part in [*image_prompts, description] if part],
-            skills=skills,
-            traits=traits,
-            flags={
-                "source": "quest_objective",
-                "quest_objective": True,
-                "quest_name": quest.name,
-                "quest_objective_kind": "npc",
-                "quest_objective_role": objective_role,
-                "hostile": hostile,
-                "display_alias": display_alias,
-                "role_label": role_label,
-                **npc_template_flags,
-            },
-            extra={
-                "quest_name": quest.name,
-                "quest_objective": True,
-                "quest_objective_role": objective_role,
-                "internal_role": objective_role,
-                "display_alias": display_alias,
-                "role_label": role_label,
-                "aliases": aliases,
-                "species": str(design.get("species") or ""),
-                "appearance_prompt": str(design.get("image_prompt") or look),
-                "attacks": attacks or npc_template_extra.get("attacks") or [],
-                "combat_attacks": attacks or npc_template_extra.get("combat_attacks") or [],
-                "npc_template_id": npc_template_id,
-                "npc_template_category": str(design.get("npc_template_category") or npc_template_extra.get("npc_template_category") or ""),
-                "npc_template_source": str(npc_template_extra.get("npc_template_source") or ""),
-                "objective_location": location_name,
-                "objective_subnode_id": subnode_id,
-                "origin_location": quest.extra.get("origin_location") or self._quest_origin_location(quest),
-                **npc_template_extra,
-            },
-            prompts={
-                "character": str(design.get("image_prompt") or look),
-                "quest_objective": description,
-            },
+        return npc_generate.create_quest_objective_npc(
+            self,
+            quest,
+            location_name,
+            subnode_id,
+            response,
+            objective_role=objective_role,
         )
-        self._finalize_generated_npc(
-            character,
-            location_name=location_name,
-            danger_level=self._npc_template_danger_for_location(location_name),
-            role_hint=objective_role,
-            boss=objective_role == "boss",
-        )
-        self._set_character_presence(character, location_name, "quest_objective", subnode_id=subnode_id)
-        self.state.world_data.characters[character.name] = character
-        return {
-            "kind": "npc",
-            "uuid": character.uuid,
-            "name": character.name,
-            "display_alias": display_alias,
-            "role_label": role_label,
-            "location": location_name,
-            "subnode_id": subnode_id,
-            "role": objective_role,
-            "status": "waiting",
-        }
 
     def _create_quest_objective_item(
         self,
@@ -17786,7 +17151,7 @@ class GameEngine:
             "checker_reason": "",
         }
 
-    def _quest_objective_character(self, entry: dict[str, Any]) -> CharacterData | None:
+    def _quest_objective_character(self, entry: dict[str, Any]) -> Character | None:
         target_uuid = str(entry.get("uuid") or "").strip()
         if not target_uuid:
             return None
@@ -18267,7 +17632,7 @@ class GameEngine:
         self,
         quest: QuestData,
         entry: dict[str, Any],
-        character: CharacterData,
+        character: Character,
         origin: str,
         *,
         source: str,
@@ -19129,14 +18494,14 @@ class GameEngine:
     def list_saves(self) -> list[SaveSlot]:
         return self.save_store.list_saves()
 
-    def _character_for_image(self, character_name: str | None) -> CharacterData:
+    def _character_for_image(self, character_name: str | None) -> Character:
         if character_name:
-            character = self.state.world_data.characters.get(character_name)
+            character = self.state.world_data.character(character_name)
             if character:
                 return character
         if self.state.world_data.characters:
             return next(iter(self.state.world_data.characters.values()))
-        character = CharacterData(
+        character = Character(
             name=self.state.player_name or "Player",
             role="player",
             category="player",
@@ -19145,18 +18510,18 @@ class GameEngine:
             flags={"source": "image_pipeline_fallback"},
         )
         self._set_character_presence(character, self.state.current_location or self.state.world_data.starting_location)
-        self.state.world_data.characters[character.name] = character
+        self.state.world_data.add_character(character)
         return character
 
-    def _monster_for_image(self, monster_name: str | None) -> CharacterData:
+    def _monster_for_image(self, monster_name: str | None) -> Character:
         if monster_name:
-            character = self.state.world_data.characters.get(monster_name)
+            character = self.state.world_data.character(monster_name)
             if character:
                 return character
         for character in self.state.world_data.characters.values():
             if character.flags.get("enemy_npc") or character.category in {"enemy_npc", "quest_objective"} or character.flags.get("hostile"):
                 return character
-        monster = CharacterData(
+        monster = Character(
             name="硝子森の影",
             role="敵対者",
             category="wild_encounter",
@@ -19170,7 +18535,7 @@ class GameEngine:
         )
         self._set_character_presence(monster, self.state.current_location or self.state.world_data.starting_location)
         self._ensure_character_runtime_data(monster)
-        self.state.world_data.characters[monster.name] = monster
+        self.state.world_data.add_character(monster)
         return monster
 
     def stop(self) -> None:
@@ -19179,14 +18544,14 @@ class GameEngine:
         if callable(stop_image):
             stop_image()
 
-    def _active_conversation_character(self) -> CharacterData | None:
+    def _active_conversation_character(self) -> Character | None:
         active = self.state.flags.get("active_conversation")
         if not isinstance(active, dict):
             return None
         name = str(active.get("character") or "")
         if not name:
             return None
-        character = self.state.world_data.characters.get(name)
+        character = self.state.world_data.character(name)
         if character is None:
             self.state.flags.pop("active_conversation", None)
             return None
@@ -19203,7 +18568,7 @@ class GameEngine:
             return None
         return character
 
-    def _find_conversation_target(self, action: str) -> CharacterData | None:
+    def _find_conversation_target(self, action: str) -> Character | None:
         if not _is_conversation_action(action):
             return None
         text = action.strip()
@@ -19267,8 +18632,8 @@ class GameEngine:
     def _match_character_reference_from_candidates(
         self,
         target_name: str,
-        candidates: list[CharacterData],
-    ) -> CharacterData | None:
+        candidates: list[Character],
+    ) -> Character | None:
         target = str(target_name or "").strip()
         if not target:
             return None
@@ -19506,7 +18871,7 @@ def _choice_looks_like_movement(text: str) -> bool:
     return any(word in text or word in lowered for word in movement_words)
 
 
-def _character_prompt_parts(character: CharacterData) -> list[str]:
+def _character_prompt_parts(character: Character) -> list[str]:
     parts = [
         "masterpiece",
         "best quality",
@@ -19523,7 +18888,7 @@ def _character_prompt_parts(character: CharacterData) -> list[str]:
     return _dedupe_strs(parts)
 
 
-def _character_visual_feature_parts(character: CharacterData) -> list[str]:
+def _character_visual_feature_parts(character: Character) -> list[str]:
     parts = [
         *character.image_generation_prompt,
         character.name,
@@ -19542,7 +18907,7 @@ def _character_visual_feature_parts(character: CharacterData) -> list[str]:
     return _dedupe_strs(parts)[:36]
 
 
-def _monster_prompt_parts(monster: CharacterData) -> list[str]:
+def _monster_prompt_parts(monster: Character) -> list[str]:
     parts = [
         "masterpiece",
         "best quality",
@@ -19565,7 +18930,7 @@ def _monster_prompt_parts(monster: CharacterData) -> list[str]:
     return _dedupe_strs(parts)
 
 
-def _monster_visual_feature_parts(monster: CharacterData) -> list[str]:
+def _monster_visual_feature_parts(monster: Character) -> list[str]:
     parts = [
         monster.name,
         monster.role,
@@ -19601,7 +18966,7 @@ def _append_negative_terms(base_prompt: str, terms: list[str]) -> str:
     return ", ".join(_dedupe_strs(base_parts + terms))
 
 
-def _cg_subject_prompt_parts(characters: list[CharacterData], monsters: list[CharacterData]) -> list[str]:
+def _cg_subject_prompt_parts(characters: list[Character], monsters: list[Character]) -> list[str]:
     if not characters and not monsters:
         return []
     parts = ["visible characters keep their established designs"]
@@ -19636,7 +19001,7 @@ def _cg_scene_brief_parts(request: dict[str, Any], location: str) -> list[str]:
     return _dedupe_strs(parts)[:18]
 
 
-def _visual_subjects_context(characters: list[CharacterData], monsters: list[CharacterData]) -> dict[str, Any]:
+def _visual_subjects_context(characters: list[Character], monsters: list[Character]) -> dict[str, Any]:
     return _drop_empty(
         {
             "characters": [
@@ -20160,8 +19525,8 @@ def _entry_power_total(entries: list[dict[str, Any]]) -> int:
     return sum(_entry_power(entry) for entry in entries if isinstance(entry, dict))
 
 
-def _is_player_power_actor(actor: CharacterData) -> bool:
-    if not isinstance(actor, CharacterData):
+def _is_player_power_actor(actor: Character) -> bool:
+    if not isinstance(actor, Character):
         return False
     category = str(actor.category or "").lower()
     role = str(actor.role or "").lower()
@@ -20169,7 +19534,7 @@ def _is_player_power_actor(actor: CharacterData) -> bool:
     return bool(actor.flags.get("is_player") or role == "player" or category == "player" or source.startswith("character_setup"))
 
 
-def _actor_power_budget(actor: CharacterData) -> int:
+def _actor_power_budget(actor: Character) -> int:
     if _is_player_power_actor(actor):
         return PLAYER_UNLIMITED_POWER_BUDGET
     for source in (getattr(actor, "extra", {}), getattr(actor, "flags", {})):
@@ -20208,7 +19573,7 @@ def _actor_power_budget(actor: CharacterData) -> int:
 
 
 def _limit_power_entries_for_actor(
-    actor: CharacterData,
+    actor: Character,
     entries: list[dict[str, Any]],
     *,
     used_power: int = 0,
@@ -20227,7 +19592,7 @@ def _limit_power_entries_for_actor(
     return result
 
 
-def _normalise_actor_power_loadout(actor: CharacterData) -> None:
+def _normalise_actor_power_loadout(actor: Character) -> None:
     traits = [_normalise_trait(item) for item in _as_list(getattr(actor, "traits", []))]
     traits = [trait for trait in traits if trait.get("name")]
     traits = _limit_power_entries_for_actor(actor, traits, used_power=0)
@@ -20237,7 +19602,7 @@ def _normalise_actor_power_loadout(actor: CharacterData) -> None:
     actor.skills = _limit_power_entries_for_actor(actor, skills, used_power=_entry_power_total(traits))
 
 
-def _skill_trait_power_instruction(character: CharacterData) -> str:
+def _skill_trait_power_instruction(character: Character) -> str:
     scale = (
         "強力度の目安: 1=あまり強力ではない、"
         "3=使い方次第で強力、"
@@ -20262,314 +19627,6 @@ def _safe_asset_segment(value: str) -> str:
     bad = '<>:"/\\|?*'
     cleaned = "".join("_" if ch in bad else ch for ch in str(value).strip())
     return cleaned or "unknown"
-
-
-def _character_runtime_attributes(character: CharacterData) -> dict[str, int]:
-    attrs: dict[str, Any] = {}
-    if isinstance(character.attributes, dict):
-        attrs.update(character.attributes)
-    if isinstance(character.extra, dict):
-        direct = character.extra.get("attributes")
-        if isinstance(direct, dict):
-            attrs.update(direct)
-        ability = character.extra.get("ability")
-        if isinstance(ability, dict) and isinstance(ability.get("attributes"), dict):
-            attrs.update(ability["attributes"])
-    resolved = {
-        key: max(1, _safe_int(attrs.get(key), default))
-        for key, default in CHARACTER_DEFAULT_ATTRIBUTES.items()
-    }
-    resolved["magic"] = max(1, _safe_int(attrs.get("magic", attrs.get("mag", resolved["int"])), resolved["int"]))
-    resolved["will"] = max(1, _safe_int(attrs.get("will", resolved["wis"]), resolved["wis"]))
-    return resolved
-
-
-def _npc_attribute_base_for_level(level: Any) -> int:
-    resolved = max(1, min(NPC_MAX_LEVEL, _safe_int(level, 1)))
-    return 10 + int(round((resolved - 1) * 5 / 9))
-
-
-def _npc_attribute_seed(character: CharacterData) -> str:
-    return f"{character.uuid}:{character.name}:{character.role}:{character.category}"
-
-
-def _npc_tendency_text(character: CharacterData) -> str:
-    parts: list[Any] = [
-        character.name,
-        character.role,
-        character.category,
-        character.backstory,
-        character.personality,
-        character.look,
-        character.image_generation_prompt,
-        character.skills,
-        character.traits,
-    ]
-    if isinstance(character.extra, dict):
-        for key in (
-            "archetype",
-            "occupation",
-            "role_label",
-            "title",
-            "display_alias",
-            "description",
-            "ability",
-            "raw_create_settlement_detail_entry",
-            "raw_field_event_enemy",
-        ):
-            if key in character.extra:
-                parts.append(character.extra.get(key))
-    if isinstance(character.flags, dict):
-        for key in ("source", "enemy_npc", "hostile", "guard", "generated_dungeon_boss"):
-            if key in character.flags:
-                parts.append(character.flags.get(key))
-    return json.dumps(parts, ensure_ascii=False, default=str).casefold()
-
-
-def _npc_is_boss_like(character: CharacterData) -> bool:
-    text = _npc_tendency_text(character)
-    return bool(
-        character.flags.get("generated_dungeon_boss")
-        or character.flags.get("boss_npc")
-        or character.extra.get("generated_dungeon_boss")
-        or character.extra.get("boss_npc")
-        or str(character.role or "").casefold() in {"boss", "ボス", "ダンジョンボス"}
-        or "boss" in str(character.category or "").casefold()
-        or any(word in text for word in ("boss", "ボス", "首領", "支配者"))
-    )
-
-
-def _npc_attribute_weights(character: CharacterData) -> dict[str, int]:
-    text = _npc_tendency_text(character)
-    weights = {key: 0 for key in CHARACTER_DEFAULT_ATTRIBUTES}
-    keyword_map = {
-        "str": (
-            "warrior", "fighter", "knight", "soldier", "guard", "mercenary", "brute", "berserker", "blacksmith",
-            "beast", "monster", "giant", "orc", "ogre", "dragon", "weapon", "sword", "axe", "hammer",
-            "戦士", "騎士", "兵士", "衛兵", "傭兵", "山賊", "野盗", "力", "腕力", "怪力", "鍛冶", "獣", "巨人", "竜", "鬼",
-        ),
-        "dex": (
-            "thief", "rogue", "ranger", "archer", "hunter", "assassin", "scout", "ninja", "dancer", "artisan",
-            "craft", "quick", "agile", "bow", "knife", "trap", "sneak",
-            "盗賊", "斥候", "狩人", "弓", "暗殺", "忍者", "踊", "器用", "素早", "俊敏", "罠", "短剣", "職人", "細工",
-        ),
-        "con": (
-            "defender", "guardian", "tank", "miner", "laborer", "veteran", "golem", "undead", "shield",
-            "sturdy", "tough", "hardy", "armor", "heavy",
-            "守護", "防衛", "盾", "重装", "頑丈", "屈強", "鉱夫", "労働", "不死", "ゴーレム", "耐久", "体力",
-        ),
-        "int": (
-            "mage", "wizard", "witch", "sorcerer", "scholar", "alchemist", "researcher", "sage", "engineer",
-            "magic", "spell", "book", "scroll", "tactician", "strategist",
-            "魔術", "魔法", "魔女", "魔導", "学者", "錬金", "研究", "賢者", "知識", "書", "巻物", "策士", "軍師",
-        ),
-        "wis": (
-            "priest", "cleric", "healer", "monk", "druid", "elder", "shaman", "oracle", "saint", "spirit",
-            "calm", "wise", "judge", "will", "faith",
-            "司祭", "僧侶", "治癒", "癒", "修道", "長老", "巫女", "神官", "聖職", "精霊", "冷静", "判断", "意志", "信仰",
-        ),
-        "cha": (
-            "merchant", "shopkeeper", "innkeeper", "bard", "noble", "leader", "mayor", "guild master", "princess",
-            "negotiator", "diplomat", "idol", "performer", "charming",
-            "商人", "店主", "女将", "宿屋", "吟遊", "貴族", "村長", "ギルドマスター", "姫", "交渉", "外交", "魅力", "芸人",
-        ),
-    }
-    for key, keywords in keyword_map.items():
-        for keyword in keywords:
-            if keyword and keyword.casefold() in text:
-                weights[key] += 2
-    if any(word in text for word in ("boss", "ボス", "首領", "長", "王", "支配者")):
-        weights["str"] += 1
-        weights["con"] += 2
-        weights["wis"] += 1
-    if any(word in text for word in ("hostile", "enemy", "enemy_npc", "敵", "魔物", "怪物")):
-        weights["str"] += 1
-        weights["con"] += 1
-    if any(word in text for word in ("tentacle", "slime", "蟲", "触手", "スライム", "粘液")):
-        weights["dex"] += 1
-        weights["con"] += 2
-    if not any(weights.values()):
-        rng = random.Random(f"npc-attribute-profile:{_npc_attribute_seed(character)}")
-        keys = tuple(CHARACTER_DEFAULT_ATTRIBUTES)
-        weights[keys[rng.randrange(len(keys))]] += 2
-        weights[keys[rng.randrange(len(keys))]] += 1
-    return weights
-
-
-def _npc_profile_order(character: CharacterData, weights: dict[str, int]) -> list[str]:
-    rng = random.Random(f"npc-attribute-order:{_npc_attribute_seed(character)}")
-    tie_breaker = {key: rng.random() for key in CHARACTER_DEFAULT_ATTRIBUTES}
-    return sorted(CHARACTER_DEFAULT_ATTRIBUTES, key=lambda key: (-weights.get(key, 0), tie_breaker[key]))
-
-
-def _npc_profile_attributes(character: CharacterData, base: int, *, boss: bool = False) -> dict[str, int]:
-    weights = _npc_attribute_weights(character)
-    order = _npc_profile_order(character, weights)
-    level = max(1, min(NPC_MAX_LEVEL, _safe_int(character.level, 1)))
-    primary_bonus = max(2, min(7, 1 + (level + 4) // 5))
-    secondary_bonus = max(1, primary_bonus // 2)
-    tertiary_bonus = 1 if level >= 10 else 0
-    attrs = {key: base for key in CHARACTER_DEFAULT_ATTRIBUTES}
-    if order:
-        attrs[order[0]] += primary_bonus
-    if len(order) > 1:
-        attrs[order[1]] += secondary_bonus
-    if tertiary_bonus and len(order) > 2 and weights.get(order[2], 0) > 0:
-        attrs[order[2]] += tertiary_bonus
-    if boss:
-        attrs["con"] += 2
-        attrs[order[0] if order else "str"] += 1
-    character.extra[NPC_ATTRIBUTE_PROFILE_KEY] = ",".join(order[:2])
-    return attrs
-
-
-def _npc_attributes_need_generation(character: CharacterData, attrs: dict[str, int]) -> bool:
-    if character.extra.get(NPC_ATTRIBUTE_GENERATED_FLAG) or character.flags.get(NPC_ATTRIBUTE_GENERATED_FLAG):
-        return True
-    values = [_safe_int(attrs.get(key), CHARACTER_DEFAULT_ATTRIBUTES[key]) for key in CHARACTER_DEFAULT_ATTRIBUTES]
-    return len(set(values)) <= 1
-
-
-def _npc_level_tendency_attributes(
-    character: CharacterData,
-    attrs: dict[str, int],
-    *,
-    boss: bool = False,
-    force: bool = False,
-) -> dict[str, int]:
-    if not isinstance(character, CharacterData) or character.flags.get("is_player"):
-        return attrs
-    boss = boss or _npc_is_boss_like(character)
-    if (character.extra.get("npc_template_id") or character.flags.get("npc_template_id")) and not force:
-        resolved = {
-            key: max(1, _safe_int(attrs.get(key), CHARACTER_DEFAULT_ATTRIBUTES[key]))
-            for key in CHARACTER_DEFAULT_ATTRIBUTES
-        }
-        resolved["magic"] = max(1, _safe_int(attrs.get("magic", attrs.get("mag", resolved["int"])), resolved["int"]))
-        resolved["will"] = max(1, _safe_int(attrs.get("will", resolved["wis"]), resolved["wis"]))
-        return resolved
-    base = _npc_attribute_base_for_level(character.level)
-    if force or _npc_attributes_need_generation(character, attrs):
-        resolved = _npc_profile_attributes(character, base, boss=boss)
-        character.extra[NPC_ATTRIBUTE_GENERATED_FLAG] = True
-        character.flags[NPC_ATTRIBUTE_GENERATED_FLAG] = True
-    else:
-        resolved = {
-            key: max(base + max(0, _safe_int(attrs.get(key), CHARACTER_DEFAULT_ATTRIBUTES[key]) - CHARACTER_DEFAULT_ATTRIBUTES[key]), base)
-            for key in CHARACTER_DEFAULT_ATTRIBUTES
-        }
-    resolved["magic"] = max(_safe_int(attrs.get("magic", attrs.get("mag", resolved["int"])), resolved["int"]), resolved["int"])
-    resolved["will"] = max(_safe_int(attrs.get("will", resolved["wis"]), resolved["wis"]), resolved["wis"])
-    return resolved
-
-
-def _character_calculated_max_hp(character: CharacterData) -> int:
-    attrs = _character_runtime_attributes(character)
-    level = max(1, _safe_int(character.level, 1))
-    return max(10, 8 + level * 3 + attrs["con"] * 2 + attrs["str"] // 2 + attrs["will"] // 3)
-
-
-def _character_calculated_max_sp(character: CharacterData, *, max_hp: int | None = None) -> int:
-    attrs = _character_runtime_attributes(character)
-    level = max(1, _safe_int(character.level, 1))
-    resolved_max_hp = max_hp if max_hp is not None else _character_calculated_max_hp(character)
-    return max(6, int(resolved_max_hp * 0.45) + attrs["magic"] + attrs["will"] + level * 2)
-
-
-def _character_calculated_attack(character: CharacterData) -> int:
-    attrs = _character_runtime_attributes(character)
-    level = max(1, _safe_int(character.level, 1))
-    return max(1, level + attrs["str"] // 3 + attrs["dex"] // 5)
-
-
-def _character_calculated_defense(character: CharacterData) -> int:
-    attrs = _character_runtime_attributes(character)
-    level = max(1, _safe_int(character.level, 1))
-    return max(0, level // 2 + attrs["con"] // 4 + attrs["wis"] // 6)
-
-
-def _danger_scaled_level_floor(danger: Any, *, boss: bool = False) -> int:
-    resolved = _clamp_world_danger(danger)
-    base = 1 + int(round(resolved * 0.72))
-    if boss:
-        base += 8
-    return max(1, min(NPC_MAX_LEVEL, base))
-
-
-def _scale_character_for_danger(character: CharacterData, danger: Any, *, boss: bool = False) -> None:
-    if not isinstance(character, CharacterData) or character.flags.get("is_player"):
-        return
-    resolved_danger = _clamp_world_danger(danger)
-    boss = bool(boss or _npc_is_boss_like(character))
-    if boss:
-        character.flags["boss_npc"] = True
-        character.extra["boss_npc"] = True
-    level_floor = _danger_scaled_level_floor(resolved_danger, boss=boss)
-    if _safe_int(character.level, 1) < level_floor:
-        character.level = level_floor
-
-    attrs = _character_runtime_attributes(character)
-    attrs = _npc_level_tendency_attributes(character, attrs, boss=boss)
-    character.attributes = attrs
-    character.extra["attributes"] = dict(attrs)
-    ability = character.extra.setdefault("ability", {})
-    if isinstance(ability, dict):
-        ability["attributes"] = dict(attrs)
-    character.flags["danger_level"] = resolved_danger
-    character.extra["danger_level"] = resolved_danger
-
-    old_max_hp = max(0, _safe_int(character.max_hp, 0))
-    old_current_hp = max(0, _safe_int(character.current_hp, 0))
-    calculated_hp = _character_calculated_max_hp(character)
-    if old_max_hp <= 0 or old_max_hp < calculated_hp:
-        character.max_hp = calculated_hp
-        if old_current_hp <= 0 or old_current_hp >= old_max_hp:
-            character.current_hp = calculated_hp
-        else:
-            character.current_hp = min(calculated_hp, old_current_hp)
-    calculated_sp = _character_calculated_max_sp(character, max_hp=character.max_hp)
-    if _safe_int(character.max_sp, 0) < calculated_sp:
-        character.max_sp = calculated_sp
-        if _safe_int(character.current_sp, 0) <= 0:
-            character.current_sp = calculated_sp
-    calculated_attack = _character_calculated_attack(character)
-    calculated_defense = _character_calculated_defense(character)
-    template_controlled = bool(character.extra.get("npc_template_id") or character.flags.get("npc_template_id"))
-    if template_controlled:
-        if _safe_int(character.attack, 0) <= 0:
-            character.attack = calculated_attack
-        if _safe_int(character.defense, 0) <= 0:
-            character.defense = calculated_defense
-    else:
-        character.attack = max(_safe_int(character.attack, 0), calculated_attack)
-        character.defense = max(_safe_int(character.defense, 0), calculated_defense)
-
-
-def _danger_scaled_placeholder_enemy(name: str, danger: Any) -> CharacterData:
-    character = CharacterData(name=str(name or "Enemy"), role="敵対者", category="enemy_npc")
-    _scale_character_for_danger(character, danger)
-    return character
-
-
-def _character_state_is_dead(character: CharacterData) -> bool:
-    state = str(character.state or character.flags.get("state") or "").strip().lower()
-    if state in {"dead", "corpse", "killed"}:
-        return True
-    if character.flags.get("dead") is True or character.flags.get("alive") is False:
-        return True
-    return False
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _subnode_display_needs_fill(value: Any) -> bool:
@@ -23127,246 +22184,6 @@ def _merge_named_dicts(existing: list[dict[str, Any]], additions: list[dict[str,
     return result
 
 
-def _npc_generation_requests(response: dict[str, Any]) -> list[Any]:
-    for key in (
-        "new_npc_requests",
-        "new_npc_request",
-        "npc_requests",
-        "npc_request",
-        "new_npcs",
-        "needed_npcs",
-        "required_npcs",
-        "npc_to_generate",
-        "npcs_to_generate",
-    ):
-        if key not in response:
-            continue
-        value = response.get(key)
-        if value is True:
-            return [{"reason": key}]
-        if value:
-            return _as_list(value)
-    return []
-
-
-def _infer_npc_generation_requests(response: dict[str, Any], action: str, location: str, world: WorldData) -> list[Any]:
-    inferred: list[Any] = []
-    for item in _as_list(response.get("recipients")):
-        name = _clean_generated_name(item, "", kind="character")
-        if _should_generate_npc_name(world, name, location=location):
-            inferred.append(
-                {
-                    "name": name,
-                    "role": "npc",
-                    "reason": "master_ai_facilitator named this recipient, but the character is not registered yet.",
-                    "location": location,
-                }
-            )
-
-    for item in _collect_nested_npc_requests(response):
-        inferred.append(item)
-
-    text_blob = json.dumps(_strip_response_metadata(response), ensure_ascii=False)
-    for name in _extract_npc_candidate_names(action + "\n" + text_blob):
-        if _should_generate_npc_name(world, name, location=location):
-            inferred.append(
-                {
-                    "name": name,
-                    "role": "npc",
-                    "reason": "The recent narration or choices refer to this unregistered NPC.",
-                    "location": location,
-                }
-            )
-    return inferred
-
-
-def _dedupe_npc_requests(requests: list[Any]) -> list[Any]:
-    result: list[Any] = []
-    seen: set[str] = set()
-    for item in requests:
-        if isinstance(item, dict):
-            data = dict(item)
-            name = _clean_generated_name(
-                data.get("name") or data.get("character_name") or data.get("npc_name") or "",
-                "",
-                kind="character",
-            )
-            if name:
-                data["name"] = name
-            key = json.dumps(
-                {
-                    "name": name,
-                    "role": data.get("role") or data.get("occupation") or data.get("job") or data.get("category") or "",
-                    "reason": data.get("reason") or data.get("description") or data.get("summary") or "",
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
-            value: Any = data
-        else:
-            name = _clean_generated_name(item, "", kind="character")
-            key = name or str(item)
-            value = {"name": name, "reason": str(item)} if name else item
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        result.append(value)
-    return result
-
-
-def _filter_npc_generation_requests(
-    requests: list[Any],
-    world: WorldData,
-    location: str,
-    player_name: str,
-) -> list[Any]:
-    result: list[Any] = []
-    for item in requests:
-        name = _npc_request_name(item)
-        if name and not _should_generate_npc_name(world, name, location=location, player_name=player_name):
-            continue
-        if _npc_request_matches_existing_scene_character(item, world, location, player_name):
-            continue
-        if _npc_request_is_player(item, world, player_name):
-            continue
-        result.append(item)
-    return result
-
-
-def _npc_request_name(value: Any) -> str:
-    if isinstance(value, dict):
-        return _clean_generated_name(
-            value.get("name") or value.get("character_name") or value.get("npc_name") or value.get("target") or value.get("recipient"),
-            "",
-            kind="character",
-        )
-    return _clean_generated_name(value, "", kind="character")
-
-
-def _npc_request_terms(value: Any) -> list[str]:
-    if isinstance(value, dict):
-        terms: list[str] = []
-        for key in (
-            "name",
-            "character_name",
-            "npc_name",
-            "target",
-            "recipient",
-            "role",
-            "occupation",
-            "job",
-            "title",
-            "alias",
-        ):
-            cleaned = _clean_generated_name(value.get(key), "", kind="character")
-            if cleaned:
-                terms.append(cleaned)
-        for key in ("aliases", "tags"):
-            for item in _as_list(value.get(key)):
-                cleaned = _clean_generated_name(item, "", kind="character")
-                if cleaned:
-                    terms.append(cleaned)
-        return _dedupe_strs(terms)
-    name = _clean_generated_name(value, "", kind="character")
-    return [name] if name else []
-
-
-def _npc_request_matches_existing_scene_character(value: Any, world: WorldData, location: str, player_name: str) -> bool:
-    terms = _npc_request_terms(value)
-    if not terms:
-        return False
-    for term in terms:
-        if _existing_scene_character_matches(world, term, location, player_name):
-            return True
-    return False
-
-
-def _npc_request_is_player(value: Any, world: WorldData, player_name: str) -> bool:
-    return any(_is_player_reference(term, world, player_name) for term in _npc_request_terms(value))
-
-
-def _collect_nested_npc_requests(value: Any, depth: int = 0) -> list[Any]:
-    if depth > 5:
-        return []
-    if isinstance(value, dict):
-        result: list[Any] = []
-        for key, item in value.items():
-            key_l = str(key).lower()
-            if key_l in {
-                "new_npc_request",
-                "new_npc_requests",
-                "npc_request",
-                "npc_requests",
-                "needed_npc",
-                "needed_npcs",
-                "required_npc",
-                "required_npcs",
-                "npc_to_generate",
-                "npcs_to_generate",
-            }:
-                result.extend(_as_list(item))
-                continue
-            result.extend(_collect_nested_npc_requests(item, depth + 1))
-        return result
-    if isinstance(value, list):
-        result: list[Any] = []
-        for item in value:
-            result.extend(_collect_nested_npc_requests(item, depth + 1))
-        return result
-    return []
-
-
-def _extract_npc_candidate_names(text: str) -> list[str]:
-    source = str(text or "")
-    names: list[str] = []
-    patterns = (
-        r"([^\s、。,.「」『』（）()\[\]{}:：]{2,20})(?:に話しかける|と話す|に尋ねる|を呼ぶ|に会う)",
-        r"(?:talk to|speak to|ask|meet)\s+([A-Za-z][A-Za-z0-9 _'\-]{1,32})",
-    )
-    for pattern in patterns:
-        for match in re.finditer(pattern, source, flags=re.IGNORECASE):
-            cleaned = _clean_generated_name(match.group(1), "", kind="character")
-            if cleaned:
-                names.append(cleaned)
-    return _dedupe_strs(names)
-
-
-def _should_generate_npc_name(
-    world: WorldData,
-    name: str,
-    *,
-    location: str = "",
-    player_name: str = "",
-) -> bool:
-    if not name:
-        return False
-    if name == world.world_name or name in world.characters:
-        return False
-    if _world_has_dead_npc_identity(world, name=name):
-        return False
-    lowered = name.lower()
-    if lowered in {"player", "pc", "npc", "character", "unknown", "monster", "enemy", "hero", "protagonist", "you"}:
-        return False
-    if _is_player_reference(name, world, player_name):
-        return False
-    if _existing_scene_character_matches(world, name, location, player_name):
-        return False
-    return True
-
-
-def _world_has_dead_npc_identity(world: WorldData, *, name: str = "", uuid: str = "") -> bool:
-    extra = world.extra if isinstance(world.extra, dict) else {}
-    dead_names = extra.get("dead_npc_names")
-    if name and isinstance(dead_names, list):
-        if any(str(item) == name for item in dead_names):
-            return True
-    dead_uuids = extra.get("dead_npc_uuids")
-    if uuid and isinstance(dead_uuids, list):
-        if any(str(item) == uuid for item in dead_uuids):
-            return True
-    return False
-
-
 def _is_player_reference(name: str, world: WorldData, player_name: str = "") -> bool:
     text = str(name or "").strip()
     if not text:
@@ -23421,7 +22238,7 @@ def _existing_scene_character_matches(world: WorldData, term: str, location: str
     return False
 
 
-def _character_reference_terms(character: CharacterData) -> list[str]:
+def _character_reference_terms(character: Character) -> list[str]:
     terms = [
         character.name,
         character.role,
@@ -23523,7 +22340,7 @@ def _location_ai_context(location: Any) -> dict[str, Any]:
     return _drop_empty(data)
 
 
-def _character_reference_guidance(character: CharacterData) -> dict[str, str]:
+def _character_reference_guidance(character: Character) -> dict[str, str]:
     gender = str(character.gender or "").strip().casefold()
     if gender in {"male", "man", "boy"} or "男" in gender:
         return {
@@ -23541,7 +22358,7 @@ def _character_reference_guidance(character: CharacterData) -> dict[str, str]:
     }
 
 
-def _character_ai_context(character: CharacterData, *, details: bool = True) -> dict[str, Any]:
+def _character_ai_context(character: Character, *, details: bool = True) -> dict[str, Any]:
     data: dict[str, Any] = {
         "uuid": character.uuid,
         "name": character.name,
@@ -23680,13 +22497,13 @@ def _strip_response_metadata(response: dict[str, Any]) -> dict[str, Any]:
 
 
 
-def _character_from_raw(item: Any, index: int, category: str) -> CharacterData:
+def _character_from_raw(item: Any, index: int, category: str) -> Character:
     if isinstance(item, dict):
         data = dict(item)
         name = str(data.get("name") or data.get("character_name") or f"{category.title()} {index + 1}")
         role = str(data.get("role") or data.get("job") or data.get("occupation") or "")
         description = str(data.get("description") or data.get("backstory") or data.get("summary") or "")
-        character = CharacterData.from_dict(data, default_name=name)
+        character = Character.from_dict(data, default_name=name)
         character.name = name
         character.role = role
         character.category = category
@@ -23698,108 +22515,11 @@ def _character_from_raw(item: Any, index: int, category: str) -> CharacterData:
             character.look = description
         character.extra.setdefault("raw_create_settlement_detail_entry", data)
         return character
-    return CharacterData(
+    return Character(
         name=f"{category.title()} {index + 1}",
         role=category,
         category=category,
         backstory=str(item),
-    )
-
-
-def _npc_from_raw(item: Any, index: int) -> CharacterData:
-    if isinstance(item, dict):
-        data = dict(item)
-        name = _clean_generated_name(
-            data.get("name") or data.get("character_name") or data.get("npc_name"),
-            f"NPC {index + 1}",
-            kind="character",
-        )
-        category = str(data.get("category") or data.get("npc_category") or "npc")
-        role = str(data.get("role") or data.get("occupation") or data.get("job") or category)
-        character = CharacterData.from_dict(data, default_name=name)
-        character.name = name
-        character.category = category
-        character.role = role
-        description = str(data.get("description") or data.get("backstory") or data.get("summary") or "")
-        if description and not character.backstory:
-            character.backstory = description
-        if data.get("personality") and not character.personality:
-            character.personality = str(data.get("personality"))
-        if data.get("look") and not character.look:
-            character.look = str(data.get("look"))
-        if data.get("appearance") and not character.look:
-            character.look = str(data.get("appearance"))
-        if description and not character.look:
-            character.look = description
-        if data.get("image_generation_prompt") and not character.image_generation_prompt:
-            character.image_generation_prompt = _as_str_list(data.get("image_generation_prompt"))
-        if data.get("skills"):
-            character.skills = [skill for skill in (_normalise_skill(item) for item in _as_list(data.get("skills"))) if skill.get("name")]
-        if data.get("traits"):
-            character.traits = [trait for trait in (_normalise_trait(item) for item in _as_list(data.get("traits"))) if trait.get("name")]
-        _normalise_actor_power_loadout(character)
-        if data.get("aliases"):
-            character.extra["aliases"] = _as_str_list(data.get("aliases"))
-        if data.get("description"):
-            character.extra["description"] = str(data.get("description"))
-        if data.get("occupation"):
-            character.extra["occupation"] = str(data.get("occupation"))
-        if data.get("archetype"):
-            character.extra["archetype"] = str(data.get("archetype"))
-        return character
-    return CharacterData(
-        name=f"NPC {index + 1}",
-        role="npc",
-        category="npc",
-        backstory=str(item),
-    )
-
-
-def _enemy_npc_from_raw(item: Any, index: int) -> CharacterData:
-    if isinstance(item, dict):
-        data = dict(item)
-        name = _clean_generated_name(
-            data.get("name") or data.get("monster_name") or data.get("enemy_name"),
-            f"Enemy {index + 1}",
-            kind="monster",
-        )
-        category = str(data.get("category") or data.get("monster_category") or data.get("type") or "wild_encounter")
-        description = str(data.get("description") or data.get("summary") or data.get("overview") or "")
-        character = CharacterData.from_dict(data, default_name=name)
-        character.name = name
-        character.role = str(data.get("role") or data.get("role_label") or category or "敵対者")
-        character.category = "enemy_npc"
-        if description and not character.backstory:
-            character.backstory = description
-        if not character.gender:
-            character.gender = str(data.get("gender") or "none")
-        if not character.age:
-            character.age = str(data.get("age") or "unknown")
-        if data.get("personality") and not character.personality:
-            character.personality = str(data.get("personality"))
-        if description and not character.look:
-            character.look = description
-        if data.get("image_generation_prompt"):
-            character.image_generation_prompt = _as_str_list(data.get("image_generation_prompt"))
-            character.prompts["image_generation_prompt"] = _as_str_list(data.get("image_generation_prompt"))
-        if data.get("skills"):
-            character.skills = [skill for skill in (_normalise_skill(item) for item in _as_list(data.get("skills"))) if skill.get("name")]
-        if data.get("traits"):
-            character.traits = [trait for trait in (_normalise_trait(item) for item in _as_list(data.get("traits"))) if trait.get("name")]
-        character.flags["enemy_npc"] = True
-        character.flags["hostile"] = _as_bool(data.get("hostile", True))
-        character.extra["aliases"] = _dedupe_strs([name, category, "敵", "魔物", *[str(value) for value in _as_list(data.get("aliases"))]])
-        character.extra["description"] = description
-        character.extra.setdefault("raw_field_event_enemy", data)
-        _normalise_actor_power_loadout(character)
-        return character
-    return CharacterData(
-        name=f"Enemy {index + 1}",
-        role="敵対者",
-        category="enemy_npc",
-        backstory=str(item),
-        look=str(item),
-        flags={"enemy_npc": True, "hostile": True},
     )
 
 
@@ -23909,10 +22629,10 @@ def _is_valid_generated_name(text: str) -> bool:
 
 def _unique_character_name(world: WorldData, name: str) -> str:
     base = _clean_generated_name(name, "NPC", kind="character")
-    if base not in world.characters:
+    if not world.has_character_name(base):
         return base
     suffix = 2
-    while f"{base} {suffix}" in world.characters:
+    while world.has_character_name(f"{base} {suffix}"):
         suffix += 1
     return f"{base} {suffix}"
 
@@ -23927,7 +22647,7 @@ def _actor_present_at(location: str, state: str, flags: dict[str, Any], current_
     return _actor_state_is_present(actor_state)
 
 
-def _character_is_hostile_actor(character: CharacterData) -> bool:
+def _character_is_hostile_actor(character: Character) -> bool:
     flags = character.flags if isinstance(character.flags, dict) else {}
     extra = character.extra if isinstance(character.extra, dict) else {}
     if _as_bool(flags.get("surrendered")) or _as_bool(extra.get("surrendered")):

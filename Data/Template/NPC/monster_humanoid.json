@@ -1,0 +1,64 @@
+[
+  {
+    "id": "goblin_dagger",
+    "name": "ダガーゴブリン",
+    "role": "野蛮な蛮族",
+    "look": "緑色の肌、とんがりとした耳、短剣を持っている。",
+    "personality": "人間を襲い、物資を奪いたいと考えている。",
+    "image_prompt": ["green skin", "goblin", "holding dagger", "fantasy RPG monster"],
+    "gender": "male",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 6,
+    "def": 3,
+    "attributes": {
+      "str": 8, 
+      "dex": 6,
+      "con": 6,
+      "int": 6,
+      "wis": 6,
+      "cha": 6
+    },
+    "attacks": [
+      {"name": "持っている短剣で攻撃", "type": "physical"}
+    ],
+    "skills": [
+      {"name": "連続攻撃", "description": "連続で攻撃する。", "power": 2, "sp": 3}
+    ],
+    "traits": [
+      {"name": "弱気", "description": "自身が劣勢になると、戦意を失い相手に助けを求める。", "power": 2}
+    ]
+  },
+  {
+    "id": "goblin_bow",
+    "name": "アローゴブリン",
+    "role": "野蛮な蛮族",
+    "look": "緑色の肌、とんがりとした耳、弓を持っている。",
+    "personality": "人間を襲い、物資を奪いたいと考えている。",
+    "image_prompt": ["green skin", "goblin", "holding bow", "fantasy RPG monster"],
+    "gender": "male",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 6,
+    "def": 3,
+    "attributes": {
+      "str": 6, 
+      "dex": 8,
+      "con": 6,
+      "int": 6,
+      "wis": 6,
+      "cha": 6
+    },
+    "attacks": [
+      {"name": "持っている弓で矢を撃って攻撃", "type": "physical"}
+    ],
+    "skills": [
+      {"name": "毒の矢", "description": "毒の矢を放ち相手に攻撃をする。", "power": 2, "sp": 3}
+    ],
+    "traits": [
+      {"name": "弱気", "description": "自身が劣勢になると、戦意を失い相手に助けを求める。", "power": 2}
+    ]
+  }
+]

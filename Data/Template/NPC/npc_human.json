@@ -19,9 +19,7 @@
     },
     "attacks": [
       {"name": "拳で殴る", "type": "physical"}
-    ],
-    "skills": [],
-    "traits": []
+    ]
   },
   {
     "id": "female_child",
@@ -43,9 +41,7 @@
     },
     "attacks": [
       {"name": "拳で殴る", "type": "physical"}
-    ],
-    "skills": [],
-    "traits": []
+    ]
   },
   {
     "id": "male_residents",
@@ -67,9 +63,7 @@
     },
     "attacks": [
       {"name": "拳で殴る", "type": "physical"}
-    ],
-    "skills": [],
-    "traits": []
+    ]
   },
   {
     "id": "female_residents",
@@ -91,9 +85,7 @@
     },
     "attacks": [
       {"name": "拳で殴る", "type": "physical"}
-    ],
-    "skills": [],
-    "traits": []
+    ]
   },
   {
     "id": "traveling_merchant",
@@ -115,9 +107,7 @@
     },
     "attacks": [
       {"name": "自衛用の剣で切る", "type": "physical"}
-    ],
-    "skills": [],
-    "traits": []
+    ]
   },
   {
     "id": "elf_child",
@@ -139,9 +129,7 @@
     },
     "attacks": [
       {"name": "自衛用の弓で矢を放つ", "type": "physical"}
-    ],
-    "skills": [],
-    "traits": []
+    ]
   },
   {
     "id": "elf_residents",
@@ -163,8 +151,76 @@
     },
     "attacks": [
       {"name": "自衛用の弓で矢を放つ", "type": "physical"}
+    ]
+  },
+  {
+    "id": "warrior",
+    "role": "戦士",
+    "gender": "random",
+    "age_min": 15,
+    "age_max": 30,
+    "category": "npc_common",
+    "level": 0,
+    "atk": 8,
+    "def": 6,
+    "attributes": {
+      "str": 10, 
+      "dex": 8,
+      "con": 8,
+      "int": 8,
+      "wis": 8,
+      "cha": 8
+    },
+    "attacks": [
+      {"name": "剣で切る", "type": "physical"}
     ],
-    "skills": [],
-    "traits": []
+    "skills": [
+      {"name": "全力攻撃", "description": "強烈な一撃を敵に叩き込む。", "power": 2, "sp": 3}
+    ]
+  },
+  {
+    "id": "priest",
+    "role": "神官",
+    "gender": "random",
+    "age_min": 15,
+    "age_max": 30,
+    "category": "npc_common",
+    "level": 0,
+    "atk": 6,
+    "def": 4,
+    "attributes": {
+      "str": 8, 
+      "dex": 8,
+      "con": 8,
+      "int": 10,
+      "wis": 8,
+      "cha": 8
+    },
+    "attacks": [
+      {"name": "槌で殴る", "type": "physical"}
+    ]
+  },
+  {
+    "id": "wizard",
+    "role": "魔法使い",
+    "gender": "random",
+    "age_min": 15,
+    "age_max": 30,
+    "category": "npc_common",
+    "level": 0,
+    "atk": 6,
+    "def": 4,
+    "attributes": {
+      "str": 8, 
+      "dex": 8,
+      "con": 8,
+      "int": 8,
+      "wis": 10,
+      "cha": 8
+    },
+    "attacks": [
+      {"name": "火球の魔法を敵に飛ばす", "type": "fire"},
+      {"name": "氷の魔法を敵に飛ばす", "type": "ice"}
+    ]
   }
 ]

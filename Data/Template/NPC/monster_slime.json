@@ -1,0 +1,35 @@
+[
+  {
+    "id": "slime",
+    "name": "緑スライム",
+    "role": "粘液生物",
+    "look": "緑色の粘液のような見た目。",
+    "personality": "生物を捕えようとし、なかなか離さない。",
+    "image_prompt": ["green slime monster", "fantasy RPG monster"],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 4,
+    "def": 2,
+    "attributes": {
+      "str": 6, 
+      "dex": 4,
+      "con": 8,
+      "int": 6,
+      "wis": 6,
+      "cha": 6
+    },
+    "attacks": [
+      {"name": "粘液で打撃攻撃", "type": "physical"},
+      {"name": "粘液に包んで浸食攻撃", "type": "poison"}
+    ],
+    "skills": [
+      {"name": "吸収", "description": "相手の栄養分を吸い取り、ダメージを与えると同時に自身を回復する。", "power": 1, "sp": 3}
+    ],
+    "traits": [
+      {"name": "耐斬撃", "description": "自身に対する、剣などの斬撃に対するダメージを抑える。", "power": 1},
+      {"name": "打撃弱点", "description": "自身に対する、打撃に対するダメージが増加する。", "power": 1}
+    ]
+  }
+]

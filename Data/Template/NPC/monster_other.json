@@ -1,0 +1,30 @@
+[
+  {
+    "id": "tentacle",
+    "name": "テンタクル",
+    "role": "触手",
+    "look": "ピンク色の触手。",
+    "personality": "あまり何も考えておらず、本能で動く。",
+    "image_prompt": ["pink tentacle", "fantasy RPG monster"],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 6,
+    "def": 3,
+    "attributes": {
+      "str": 8, 
+      "dex": 6,
+      "con": 6,
+      "int": 6,
+      "wis": 6,
+      "cha": 6
+    },
+    "attacks": [
+      {"name": "触手をたたきつけて攻撃", "type": "physical"}
+    ],
+    "skills": [
+      {"name": "拘束", "description": "触手を使い、拘束を行う。", "power": 2, "sp": 3}
+    ]
+  }
+]

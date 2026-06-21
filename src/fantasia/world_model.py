@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any, TypeVar
-from uuid import uuid4
+
+from .character import Character
 
 
 T = TypeVar("T")
@@ -37,67 +38,6 @@ class LocationData:
         kwargs["name"] = str(kwargs.get("name") or default_name)
         kwargs["prompts"] = _as_dict(kwargs.get("prompts"))
         kwargs["flags"] = _as_dict(kwargs.get("flags"))
-        return cls(**kwargs)
-
-    def to_dict(self) -> dict[str, Any]:
-        return dataclass_to_dict(self)
-
-
-@dataclass
-class CharacterData:
-    uuid: str = field(default_factory=lambda: uuid4().hex)
-    name: str = "unknown"
-    role: str = ""
-    category: str = ""
-    location: str = ""
-    state: str = "present"
-    level: int = 1
-    current_hp: int = 0
-    max_hp: int = 0
-    current_sp: int = 0
-    max_sp: int = 0
-    attack: int = 0
-    defense: int = 0
-    attributes: dict[str, int] = field(default_factory=dict)
-    gender: str = ""
-    age: str = ""
-    backstory: str = ""
-    personality: str = ""
-    look: str = ""
-    image_generation_prompt: list[str] = field(default_factory=list)
-    traits: list[dict[str, Any]] = field(default_factory=list)
-    skills: list[dict[str, Any]] = field(default_factory=list)
-    status_effects: list[dict[str, Any]] = field(default_factory=list)
-    inventory: list[dict[str, Any]] = field(default_factory=list)
-    gold: int = 0
-    image_paths: dict[str, str] = field(default_factory=dict)
-    prompts: dict[str, Any] = field(default_factory=dict)
-    flags: dict[str, Any] = field(default_factory=dict)
-    extra: dict[str, Any] = field(default_factory=dict)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], default_name: str = "unknown") -> "CharacterData":
-        kwargs = _known_kwargs(cls, data)
-        kwargs["uuid"] = str(kwargs.get("uuid") or uuid4().hex)
-        kwargs["name"] = str(kwargs.get("name") or default_name)
-        kwargs["level"] = max(1, _as_int(kwargs.get("level"), 1))
-        kwargs["current_hp"] = max(0, _as_int(kwargs.get("current_hp"), 0))
-        kwargs["max_hp"] = max(0, _as_int(kwargs.get("max_hp"), 0))
-        kwargs["current_sp"] = max(0, _as_int(kwargs.get("current_sp"), 0))
-        kwargs["max_sp"] = max(0, _as_int(kwargs.get("max_sp"), 0))
-        kwargs["attack"] = max(0, _as_int(kwargs.get("attack"), 0))
-        kwargs["defense"] = max(0, _as_int(kwargs.get("defense"), 0))
-        kwargs["attributes"] = _int_dict(kwargs.get("attributes"))
-        kwargs["image_generation_prompt"] = _as_list(kwargs.get("image_generation_prompt"))
-        kwargs["traits"] = _as_list(kwargs.get("traits"))
-        kwargs["skills"] = _as_list(kwargs.get("skills"))
-        kwargs["status_effects"] = _as_list(kwargs.get("status_effects"))
-        kwargs["inventory"] = _as_list(kwargs.get("inventory"))
-        kwargs["image_paths"] = _as_dict(kwargs.get("image_paths"))
-        kwargs["prompts"] = _as_dict(kwargs.get("prompts"))
-        kwargs["flags"] = _as_dict(kwargs.get("flags"))
-        kwargs["extra"] = _as_dict(kwargs.get("extra"))
-        kwargs["gold"] = int(kwargs.get("gold") or 0)
         return cls(**kwargs)
 
     def to_dict(self) -> dict[str, Any]:
@@ -140,7 +80,7 @@ class WorldData:
     flow: Any = field(default_factory=list)
     starting_location: str = "unknown"
     locations: dict[str, LocationData] = field(default_factory=dict)
-    characters: dict[str, CharacterData] = field(default_factory=dict)
+    characters: dict[str, Character] = field(default_factory=dict)
     quests: list[QuestData] = field(default_factory=list)
     flags: dict[str, Any] = field(default_factory=dict)
     history: list[dict[str, Any]] = field(default_factory=list)
@@ -202,6 +142,26 @@ class WorldData:
             self.locations[key].description = description
         return self.locations[key]
 
+    def add_character(self, character: Character) -> Character:
+        self.characters[str(character.uuid)] = character
+        return character
+
+    def character(self, ref: str) -> Character | None:
+        key = str(ref or "").strip()
+        if not key:
+            return None
+        direct = self.characters.get(key)
+        if direct is not None:
+            return direct
+        for character in self.characters.values():
+            if character.uuid == key or character.name == key:
+                return character
+        return None
+
+    def has_character_name(self, name: str) -> bool:
+        text = str(name or "").strip()
+        return bool(text and any(character.name == text for character in self.characters.values()))
+
     def to_dict(self) -> dict[str, Any]:
         return dataclass_to_dict(self)
 
@@ -210,12 +170,14 @@ class WorldData:
 class GameStateData:
     version: int = 2
     world_name: str = "unknown"
+    player_uuid: str = ""
     player_name: str = "Player"
     current_area: str = ""
     current_location: str = "unknown"
     day: int = 1
     gold: int = 0
     hunger: int = 50
+    party_uuids: list[str] = field(default_factory=list)
     party: list[dict[str, Any]] = field(default_factory=list)
     inventory: list[dict[str, Any]] = field(default_factory=list)
     status_effects: list[dict[str, Any]] = field(default_factory=list)
@@ -272,6 +234,7 @@ class GameStateData:
         kwargs["inventory"] = _as_list(kwargs.get("inventory"))
         kwargs["status_effects"] = _as_list(kwargs.get("status_effects"))
         kwargs["completed_quests"] = [str(item) for item in _as_list(kwargs.get("completed_quests"))]
+        kwargs["party_uuids"] = [str(item) for item in _as_list(kwargs.get("party_uuids"))]
         kwargs["choices"] = [str(item) for item in _as_list(kwargs.get("choices"))]
         kwargs["narration_log"] = _as_list(kwargs.get("narration_log"))
         kwargs["action_log"] = _as_list(kwargs.get("action_log"))
@@ -358,19 +321,21 @@ def _location_map(value: Any) -> dict[str, LocationData]:
     return {}
 
 
-def _character_map(value: Any) -> dict[str, CharacterData]:
+def _character_map(value: Any) -> dict[str, Character]:
     if isinstance(value, dict):
-        return {
-            str(key): item if isinstance(item, CharacterData) else CharacterData.from_dict(item, str(key))
-            for key, item in value.items()
-            if isinstance(item, (dict, CharacterData))
-        }
+        result: dict[str, Character] = {}
+        for key, item in value.items():
+            if not isinstance(item, (dict, Character)):
+                continue
+            character = item if isinstance(item, Character) else Character.from_dict(item, str(key))
+            result[str(character.uuid)] = character
+        return result
     if isinstance(value, list):
-        result: dict[str, CharacterData] = {}
+        result: dict[str, Character] = {}
         for index, item in enumerate(value):
             if isinstance(item, dict):
-                character = CharacterData.from_dict(item, f"Character {index + 1}")
-                result[character.name] = character
+                character = Character.from_dict(item, f"Character {index + 1}")
+                result[str(character.uuid)] = character
         return result
     return {}
 
