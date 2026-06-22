@@ -3411,6 +3411,274 @@ class GameEngine:
         )
         return lines
 
+    def _apply_response_craft_tool(
+        self,
+        response: Any,
+        source: str,
+        *,
+        default_action: str = "",
+        input_type: str = "free_action",
+    ) -> dict[str, Any]:
+        payload = self._response_craft_tool_payload(response)
+        event: dict[str, Any] = {"source": source, "lines": []}
+        if not payload:
+            event["skipped_reason"] = "empty_craft_payload"
+            return event
+
+        refs = self._craft_tool_item_refs(payload)
+        items, missing = self._craft_ingredients_from_tool_refs(refs)
+        event["requested_items"] = [self._craft_tool_ref_label(ref) for ref in refs]
+        if missing:
+            line = f"> [クラフト] 指定素材が見つかりません: {', '.join(missing)}"
+            event.update({"failed": True, "missing_items": missing, "lines": [line]})
+            self.save_game()
+            return event
+
+        craft_intent = _normalise_craft_intent(
+            payload.get("craft_type")
+            or payload.get("craft_intent")
+            or payload.get("category")
+            or payload.get("kind")
+            or payload.get("type")
+            or "auto"
+        )
+        content = str(
+            payload.get("content")
+            or payload.get("request")
+            or payload.get("result")
+            or payload.get("target")
+            or payload.get("make")
+            or ""
+        ).strip()
+        action = content or str(default_action or "").strip() or "craft"
+        event.update(
+            self._execute_craft_tool_action(
+                action,
+                input_type,
+                items,
+                source=source,
+                craft_intent=craft_intent,
+            )
+        )
+        event["tool_arguments"] = _drop_empty(
+            {
+                "craft_type": craft_intent,
+                "content": content,
+                "consume_items": event.get("requested_items"),
+            }
+        )
+        self.save_game()
+        return event
+
+    def _response_craft_tool_payload(self, response: Any) -> dict[str, Any]:
+        if not isinstance(response, dict):
+            return {}
+        for key in ("craft", "crafting", "craft_item"):
+            value = response.get(key)
+            if value in (None, "", [], {}):
+                continue
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        return dict(item)
+                continue
+            if isinstance(value, dict):
+                return dict(value)
+        if any(
+            key in response
+            for key in (
+                "consume_items",
+                "consumed_items",
+                "ingredients",
+                "items",
+                "materials",
+                "craft_type",
+                "craft_intent",
+                "content",
+                "request",
+            )
+        ):
+            return dict(response)
+        return {}
+
+    def _craft_tool_item_refs(self, payload: dict[str, Any]) -> list[Any]:
+        refs: list[Any] = []
+        for key in ("consume_items", "consumed_items", "ingredients", "items", "materials", "item_names", "consume_item"):
+            value = payload.get(key)
+            if value in (None, "", [], {}):
+                continue
+            raw_items = _as_list(value)
+            if isinstance(value, str) and ("," in value or "、" in value):
+                raw_items = [part.strip() for part in re.split(r"[,、]", value) if part.strip()]
+            for raw in raw_items:
+                quantity = 1
+                if isinstance(raw, dict):
+                    quantity = max(1, min(20, _safe_int(raw.get("quantity"), 1)))
+                for _ in range(quantity):
+                    refs.append(raw)
+        return refs
+
+    def _craft_ingredients_from_tool_refs(self, refs: list[Any]) -> tuple[list[dict[str, Any]], list[str]]:
+        candidates = self._craft_item_candidates()
+        used_uuids: set[str] = set()
+        items: list[dict[str, Any]] = []
+        missing: list[str] = []
+        for ref in refs:
+            label = self._craft_tool_ref_label(ref)
+            match = self._match_craft_tool_candidate(ref, candidates, used_uuids)
+            if not match:
+                if label:
+                    missing.append(label)
+                continue
+            item = dict(match["item"])
+            item["_craft_source"] = match["source"]
+            item["_craft_source_uuid"] = str(item.get("item_uuid") or "")
+            item_uuid = str(item.get("item_uuid") or "")
+            if item_uuid:
+                used_uuids.add(item_uuid)
+            items.append(item)
+        return items, missing
+
+    def _match_craft_tool_candidate(
+        self,
+        ref: Any,
+        candidates: list[dict[str, Any]],
+        used_uuids: set[str],
+    ) -> dict[str, Any] | None:
+        ref_uuid = ""
+        ref_source = ""
+        if isinstance(ref, dict):
+            ref_uuid = str(ref.get("item_uuid") or ref.get("uuid") or ref.get("id") or "").strip()
+            ref_source = str(ref.get("source") or ref.get("inventory") or "").strip()
+        if ref_uuid:
+            for candidate in candidates:
+                item = candidate.get("item") if isinstance(candidate, dict) else {}
+                item = item if isinstance(item, dict) else {}
+                item_uuid = str(item.get("item_uuid") or "")
+                if item_uuid in used_uuids:
+                    continue
+                if item_uuid == ref_uuid and (not ref_source or str(candidate.get("source") or "") == ref_source):
+                    return candidate
+
+        label = self._craft_tool_ref_label(ref)
+        if not label:
+            return None
+        return _match_craft_candidate(label, candidates, used_uuids)
+
+    def _craft_tool_ref_label(self, ref: Any) -> str:
+        if isinstance(ref, dict):
+            for key in ("name", "item_name", "label", "item_uuid", "uuid", "id"):
+                value = str(ref.get(key) or "").strip()
+                if value:
+                    return value
+            return ""
+        return str(ref or "").strip()
+
+    def _execute_craft_tool_action(
+        self,
+        action: str,
+        input_type: str,
+        ingredients: list[dict[str, Any]],
+        *,
+        source: str,
+        craft_intent: str = "auto",
+    ) -> dict[str, Any]:
+        items = [normalise_item(item, source="craft") for item in ingredients if isinstance(item, dict)]
+        event: dict[str, Any] = {"source": source, "lines": []}
+        if len(items) < 2:
+            line = "> [クラフト] クラフトには素材が2つ以上必要です。"
+            event.update({"failed": True, "lines": [line]})
+            return event
+        if not self._craft_ingredients_available(items):
+            line = "> [クラフト] 指定された素材は、所持品や現在地のアイテムから見つかりません。"
+            event.update({"failed": True, "lines": [line]})
+            return event
+        if not self._craft_result_can_fit_after_consumption(items):
+            line = self._inventory_full_line()
+            event.update({"failed": True, "lines": [line]})
+            return event
+
+        craft_intent = _normalise_craft_intent(craft_intent)
+        craft_plan = self._craft_plan_for_items(items, craft_intent)
+        craft_roll = self._roll_craft_check_for_plan(craft_plan)
+        ingredient_labels = [item_label(item) for item in items]
+        event.update(
+            {
+                "ingredients": ingredient_labels,
+                "roll": craft_roll,
+                "craft_intent": _craft_intent_payload(craft_intent),
+                "craft_plan": craft_plan.to_dict(),
+            }
+        )
+
+        if craft_roll.get("critical_failure"):
+            removed = self._consume_craft_ingredients(items, source=source)
+            self._append_action_roll_log(craft_roll)
+            line = "> [クラフト] 強制失敗: 使用した素材はすべて失われました。"
+            event.update(
+                {
+                    "removed": removed,
+                    "failed": True,
+                    "critical_failure": True,
+                    "consumed": bool(removed),
+                    "lines": [line],
+                }
+            )
+            self.state.world_data.extra.setdefault("craft_events", []).append(dict(event))
+            self._sync_player_inventory()
+            return event
+
+        response: dict[str, Any] = {}
+        if craft_plan.kind != "equipment_upgrade" or craft_roll.get("success"):
+            response = self._craft_item_generator(action, items, craft_roll, craft_plan)
+        result = build_craft_result(response, items, craft_roll, craft_plan)
+        if not result:
+            removed = self._consume_craft_ingredients(items, source=source)
+            self._append_action_roll_log(craft_roll)
+            line = "> [クラフト] クラフトは失敗し、素材は失われました。"
+            event.update(
+                {
+                    "removed": removed,
+                    "failed": True,
+                    "consumed": bool(removed),
+                    "response": _strip_response_metadata(response),
+                    "lines": [line],
+                }
+            )
+            self.state.world_data.extra.setdefault("craft_events", []).append(dict(event))
+            self._sync_player_inventory()
+            return event
+
+        removed = self._consume_craft_ingredients(items, source=source)
+        added = self._add_player_item_stack(result, source="craft")
+        added_to_location: dict[str, Any] | None = None
+        lines: list[str] = []
+        if added:
+            lines.append(f"> [クラフト] {item_label(added)}")
+        else:
+            location_inventory = self._current_location_inventory()
+            added_to_location = add_item_stack(location_inventory, result, source="craft_overflow")
+            if added_to_location:
+                lines.append(f"> [クラフト] {item_label(added_to_location)}")
+                lines.append("> [所持品] 所持品に空きがないため、完成品は現在地に置かれました。")
+            else:
+                lines.append(self._inventory_full_line(result))
+
+        self._append_action_roll_log(craft_roll)
+        event.update(
+            {
+                "removed": removed,
+                "result": normalise_item(added or added_to_location or result, source="craft"),
+                "response": _strip_response_metadata(response),
+                "crafted": bool(added or added_to_location),
+                "consumed": bool(removed),
+                "lines": lines,
+            }
+        )
+        self.state.world_data.extra.setdefault("craft_events", []).append(dict(event))
+        self._sync_player_inventory()
+        return event
+
     def _resolve_craft_action(self, action: str, input_type: str) -> str | None:
         if not _is_craft_action_text(action):
             return None
@@ -3661,6 +3929,18 @@ class GameEngine:
                     candidates.append({"source": source, "index": index, "item": single})
         candidates.sort(key=lambda entry: len(str(entry["item"].get("name") or "")), reverse=True)
         return candidates
+
+    def _craft_tool_ai_candidates(self, limit: int = 24) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = []
+        for candidate in self._craft_item_candidates()[: max(0, limit)]:
+            item = candidate.get("item") if isinstance(candidate, dict) else {}
+            if not isinstance(item, dict):
+                continue
+            data = _compact_item_for_ai(item)
+            data["item_uuid"] = str(item.get("item_uuid") or "")
+            data["source"] = str(candidate.get("source") or "")
+            result.append(_drop_empty(data))
+        return result
 
     def _craft_ingredients_available(self, ingredients: list[dict[str, Any]]) -> bool:
         candidates = self._craft_item_candidates()
@@ -12311,6 +12591,10 @@ class GameEngine:
             "item", "loot", "take", "pick", "buy", "sell", "give", "use", "equip", "gold", "reward",
             "拾", "取", "買", "売", "渡", "使", "装備", "報酬", "金", "素材", "食べ", "飲",
         )
+        wants_craft = mentions(
+            "craft", "make", "create", "combine", "synthesize", "forge", "cook", "brew", "mix",
+            "クラフト", "作る", "作成", "制作", "合成", "加工", "鍛冶", "料理", "調理", "調合", "錬金",
+        )
         wants_status = has_action_roll or mentions(
             "rest", "sleep", "heal", "treat", "eat", "drink", "injury", "damage", "train", "skill", "magic",
             "休", "眠", "治", "手当", "食", "飲", "怪我", "負傷", "訓練", "鍛", "魔法", "スキル",
@@ -12342,6 +12626,8 @@ class GameEngine:
             lines.append("- NPC対象がいる場合だけ recipients を使い、好感度は npc_change_relationship、NPC移動は npc_move / npc_join_party / npc_remove_party / npc_dead、新規NPC候補は request_npc_generation に入れてください。既存NPCを再生成しないでください。")
         if wants_items:
             lines.append("- アイテム入手は tool_judgements の item_add、消費・喪失・譲渡は item_remove、装備は item_equip、装備解除は item_unequip を confidence=1.0 で使ってください。所持金だけが増減する場合は gold_delta を使ってください。")
+        if wants_craft:
+            lines.append("- For explicit crafting/cooking/smithing/alchemy/combine actions, use tool_judgements craft with confidence=1.0 and arguments {consume_items:[...], craft_type:\"auto|mix|synthesis|smithing|alchemy|cooking\", content:\"intended result\"}. consume_items must use only names or item_uuid values listed in craft_candidates. Do not emit item_add or item_remove for the same craft.")
         if wants_status:
             lines.append("- HP/SP/空腹/状態異常が変わる場合だけ tool_judgements の hp_effects/sp_effects/hunger_delta/status_effects に confidence=1.0 で入れてください。")
         if wants_time:
@@ -16707,6 +16993,9 @@ class GameEngine:
             "active_quest": _compact_value(_quest_ai_context(active_quest, include_log=False, include_extra=True), max_chars=1400) if active_quest else {},
             "choices": list(self.state.choices[:5]),
         }
+        craft_candidates = self._craft_tool_ai_candidates()
+        if craft_candidates:
+            data["craft_candidates"] = craft_candidates
         if include_recent_log:
             data["recent_log"] = self.state.log_text(5)
         return _drop_empty(data)

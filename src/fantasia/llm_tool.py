@@ -31,6 +31,7 @@ class LlmToolName(str, Enum):
     ITEM_REMOVE = "item_remove"
     ITEM_EQUIP = "item_equip"
     ITEM_UNEQUIP = "item_unequip"
+    CRAFT = "craft"
     VISUAL_INTENT = "visual_intent"
     MOVEMENT_STATUS = "movement_status"
     MOVE_PLAYER = "move_player"
@@ -235,6 +236,19 @@ def run_llm_tool(engine: Any, call: LlmToolCall) -> LlmToolResult:
     if name == LlmToolName.ITEM_UNEQUIP:
         event = engine._apply_response_item_unequip_effects(response, source)
         return LlmToolResult(name, event=event, acted=_item_event_has_changes(event))
+    if name == LlmToolName.CRAFT:
+        event = engine._apply_response_craft_tool(
+            response,
+            source,
+            default_action=call.action,
+            input_type=call.input_type,
+        )
+        return LlmToolResult(
+            name,
+            lines=[str(line) for line in event.get("lines", []) if str(line).strip()],
+            event=event,
+            acted=bool(event.get("crafted") or event.get("failed") or event.get("consumed")),
+        )
     if name == LlmToolName.VISUAL_INTENT:
         engine._apply_visual_intent(response, source, call.location, call.previous_location)
         return LlmToolResult(name, acted=True)
@@ -317,7 +331,7 @@ def requested_location_from_tools(response: Any, fallback: str = "") -> str:
 def tool_prompt_instruction() -> str:
     return (
         "Tool judgement JSON rule: put all game-state side-effect candidates in a top-level tool_judgements array. "
-        "Do not use top-level side-effect keys such as location, hp_delta, sp_delta, item_add, item_remove, item_equip, item_unequip, status_effects, "
+        "Do not use top-level side-effect keys such as location, hp_delta, sp_delta, item_add, item_remove, item_equip, item_unequip, craft, status_effects, "
         "relationship_change, npc_movements, npc_move, npc_join_party, npc_remove_party, npc_dead, "
         "npc_capture_player, npc_update_memory, npc_update_description, map_reveal, world_home_construction, "
         "world_mainnode_reveal, world_subnode_reveal, discovered_location, quest_update, or combat_started. "
@@ -332,8 +346,12 @@ def tool_prompt_instruction() -> str:
         "exp_delta, time_passage, game_over, npc_change_relationship, npc_move, npc_join_party, "
         "npc_remove_party, npc_dead, npc_capture_player, npc_update_memory, npc_update_description, "
         "world_home_construction, world_mainnode_reveal, world_subnode_reveal, "
-        "crime_risk, item_add, item_remove, item_equip, item_unequip, visual_intent, start_combat, discover_location, generate_dungeon, generate_quest, spawn_npc, spawn_enemy, "
+        "crime_risk, item_add, item_remove, item_equip, item_unequip, craft, visual_intent, start_combat, discover_location, generate_dungeon, generate_quest, spawn_npc, spawn_enemy, "
         "spawn_boss, request_npc_generation, quest_event, quest_progress, quest_update. "
+        "Use craft when the player explicitly tries crafting, cooking, smithing, alchemy, combining, or processing items; "
+        "arguments must include consume_items as an array of item names or item_uuid values from current craft candidates, "
+        "craft_type as auto|mix|synthesis|smithing|alchemy|cooking, and content as the intended result or request. "
+        "Do not also emit item_add or item_remove for the same craft; the craft tool consumes materials and creates the result. "
         "Use generate_dungeon only when a definite clue, diary, map, document, rumor, or magical effect reveals an unknown dungeon near the current or adjacent main node; "
         "arguments may include {\"name\":\"dungeon name\",\"description\":\"short description\",\"dungeon_subtype\":\"forest|mountain|ruin|cave|mine|labyrinth|crypt|lair\",\"anchor_location\":\"current or adjacent location\",\"reason\":\"why it is revealed\"}. "
         "Use an empty tool_judgements array when no state changes are needed."
@@ -532,6 +550,10 @@ def _merge_tool_payload(payload: dict[str, Any], tool_name: LlmToolName, args: d
     if tool_name == LlmToolName.GENERATE_DUNGEON:
         value = args.get("generate_dungeon") if args.get("generate_dungeon") not in (None, "", [], {}) else args
         payload["generate_dungeon"] = value or True
+        return
+    if tool_name == LlmToolName.CRAFT:
+        value = args.get("craft") if args.get("craft") not in (None, "", [], {}) else args
+        payload["craft"] = value or True
         return
     if tool_name == LlmToolName.GENERATE_QUEST:
         _append_payload_list(payload, "quests", _single_or_value(args, "quest", "quests", "value"))

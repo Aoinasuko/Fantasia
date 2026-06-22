@@ -333,9 +333,10 @@ def resolve_player_input(
             return finish(command(ActionCommandType.ATTACK, payload={"surprise": True}), engine._resolve_player_attack(action_text, input_type))
         return finish(command(ActionCommandType.ATTACK), engine._start_encounter_from_attack(action_text, input_type))
 
-    craft_result = engine._resolve_craft_action(action_text, input_type)
-    if craft_result is not None:
-        return finish(command(ActionCommandType.CRAFT), craft_result)
+    if input_type != PlayerInputType.FREE_ACTION.value:
+        craft_result = engine._resolve_craft_action(action_text, input_type)
+        if craft_result is not None:
+            return finish(command(ActionCommandType.CRAFT), craft_result)
 
     trade_negotiation_target = engine._trade_negotiation_target(action_text)
     if trade_negotiation_target:
