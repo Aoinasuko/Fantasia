@@ -30,6 +30,18 @@ from .combat_buff import (
     tick_buffs as _combat_tick_buffs,
 )
 from .combat_model import normalise_combat_skill
+from .craft import (
+    CraftPlan,
+    build_craft_result,
+    craft_intent_from_action as _craft_intent_from_action,
+    craft_intent_payload as _craft_intent_payload,
+    craft_material_phrases as _craft_material_phrases,
+    craft_preview_text,
+    determine_craft_plan,
+    is_craft_action_text as _is_craft_action_text,
+    match_craft_candidate as _match_craft_candidate,
+    normalise_craft_intent as _normalise_craft_intent,
+)
 from .items import (
     EQUIPMENT_SLOT_LABELS,
     EQUIPMENT_SLOTS,
@@ -40,10 +52,12 @@ from .items import (
     equipment_slot_for_category,
     extract_response_rewards,
     generate_loot_items,
+    generate_reward_item,
     generate_vendor_items,
     inventory_slot_count,
     is_equipment_item,
     item_label,
+    make_item,
     normalise_item,
     reward_log_lines,
     take_item_stack,
@@ -243,38 +257,6 @@ TEMP_CONTEXT_AWARE_MANAGERS = {
     "craft_item_generator",
     "combat_player_action",
     "combat_enemy_action",
-}
-CRAFT_INTENT_DEFINITIONS = {
-    "auto": {
-        "label_ja": "おまかせ",
-        "label_en": "Auto",
-        "instruction": "Let the materials and craft roll decide the most natural result.",
-    },
-    "mix": {
-        "label_ja": "混合",
-        "label_en": "Mix",
-        "instruction": "Prioritize mixing materials or item properties into a combined practical result.",
-    },
-    "synthesis": {
-        "label_ja": "合成",
-        "label_en": "Synthesis",
-        "instruction": "Prioritize fusing multiple ingredients into a new item with a coherent identity.",
-    },
-    "smithing": {
-        "label_ja": "鍛冶",
-        "label_en": "Smithing",
-        "instruction": "Prioritize metalwork, weapon improvement, armor improvement, or durable tools.",
-    },
-    "alchemy": {
-        "label_ja": "錬金術",
-        "label_en": "Alchemy",
-        "instruction": "Prioritize potions, medicine, reagents, magical materials, or transmutation results.",
-    },
-    "cooking": {
-        "label_ja": "料理",
-        "label_en": "Cooking",
-        "instruction": "Prioritize food, drink, meals, preserved food, or edible restorative results.",
-    },
 }
 COMBAT_MAX_OPPONENTS = 3
 REPEATED_INPUT_DEDUPE_SECONDS = 4.0
@@ -731,7 +713,7 @@ class GameEngine:
         choices = _augment_location_choices_for_world(
             world,
             current_location,
-            _as_str_list(initial.get("choices") or response.get("choices")),
+            _filter_llm_display_choices(_as_str_list(initial.get("choices") or response.get("choices"))),
             active_quest=False,
         )
         if self.reveal_world_map_on_generation:
@@ -1313,6 +1295,119 @@ class GameEngine:
         graph["current"] = DUNGEON_ENTRY_SUBNODE_ID
         _ensure_dungeon_graph_connected(graph)
         location.extra[SUBNODE_GRAPH_KEY] = graph
+        self._seed_dungeon_deepest_loot(location, graph, source="local_dungeon_generation")
+
+    def _seed_dungeon_deepest_loot(
+        self,
+        location: LocationData,
+        graph: dict[str, Any],
+        *,
+        source: str = "dungeon_generation",
+    ) -> dict[str, Any]:
+        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+        if DUNGEON_DEEPEST_SUBNODE_ID not in nodes:
+            return {"seeded": False, "reason": "missing_deepest"}
+        loot_store = location.extra.setdefault("subnode_loot", {})
+        if not isinstance(loot_store, dict):
+            loot_store = {}
+            location.extra["subnode_loot"] = loot_store
+        slot = loot_store.setdefault(DUNGEON_DEEPEST_SUBNODE_ID, {})
+        if not isinstance(slot, dict):
+            slot = {}
+            loot_store[DUNGEON_DEEPEST_SUBNODE_ID] = slot
+        if slot.get("guaranteed_deepest_reward_seeded"):
+            return {
+                "seeded": False,
+                "reason": "already_seeded",
+                "reward_kind": str(slot.get("guaranteed_reward_kind") or ""),
+            }
+        inventory = slot.setdefault("inventory", [])
+        if not isinstance(inventory, list):
+            inventory = []
+            slot["inventory"] = inventory
+        rng = random.Random(
+            "|".join(
+                (
+                    "dungeon-deepest-loot",
+                    self.state.world_name or self.state.world_data.world_name or "world",
+                    location.name,
+                    str(location.extra.get("danger_level") or ""),
+                )
+            )
+        )
+        reward_kind, items = self._dungeon_deepest_reward_items(location, rng, source=source)
+        inventory.extend(items)
+        slot["seeded"] = True
+        slot["guaranteed_deepest_reward_seeded"] = True
+        slot["guaranteed_reward_kind"] = reward_kind
+        slot["source"] = source
+        return {
+            "seeded": True,
+            "reward_kind": reward_kind,
+            "items": items,
+        }
+
+    def _dungeon_deepest_reward_items(
+        self,
+        location: LocationData,
+        rng: random.Random,
+        *,
+        source: str,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        reward_kind = rng.choice(("treasure", "equipment", "material"))
+        if reward_kind == "treasure":
+            return reward_kind, [
+                self._dungeon_reward_item("treasure", location, index, rng, source=source)
+                for index in range(3)
+            ]
+        if reward_kind == "equipment":
+            weapon_categories = ("weapon_small", "weapon_medium", "weapon_large", "weapon_long", "weapon_range")
+            armor_categories = ("armor_shield", "armor_head", "armor_body", "armor_arm", "armor_leg", "armor_cloth")
+            items: list[dict[str, Any]] = []
+            for index, category in enumerate(rng.sample(list(weapon_categories), 2)):
+                items.append(self._dungeon_reward_item(category, location, index, rng, source=source, rare_or_better=True))
+            for index, category in enumerate(rng.sample(list(armor_categories), 2)):
+                items.append(self._dungeon_reward_item(category, location, index + 2, rng, source=source, rare_or_better=True))
+            return reward_kind, items
+        material_categories = (
+            "material_common",
+            "material_liquid",
+            "material_plant",
+            "material_ore",
+            "material_metal",
+            "material_gem",
+            "material_creature",
+            "material_magical",
+        )
+        return reward_kind, [
+            self._dungeon_reward_item(category, location, index, rng, source=source)
+            for index, category in enumerate(rng.sample(list(material_categories), 5))
+        ]
+
+    def _dungeon_reward_item(
+        self,
+        category: str,
+        location: LocationData,
+        index: int,
+        rng: random.Random,
+        *,
+        source: str,
+        rare_or_better: bool = False,
+    ) -> dict[str, Any]:
+        danger = _clamp_world_danger(location.extra.get("danger_level", location.extra.get("danger", 0)))
+        seed = f"{source}|{location.name}|{category}|{index}"
+        raw = generate_reward_item(category, context=location.name, danger_level=danger, seed=seed)
+        rarity = str(raw.get("rarity") or "common")
+        if rare_or_better:
+            rarity = rng.choices(("rare", "epic", "legendary", "artifact"), weights=(76, 18, 5, 1), k=1)[0]
+        return make_item(
+            category,
+            name=str(raw.get("name") or ""),
+            description=str(raw.get("description") or ""),
+            quantity=_safe_int(raw.get("quantity"), 1),
+            rarity=rarity,
+            source=source,
+        )
 
     def _connect_local_world_skeleton_edges(
         self,
@@ -2984,6 +3079,37 @@ class GameEngine:
             craft_intent=craft_intent,
         )
 
+    def craft_preview_for_selected_items(
+        self,
+        ingredients: list[dict[str, Any]],
+        craft_category: str = "auto",
+    ) -> dict[str, Any]:
+        items = [normalise_item(item, source="craft") for item in ingredients if isinstance(item, dict)]
+        if len(items) < 2:
+            return {"text": "種別:- / 予想目標値:-", "kind": "", "target": 0}
+        plan = self._craft_plan_for_items(items, craft_category)
+        payload = plan.to_dict()
+        payload["text"] = craft_preview_text(plan)
+        return payload
+
+    def _craft_plan_for_items(self, ingredients: list[dict[str, Any]], craft_intent: str = "auto") -> CraftPlan:
+        return determine_craft_plan(
+            ingredients,
+            craft_intent,
+            home_level=self._current_home_furniture_level(),
+            dangerous_area=self._craft_dangerous_area(),
+        )
+
+    def _craft_dangerous_area(self) -> bool:
+        location = self.state.world_data.locations.get(self.state.current_location)
+        if not location:
+            return False
+        return bool(
+            location.flags.get("dangerous")
+            or _is_dungeon_location(location)
+            or _world_location_blocks_world_map_departure(location)
+        )
+
     def _resolve_home_action(self, action: str, input_type: str) -> str | None:
         text = str(action or "").strip()
         if not text:
@@ -2994,10 +3120,12 @@ class GameEngine:
             if any(word in text for word in ("外に出", "出る", "leave", "exit")):
                 return self._resolve_home_exit(action, input_type)
             if any(word in text for word in ("保存箱", "倉庫", "storage", "stash")):
+                self.state.flags["pending_home_menu"] = "storage"
                 self._append_turn(action, "家の保存箱を開いた。", self.state.current_location, self._home_choices(), input_type=input_type)
                 self.save_game()
                 return self.state.log_text(16)
             if any(word in text for word in ("クラフト", "合成", "調合", "鍛冶", "料理", "craft")):
+                self.state.flags["pending_home_menu"] = "craft"
                 self._append_turn(action, "家の作業台を使う準備をした。", self.state.current_location, self._home_choices(), input_type=input_type)
                 self.save_game()
                 return self.state.log_text(16)
@@ -3331,9 +3459,35 @@ class GameEngine:
             self.save_game()
             return self.state.log_text(16)
 
-        craft_roll = self.roll_craft_check(items)
+        craft_intent = _normalise_craft_intent(craft_intent)
+        craft_plan = self._craft_plan_for_items(items, craft_intent)
+        craft_roll = self._roll_craft_check_for_plan(craft_plan)
         ingredient_labels = [item_label(item) for item in items]
         if craft_roll.get("critical_failure"):
+            removed = self._consume_craft_ingredients(items, source=source)
+            narration = "クラフトは強制失敗し、使用した素材はすべて失われました。"
+            self._append_turn(action, narration, self.state.current_location, self.state.choices, input_type=input_type)
+            self._append_action_roll_log(craft_roll)
+            self.state.world_data.extra.setdefault("craft_events", []).append(
+                {
+                    "source": source,
+                    "ingredients": ingredient_labels,
+                    "removed": removed,
+                    "roll": craft_roll,
+                    "craft_plan": craft_plan.to_dict(),
+                    "failed": True,
+                    "critical_failure": True,
+                }
+            )
+            self._sync_player_inventory()
+            self.save_game()
+            return self.state.log_text(16)
+
+        response: dict[str, Any] = {}
+        if craft_plan.kind != "equipment_upgrade" or craft_roll.get("success"):
+            response = self._craft_item_generator(action, items, craft_roll, craft_plan)
+        result = build_craft_result(response, items, craft_roll, craft_plan)
+        if not result:
             removed = self._consume_craft_ingredients(items, source=source)
             narration = "クラフトは失敗し、素材は失われました。"
             self._append_turn(action, narration, self.state.current_location, self.state.choices, input_type=input_type)
@@ -3344,19 +3498,21 @@ class GameEngine:
                     "ingredients": ingredient_labels,
                     "removed": removed,
                     "roll": craft_roll,
+                    "craft_plan": craft_plan.to_dict(),
                     "failed": True,
                 }
             )
             self._sync_player_inventory()
             self.save_game()
             return self.state.log_text(16)
-
-        craft_intent = _normalise_craft_intent(craft_intent)
-        response = self._craft_item_generator(action, items, craft_roll, craft_intent)
-        result = self._crafted_item_from_response(response, items)
         removed = self._consume_craft_ingredients(items, source=source)
         added = self._add_player_item_stack(result, source="craft")
-        narration = str(response.get("narration") or response.get("text") or "素材を組み合わせ、新しいアイテムを作り上げました。")
+        narration = str(response.get("narration") or response.get("text") or "").strip()
+        if not narration:
+            if craft_plan.kind == "equipment_upgrade" and not craft_roll.get("success"):
+                narration = f"{craft_plan.target_item_name or '強化対象'}の強化は失敗した。強化対象はそのまま戻り、素材は失われた。"
+            else:
+                narration = "素材を組み合わせ、新しいアイテムを作り上げました。"
         if not added:
             location_inventory = self._current_location_inventory()
             added_to_location = add_item_stack(location_inventory, result, source="craft_overflow")
@@ -3374,6 +3530,7 @@ class GameEngine:
             "removed": removed,
             "roll": craft_roll,
             "craft_intent": _craft_intent_payload(craft_intent),
+            "craft_plan": craft_plan.to_dict(),
             "result": normalise_item(added or result, source="craft"),
             "response": _strip_response_metadata(response),
         }
@@ -3387,26 +3544,27 @@ class GameEngine:
         action: str,
         ingredients: list[dict[str, Any]],
         craft_roll: dict[str, Any],
-        craft_intent: str = "auto",
+        craft_plan: CraftPlan,
     ) -> dict[str, Any]:
         world_payload = _ai_json(_world_ai_context(self.state.world_data, include_characters=False, include_monsters=False, include_quests=True))
         location = self.state.world_data.locations.get(self.state.current_location)
         location_payload = _ai_json(_location_ai_context(location)) if location else "{}"
         ingredients_payload = _ai_json([_compact_item_for_ai(item) for item in ingredients])
         roll_payload = json.dumps(craft_roll, ensure_ascii=False)
-        craft_intent_payload = _ai_json(_craft_intent_payload(craft_intent))
+        craft_plan_payload = _ai_json(craft_plan.to_dict())
         categories = ", ".join(ITEM_CATEGORY_IDS)
         messages = [
             {
                 "role": "system",
                 "content": (
                     "あなたはAI駆動RPGのクラフト結果生成AIです。"
-                    "素材、プレイヤーの意図、世界観、ゲーム側の2d6判定を尊重し、JSONだけを返してください。"
-                    "戻り値は narration と item を中心にし、item は name, category, description, quantity, value, rarity を含めます。"
+                    "素材、プレイヤーの意図、世界観、ゲーム側のクラフト計画を尊重し、JSONだけを返してください。"
+                    "戻り値は narration と item を中心にします。item は name, category, description を返してください。"
                     "category は次のIDから選んでください: "
                     f"{categories}。"
-                    "craft_intent はプレイヤーがクラフト画面で選んだ作成方針です。auto以外では、素材と世界観から無理なく可能な範囲でその方針を優先してください。"
-                    "判定が高いほど品質や価値を上げ、critical_success なら特別な希少性や効果を与えてください。"
+                    "レアリティ、価格、攻撃力、防御力、効果量、空腹回復量、power はゲーム側が決定します。"
+                    "武具強化では item に name と description だけを返し、元装備のカテゴリや能力値を変更しないでください。"
+                    "消耗品と料理では、必要であれば use_effect または effects で効果種別だけを示してください。効果量は書かないでください。"
                     "存在しない素材を勝手に足さず、素材から自然に作れる物にしてください。"
                 ),
             },
@@ -3417,7 +3575,7 @@ class GameEngine:
                     f"現在地: {self.state.current_location}\n"
                     f"現在地データ: {location_payload}\n"
                     f"プレイヤーのクラフト意図: {action}\n"
-                    f"craft_intent: {craft_intent_payload}\n"
+                    f"craft_plan: {craft_plan_payload}\n"
                     f"素材: {ingredients_payload}\n"
                     f"game_side_craft_roll: {roll_payload}\n"
                     "このクラフトで完成するアイテムを1つ生成してください。"
@@ -3441,19 +3599,6 @@ class GameEngine:
             world_name=self.state.world_name,
             player_name=self.state.player_name,
         )
-
-    def _crafted_item_from_response(self, response: dict[str, Any], ingredients: list[dict[str, Any]]) -> dict[str, Any]:
-        raw = response.get("item") or response.get("crafted_item") or response.get("result")
-        if not isinstance(raw, dict):
-            raw = {
-                "name": str(response.get("name") or "クラフト品"),
-                "category": str(response.get("category") or _craft_fallback_category(ingredients)),
-                "description": str(response.get("description") or response.get("narration") or "素材を加工して作られた品。"),
-                "quantity": 1,
-                "value": max(1, sum(_safe_int(item.get("value"), 0) for item in ingredients)),
-                "rarity": str(response.get("rarity") or "common"),
-            }
-        return normalise_item(raw, source="craft", fallback_category=_craft_fallback_category(ingredients))
 
     def _current_location_inventory(self) -> list[dict[str, Any]]:
         return self._location_inventory(self.state.current_location)
@@ -5434,7 +5579,11 @@ class GameEngine:
         self._mark_location_visited(self.state.world_data, settlement.name)
         self._set_active_facility(settlement, facility)
         npc = self._ensure_facility_npc(settlement, facility, settlement.name)
-        choices = self._location_default_choices(settlement.name) + _as_str_list((response or {}).get("choices")) + _as_str_list(narrator_response.get("choices"))
+        choices = (
+            self._location_default_choices(settlement.name)
+            + self._filter_llm_choices_for_display(_as_str_list((response or {}).get("choices")))
+            + self._filter_llm_choices_for_display(_as_str_list(narrator_response.get("choices")))
+        )
         if npc:
             choices.append(f"{npc.name}に話しかける")
         narration = str(narrator_response.get("narration") or (response or {}).get("narration") or f"{facility_name}へ移動した。")
@@ -6895,6 +7044,7 @@ class GameEngine:
             graph["dungeon_target_count"] = target_count
             graph["generated_by"] = "dungeon_subnode_generator"
         self._ensure_dungeon_subarea_nodes(location, graph)
+        self._seed_dungeon_deepest_loot(location, graph, source="dungeon_subnode_generation")
 
     def _dungeon_subnode_layout(self, location: LocationData, target_count: int) -> dict[str, Any]:
         fallback = _fallback_dungeon_subnode_layout(location, target_count)
@@ -7502,9 +7652,9 @@ class GameEngine:
             "reachable_location_names": _dedupe_strs(reachable_locations),
             "reachable_subnode_titles": _dedupe_strs(reachable_subnodes),
             "rule": (
-                "When generating response choices, include movement/return/enter/leave choices only when the "
-                "target appears in allowed_moves. Do not offer generic return choices such as town/city/village/base/inn "
-                "unless that exact destination is in allowed_moves. If allowed_moves is empty, do not output movement choices."
+                "Do not put movement/return/enter/leave/head-to choices in the response choices field. "
+                "The game client adds a local Move menu from allowed_moves. Use allowed_moves only when judging "
+                "whether an explicit player action can move with the move_player tool."
             ),
         }
 
@@ -7518,11 +7668,10 @@ class GameEngine:
         return (
             "Movement choice rule for the choices field:\n"
             f"{context_line}"
-            "Only offer choices that move, return, enter, leave, or head somewhere when that destination is listed "
-            "in the supplied allowed_moves. Do not invent shortcuts. Do not write generic choices like "
-            "'return to town', 'go back to the city', 'return to the village', 'return to base', or 'return to the inn' "
-            "unless the corresponding destination is explicitly listed. Non-movement choices such as looking around, "
-            "talking to a nearby NPC, treating a rescued NPC, or checking the situation are allowed."
+            "Never put movement choices in choices. Do not write choices like 'go deeper', 'go back', "
+            "'return to town', 'enter', 'leave', 'head to X', '奥へ進む', '元の位置に戻る', or '○○へ向かう'. "
+            "The game client adds the local movement menu from allowed_moves. Non-movement choices such as "
+            "looking around, talking to a nearby NPC, treating a rescued NPC, or checking the situation are allowed."
         )
 
     def current_loot_inventory(self) -> tuple[str, list[dict[str, Any]]]:
@@ -7843,7 +7992,10 @@ class GameEngine:
         self._set_current_subnode(location_name, target_id)
         self._activate_facility_for_subnode(location_name, target)
         narration = str(narrator_response.get("narration") or f"{name}\u3078\u79fb\u52d5\u3057\u305f\u3002")
-        choices = _exploration_choices(_as_str_list(narrator_response.get("choices")) + self._location_default_choices(location_name))
+        choices = _exploration_choices(
+            self._filter_llm_choices_for_display(_as_str_list(narrator_response.get("choices")))
+            + self._location_default_choices(location_name)
+        )
         narration, choices, _ = self._maybe_start_first_visit_danger_subnode_encounter(
             location_name,
             target_id,
@@ -7915,7 +8067,10 @@ class GameEngine:
         self._set_current_subnode(target_location, target_subnode)
         self._set_player_presence(target_location)
         narration = str(narrator_response.get("narration") or f"{previous_location} -> {target_location} \u3078\u79fb\u52d5\u3057\u305f\u3002")
-        choices = _exploration_choices(_as_str_list(narrator_response.get("choices")) + self._location_default_choices(target_location))
+        choices = _exploration_choices(
+            self._filter_llm_choices_for_display(_as_str_list(narrator_response.get("choices")))
+            + self._location_default_choices(target_location)
+        )
         narration, choices, _ = self._maybe_start_first_visit_danger_subnode_encounter(
             target_location,
             target_subnode,
@@ -8041,7 +8196,10 @@ class GameEngine:
         )
         time_event = self._advance_world_time(hours, source="world_map_travel", reason="world map travel", append_log=False)
         narration = str(narrator_response.get("narration") or f"{' -> '.join(path)} の道をたどって移動した。")
-        choices = _exploration_choices(_as_str_list(narrator_response.get("choices")) + self._location_default_choices(target))
+        choices = _exploration_choices(
+            self._filter_llm_choices_for_display(_as_str_list(narrator_response.get("choices")))
+            + self._location_default_choices(target)
+        )
         self._clear_active_facility(reset_subnode=False)
         self._set_player_presence(target)
         self._mark_location_visited(world, target)
@@ -8490,6 +8648,7 @@ class GameEngine:
         return choices
 
     def _augment_location_choices(self, choices: list[str], location_name: str) -> list[str]:
+        choices = self._filter_llm_choices_for_display(choices)
         dangerous_choices = self._dangerous_subnode_default_choices(location_name)
         if dangerous_choices:
             filtered = self._filter_dangerous_nonadjacent_move_choices(choices, location_name)
@@ -8503,6 +8662,13 @@ class GameEngine:
             active_quest=bool(self.state.active_quest),
             can_move=self._location_has_movement_options(location_name),
             quest_report_ready=self._active_quest_can_report_at(location_name),
+        )
+
+    def _filter_llm_choices_for_display(self, choices: list[str], *, keep_system_choices: bool = False) -> list[str]:
+        return _filter_llm_display_choices(
+            choices,
+            keep_system_choices=keep_system_choices,
+            allow_home_choices=self._current_player_home(),
         )
 
     def _filter_dangerous_nonadjacent_move_choices(self, choices: list[str], location_name: str) -> list[str]:
@@ -9759,6 +9925,252 @@ class GameEngine:
             if result.get("line"):
                 lines.append(str(result["line"]))
         return lines
+
+    def _apply_response_generate_dungeon_tool(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        default_location: str = "",
+    ) -> dict[str, Any]:
+        if not isinstance(response, dict):
+            return {"created": False, "revealed": False, "lines": [], "events": []}
+        raw_entries: list[Any] = []
+        for key in ("generate_dungeon", "dungeon", "dungeons", "location"):
+            value = response.get(key)
+            if value not in (None, "", [], {}):
+                raw_entries.extend(_as_list(value))
+        if not raw_entries and any(
+            key in response
+            for key in ("name", "dungeon_name", "description", "dungeon_subtype", "location_kind", "anchor_location")
+        ):
+            raw_entries.append(response)
+        events: list[dict[str, Any]] = []
+        lines: list[str] = []
+        for raw in raw_entries[:3]:
+            entry = raw if isinstance(raw, dict) else {}
+            event = self._generate_dungeon_from_tool_entry(entry, source=source, default_location=default_location)
+            events.append(event)
+            lines.extend(str(line) for line in event.get("lines", []) if str(line).strip())
+        return {
+            "created": any(bool(event.get("created")) for event in events),
+            "revealed": any(bool(event.get("revealed")) for event in events),
+            "location": next((str(event.get("location") or "") for event in events if event.get("location")), ""),
+            "events": events,
+            "lines": lines,
+        }
+
+    def _generate_dungeon_from_tool_entry(
+        self,
+        entry: dict[str, Any],
+        *,
+        source: str,
+        default_location: str = "",
+    ) -> dict[str, Any]:
+        world = self.state.world_data
+        current = self._tool_dungeon_current_location(default_location)
+        anchor = self._tool_dungeon_anchor_location(entry, current)
+        subtype = self._tool_dungeon_subtype(entry)
+        reason = str(entry.get("reason") or entry.get("clue") or entry.get("source") or "dungeon clue").strip()
+        explicit_name = str(
+            entry.get("name")
+            or entry.get("dungeon_name")
+            or entry.get("location_name")
+            or entry.get("target_location")
+            or ""
+        ).strip()
+        resolved_existing = self._find_world_location_by_name(explicit_name) if explicit_name else ""
+        location = world.locations.get(resolved_existing) if resolved_existing else None
+        created = False
+        if location is None or not _is_dungeon_location(location):
+            base_name = explicit_name or self._tool_dungeon_fallback_name(anchor, subtype)
+            location_name = _unique_world_location_name(world, base_name)
+            description = str(
+                entry.get("description")
+                or entry.get("summary")
+                or entry.get("overview")
+                or entry.get("clue")
+                or ""
+            ).strip()
+            if not description:
+                description = f"{anchor}周辺で手がかりから存在が判明した探索地。"
+            location = world.ensure_location(location_name, description)
+            anchor_danger = self._current_location_danger(anchor)
+            explicit_danger = _safe_int(entry.get("danger_level", entry.get("danger")), 0)
+            danger = _clamp_world_danger(max(anchor_danger + 1, explicit_danger))
+            location.extra.update(
+                {
+                    "location_kind": "dungeon",
+                    "main_node_type": "dungeon",
+                    "main_node_subtype": subtype,
+                    "dungeon_subtype": subtype,
+                    "role": "tool_generated_dungeon",
+                    "danger_level": danger,
+                    "danger_source": "llm_tool_generate_dungeon",
+                    "boss_required": True,
+                    "generated_dungeon_boss_required": True,
+                    "generated_by_tool": "generate_dungeon",
+                    "generated_reason": reason,
+                    "branch_anchor_location": anchor,
+                }
+            )
+            location.flags["dungeon"] = True
+            location.flags["dangerous"] = True
+            location.flags["discovered"] = True
+            self._install_local_dungeon_subnode_graph(
+                location,
+                random.Random(f"tool-dungeon|{world.world_name}|{location.name}|{anchor}|{reason}"),
+            )
+            self._set_location_graph_node(world, location.name, kind="dungeon", danger=danger, location=location)
+            created = True
+        else:
+            location.flags["discovered"] = True
+            location.extra["boss_required"] = True
+            location.extra["generated_dungeon_boss_required"] = True
+
+        self._connect_tool_dungeon_route(world, anchor, location)
+        self._assign_world_grid_position_if_missing(world, location.name, parent=anchor)
+        self._sync_world_grid_danger(world, location.name)
+        final_danger = _clamp_world_danger(
+            max(
+                _safe_int(location.extra.get("danger_level"), 0),
+                self._current_location_danger(anchor) + 1,
+                _safe_int(entry.get("danger_level", entry.get("danger")), 0),
+            )
+        )
+        location.extra["danger_level"] = final_danger
+        node = self._set_location_graph_node(world, location.name, kind="dungeon", danger=final_danger, location=location)
+        node["discovered"] = True
+        node["boss_required"] = True
+        boss_response = dict(entry)
+        boss_response["boss_required"] = True
+        boss_response.setdefault("narration", location.description)
+        boss_response.setdefault("discovered_location", {"location": location.name, "boss_required": True})
+        boss_event = self._ensure_generated_dungeon_boss(location.name, reason or "generate_dungeon", boss_response)
+        reveal = self._reveal_world_mainnode_route(
+            {
+                "from": current,
+                "to": location.name,
+                "reason": reason,
+            },
+            source=source,
+            default_location=current,
+        )
+        line = f"> [Map] ダンジョンを発見: {location.name}（{anchor}周辺）"
+        lines = [line]
+        if reveal.get("line"):
+            lines.append(str(reveal["line"]))
+        if boss_event:
+            lines.append(f"> [NPC] {boss_event.get('name')} が {location.name} の最奥部に配置されました。")
+        event = {
+            "source": source,
+            "created": created,
+            "revealed": bool(reveal.get("line")),
+            "boss": boss_event or {},
+            "location": location.name,
+            "anchor": anchor,
+            "current": current,
+            "dungeon_subtype": subtype,
+            "danger_level": final_danger,
+            "reason": reason,
+            "route": reveal.get("path") if isinstance(reveal, dict) else [],
+            "lines": lines,
+        }
+        world.history.append({"manager": "llm_tool_generate_dungeon", **event})
+        return event
+
+    def _connect_tool_dungeon_route(self, world: WorldData, anchor: str, location: LocationData) -> None:
+        if not anchor or anchor == location.name:
+            return
+        from_subnode = self._default_external_source_subnode(world, anchor, location.name)
+        if not from_subnode:
+            from_subnode = DEFAULT_SUBNODE_ID
+        self._connect_world_locations_by_subnodes(
+            world,
+            anchor,
+            location.name,
+            from_subnode,
+            DUNGEON_ENTRY_SUBNODE_ID,
+            hours=WORLD_MAP_EDGE_HOURS,
+            kind="generated_dungeon_route",
+        )
+
+    def _tool_dungeon_current_location(self, default_location: str = "") -> str:
+        world = self.state.world_data
+        for value in (default_location, self.state.current_location, world.starting_location):
+            name = str(value or "").strip()
+            if not name:
+                continue
+            resolved = self._find_world_location_by_name(name) or name
+            if resolved in world.locations:
+                return resolved
+        return next(iter(world.locations), "")
+
+    def _tool_dungeon_anchor_location(self, entry: dict[str, Any], current: str) -> str:
+        world = self.state.world_data
+        current = current if current in world.locations else self._tool_dungeon_current_location(current)
+        allowed = _dedupe_strs([current, *self._world_neighbors_no_ensure(world, current)])
+        requested = str(
+            entry.get("anchor_location")
+            or entry.get("near")
+            or entry.get("near_location")
+            or entry.get("source_location")
+            or ""
+        ).strip()
+        if requested:
+            resolved = self._find_world_location_by_name(requested) or requested
+            if resolved in allowed:
+                return resolved
+        return current
+
+    def _tool_dungeon_subtype(self, entry: dict[str, Any]) -> str:
+        value = str(
+            entry.get("dungeon_subtype")
+            or entry.get("subtype")
+            or entry.get("location_kind")
+            or entry.get("kind")
+            or "dungeon"
+        ).strip().casefold().replace("-", "_").replace(" ", "_")
+        aliases = {
+            "woods": "forest",
+            "wood": "forest",
+            "wilds": "forest",
+            "wilderness": "forest",
+            "森": "forest",
+            "山": "mountain",
+            "洞窟": "cave",
+            "洞穴": "cave",
+            "遺跡": "ruin",
+            "廃墟": "ruin",
+            "鉱山": "mine",
+            "迷宮": "labyrinth",
+            "墓所": "crypt",
+            "巣穴": "lair",
+            "cavern": "cave",
+            "caverns": "cave",
+            "ruins": "ruin",
+            "mines": "mine",
+            "maze": "labyrinth",
+        }
+        value = aliases.get(value, value)
+        if value in {"forest", "mountain", "ruin", "cave", "mine", "labyrinth", "crypt", "lair"}:
+            return value
+        return "dungeon"
+
+    def _tool_dungeon_fallback_name(self, anchor: str, subtype: str) -> str:
+        labels = {
+            "forest": "森",
+            "mountain": "山道",
+            "ruin": "遺跡",
+            "cave": "洞窟",
+            "mine": "鉱山",
+            "labyrinth": "迷宮",
+            "crypt": "墓所",
+            "lair": "巣穴",
+            "dungeon": "ダンジョン",
+        }
+        label = labels.get(subtype, "ダンジョン")
+        return f"{anchor}周辺の{label}"
 
     def _reveal_subnode_map_route(self, entry: Any, *, source: str, default_location: str = "") -> dict[str, Any]:
         world = self.state.world_data
@@ -11629,7 +12041,12 @@ class GameEngine:
             movement_narration = [str(line) for line in movement_result.get("narration_lines", []) if str(line).strip()]
             if movement_narration:
                 narration = "\n".join([narration, *movement_narration]).strip()
-        choices = _as_str_list(response.get("choices")) or self.state.choices
+        choices = self._filter_llm_choices_for_display(_as_str_list(response.get("choices")))
+        if not choices:
+            choices = self._filter_llm_choices_for_display(
+                self.state.choices,
+                keep_system_choices=True,
+            )
         finished = _as_bool(response.get("finished"))
         history_entry = {
             "manager": "master_ai_facilitator",
@@ -11900,7 +12317,10 @@ class GameEngine:
         )
         wants_time = mentions("wait", "rest", "sleep", "search", "investigate", "study", "train", "待", "休", "眠", "探索", "調査", "勉強", "訓練")
         wants_home = mentions("build", "house", "home", "base", "furniture", "workshop", "construct", "建築", "家", "拠点", "家具", "工房", "作る")
-        wants_map = has_active_quest or mentions("map", "route", "path", "clue", "探", "地図", "道", "経路", "手がかり", "周辺", "探索")
+        wants_map = has_active_quest or mentions(
+            "map", "route", "path", "clue", "diary", "journal", "note",
+            "探", "地図", "道", "経路", "手がかり", "周辺", "探索", "日記", "手記", "記録",
+        )
         wants_game_over = mentions("die", "suicide", "fatal", "death", "死", "自殺", "致命", "破滅")
 
         lines = [
@@ -11915,6 +12335,7 @@ class GameEngine:
             lines.append("- game_side_action_roll が渡されている場合は、その成功/失敗/強制結果を結果描写と状態更新に反映してください。")
         if has_movement_options or dangerous_movement:
             lines.append("- 移動する場合だけ tool_judgements に move_player を confidence=1.0 で入れてください。行き先は world_data.movement_options.allowed_moves にある場所だけです。")
+            lines.append("- choices には移動系の選択肢を入れないでください。「奥へ進む」「元の位置に戻る」「○○へ向かう」「外に出る」などはゲーム側の移動メニューに任せます。")
             if has_active_quest:
                 lines.append("- クエスト目標への経路や周辺部屋を明かす場合だけ tool_judgements の world_subnode_reveal に confidence=1.0 で subnode_map_reveal / unlock_subnode_route を入れてください。")
         if wants_person:
@@ -11929,6 +12350,7 @@ class GameEngine:
             lines.append("- 家や拠点の建築・家具改善を素材で試みる時だけ tool_judgements の world_home_construction に confidence=1.0 で home_construction を入れてください。")
         if wants_map:
             lines.append("- ワールド地図や道順が新しく分かる時だけ tool_judgements の world_mainnode_reveal / world_subnode_reveal に confidence=1.0 で経路表示情報を入れてください。")
+            lines.append("- 日記、手記、地図、噂、魔法的な手がかりから未知のダンジョン位置が確実に判明する場合だけ、tool_judgements の generate_dungeon に confidence=1.0 で name/description/dungeon_subtype/anchor_location/reason を入れてください。")
         if wants_game_over:
             lines.append("- 確実にゲームオーバーになる結果だけ tool_judgements の game_over に confidence=1.0 で reason/narration を入れてください。")
         lines.append(tool_prompt_instruction())
@@ -12678,7 +13100,7 @@ class GameEngine:
         encounter_line = str(response.get("narration") or response.get("text") or "").strip()
         if encounter_line:
             narration = "\n".join(part for part in (narration, encounter_line) if str(part).strip())
-        response_choices = _as_str_list(response.get("choices"))
+        response_choices = self._filter_llm_choices_for_display(_as_str_list(response.get("choices")))
         if response_choices:
             choices = _exploration_choices(response_choices + choices)
         if _as_bool(response.get("combat_started") or response.get("start_combat") or response.get("battle_started")):
@@ -14881,20 +15303,24 @@ class GameEngine:
             return None
         return self._make_action_roll(action, purpose=purpose)
 
-    def roll_craft_check(self, ingredients: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-        base_target = _craft_roll_target(ingredients or [])
-        target, home_level, home_reduction = self._home_craft_target(base_target)
+    def roll_craft_check(self, ingredients: list[dict[str, Any]] | None = None, craft_intent: str = "auto") -> dict[str, Any]:
+        plan = self._craft_plan_for_items(ingredients or [], craft_intent)
+        return self._roll_craft_check_for_plan(plan)
+
+    def _roll_craft_check_for_plan(self, plan: CraftPlan) -> dict[str, Any]:
         roll = self._make_action_roll(
             "craft",
             purpose="craft",
             forced_ability="dex",
-            forced_target=target,
+            forced_target=plan.target,
+            normalise_target=False,
         )
-        roll["base_target"] = base_target
-        roll["home_furniture_level"] = home_level
-        roll["home_target_reduction"] = home_reduction
-        if home_level and home_reduction:
-            roll["line"] = f"{roll['line']} / 家具Lv{home_level}補正: 目標値 {base_target}->{target}"
+        roll["base_target"] = plan.base_target
+        roll["home_furniture_level"] = plan.home_level
+        roll["home_target_reduction"] = plan.home_reduction
+        roll["craft_plan"] = plan.to_dict()
+        if plan.base_target != plan.target:
+            roll["line"] = f"{roll['line']} / クラフト補正: 目標値 {plan.base_target}->{plan.target}"
         return roll
 
     def _make_action_roll(
@@ -14904,12 +15330,14 @@ class GameEngine:
         purpose: str = "action",
         forced_ability: str = "",
         forced_target: int | None = None,
+        normalise_target: bool = True,
     ) -> dict[str, Any]:
         ability = forced_ability or _roll_ability_for_action(action, purpose)
         attrs = self._player_attributes()
         ability_score = _safe_int(attrs.get(ability), 10)
         bonus = ability_score // 3
-        target = _normalise_roll_target(forced_target if forced_target is not None else _roll_target_for_action(action, purpose))
+        raw_target = forced_target if forced_target is not None else _roll_target_for_action(action, purpose)
+        target = _normalise_roll_target(raw_target) if normalise_target else max(2, min(30, _safe_int(raw_target, 10)))
         die_1 = random.randint(1, 6)
         die_2 = random.randint(1, 6)
         natural = die_1 + die_2
@@ -15129,7 +15557,7 @@ class GameEngine:
         self.state.flags["screen_mode"] = "conversation"
         narration = str(response.get("narration") or response.get("text") or f"{character.name}との会話を始めた。")
         self._set_character_presence(character, location)
-        choices = _as_str_list(response.get("choices"))
+        choices = self._filter_llm_choices_for_display(_as_str_list(response.get("choices")))
         self._record_conversation(character, "conversation_starter", action, input_type, response)
         self.state.world_data.history.append(
             {
@@ -15246,7 +15674,9 @@ class GameEngine:
             or self.state.current_location
         )
         self._set_character_presence(character, location)
-        choices = _as_str_list((resolver_response or {}).get("choices") or response.get("choices"))
+        choices = self._filter_llm_choices_for_display(
+            _as_str_list((resolver_response or {}).get("choices") or response.get("choices"))
+        )
 
         self._record_conversation(character, "conversation_facilitator", action, input_type, response)
         facilitator_history_index = len(self.state.world_data.history)
@@ -15720,7 +16150,10 @@ class GameEngine:
         boss_event = self._ensure_generated_dungeon_boss(discovered_location, action, tool_payload)
         if boss_event:
             generated_actors.append(boss_event)
-        choices = self._augment_location_choices(_as_str_list(response.get("choices")), location)
+        choices = self._augment_location_choices(
+            self._filter_llm_choices_for_display(_as_str_list(response.get("choices"))),
+            location,
+        )
 
         if location:
             self.state.world_data.ensure_location(location)
@@ -15876,7 +16309,16 @@ class GameEngine:
         if not target_subnode:
             return None
         boss_payload = _generated_dungeon_boss_payload(response)
-        if not boss_payload and not _generated_dungeon_boss_required(action, response, location):
+        boss_required = (
+            _as_bool(location.extra.get("boss_required"))
+            or _as_bool(location.extra.get("generated_dungeon_boss_required"))
+            or _as_bool(location.flags.get("boss_required"))
+            or _as_bool(location.flags.get("generated_dungeon_boss_required"))
+            or str(location.extra.get("generated_by_tool") or "") == "generate_dungeon"
+            or str(location.extra.get("role") or "") == "tool_generated_dungeon"
+            or _generated_dungeon_boss_required(action, response, location)
+        )
+        if not boss_payload and not boss_required:
             return None
         if self._generated_dungeon_has_boss(location.name):
             return None
@@ -16651,23 +17093,77 @@ def _exploration_choices(values: list[str]) -> list[str]:
     return _dedupe_strs(values)[:MAX_EXPLORATION_CHOICES]
 
 
+def _system_choice_allowed_through_movement_filter(text: str, *, allow_home_choices: bool) -> bool:
+    if text in {MOVE_CHOICE_LABEL, QUEST_BOARD_CHOICE_LABEL, QUEST_REPORT_CHOICE_LABEL}:
+        return True
+    if text == f"{PLAYER_HOME_NAME}へ移動":
+        return True
+    if allow_home_choices and text in PLAYER_HOME_CHOICES:
+        return True
+    return False
+
+
+def _filter_llm_display_choices(
+    values: list[str],
+    *,
+    keep_system_choices: bool = False,
+    allow_home_choices: bool = False,
+) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        if keep_system_choices and _system_choice_allowed_through_movement_filter(text, allow_home_choices=allow_home_choices):
+            result.append(text)
+            continue
+        if _choice_looks_like_movement(text):
+            continue
+        result.append(text)
+    return result
+
+
 def _choice_looks_like_movement(text: str) -> bool:
     lowered = str(text or "").casefold()
+    if lowered in {"go", "move", "return", "enter", "leave", "exit"}:
+        return True
     movement_words = (
         "へ移動",
         "へ進む",
+        "へ向か",
         "に移動",
         "に進む",
+        "に向か",
+        "奥へ",
+        "奥に",
+        "先へ",
+        "先に",
+        "元の位置",
+        "来た道",
+        "引き返",
+        "帰る",
+        "立ち去",
+        "離れる",
+        "階段を降り",
+        "階段を上",
+        "階段を登",
+        "扉を通",
+        "門をくぐ",
         "戻る",
         "向かう",
         "出る",
         "入る",
-        "go",
-        "move",
+        "go ",
+        "go to",
+        "go back",
+        "go deeper",
+        "move ",
         "travel",
-        "return",
-        "enter",
-        "leave",
+        "head to",
+        "return ",
+        "enter ",
+        "leave ",
+        "exit ",
     )
     return any(word in text or word in lowered for word in movement_words)
 
@@ -18833,31 +19329,6 @@ def _canonical_facility_name(keyword: str) -> str:
 
 
 
-def _is_craft_action_text(action: str) -> bool:
-    text = str(action or "").strip()
-    lowered = text.lower()
-    craft_words = (
-        "craft",
-        "combine",
-        "make",
-        "create",
-        "forge",
-        "process",
-        "加工",
-        "合成",
-        "クラフト",
-        "作る",
-        "作成",
-        "製作",
-        "鍛造",
-        "強化",
-    )
-    if not any(word in lowered or word in text for word in craft_words):
-        return False
-    material_connectors = ("と", "、", ",", "+", " and ", " with ", " using ", "から", "で")
-    return any(connector in lowered or connector in text for connector in material_connectors)
-
-
 def _is_home_construction_action(action: str) -> bool:
     text = str(action or "").strip()
     lowered = text.lower()
@@ -18892,55 +19363,6 @@ def _loose_name_match(left: str, right: str) -> bool:
     return left_text == right_text or left_text in right_text or right_text in left_text
 
 
-def _craft_material_phrases(action: str) -> list[str]:
-    text = str(action or "").strip()
-    if not text:
-        return []
-    material_part = text
-    for result_marker in ("を作る", "を作成", "を製作", "をクラフト", "を作"):
-        if result_marker not in text:
-            continue
-        prefix = text.split(result_marker, 1)[0]
-        for separator in ("で", "から"):
-            if separator in prefix:
-                material_part = prefix.rsplit(separator, 1)[0]
-                break
-        if material_part != text:
-            break
-    for marker in ("を加工", "を合成", "をクラフト", "を強化", "を使", "から", "で作", "でクラフト", "to make", "into"):
-        index = material_part.lower().find(marker.lower()) if marker.isascii() else material_part.find(marker)
-        if index > 0:
-            material_part = material_part[:index]
-            break
-    material_part = re.sub(r"^(所持品の|持っている|周囲の|近くの|nearby|my)\s*", "", material_part, flags=re.IGNORECASE)
-    parts = re.split(r"\s*(?:と|、|,|\+| and | with | using )\s*", material_part, flags=re.IGNORECASE)
-    cleaned: list[str] = []
-    for part in parts:
-        value = str(part or "").strip(" \t\r\n。、,.+\"'")
-        value = re.sub(r"(を|で|から|素材|材料)$", "", value).strip()
-        if value and len(value) <= 80:
-            cleaned.append(value)
-    return cleaned
-
-
-def _match_craft_candidate(phrase: str, candidates: list[dict[str, Any]], used_uuids: set[str]) -> dict[str, Any] | None:
-    needle = str(phrase or "").strip().casefold()
-    if not needle:
-        return None
-    for candidate in candidates:
-        item = candidate.get("item") if isinstance(candidate, dict) else {}
-        if not isinstance(item, dict):
-            continue
-        item_uuid = str(item.get("item_uuid") or "")
-        if item_uuid in used_uuids:
-            continue
-        name = str(item.get("name") or "")
-        haystack = name.casefold()
-        if needle == haystack or needle in haystack or haystack in needle:
-            return candidate
-    return None
-
-
 def _compact_item_for_ai(item: dict[str, Any]) -> dict[str, Any]:
     normalised = normalise_item(item)
     data = {
@@ -18960,72 +19382,6 @@ def _compact_item_for_ai(item: dict[str, Any]) -> dict[str, Any]:
         "defense": normalised.get("defense"),
     }
     return _drop_empty(data)
-
-
-def _normalise_craft_intent(value: Any) -> str:
-    intent = str(value or "").strip().lower()
-    aliases = {
-        "": "auto",
-        "auto": "auto",
-        "おまかせ": "auto",
-        "mix": "mix",
-        "mixing": "mix",
-        "混合": "mix",
-        "synthesis": "synthesis",
-        "synth": "synthesis",
-        "合成": "synthesis",
-        "smith": "smithing",
-        "smithing": "smithing",
-        "forge": "smithing",
-        "forging": "smithing",
-        "鍛冶": "smithing",
-        "alchemy": "alchemy",
-        "alchemist": "alchemy",
-        "錬金術": "alchemy",
-        "cooking": "cooking",
-        "cook": "cooking",
-        "料理": "cooking",
-    }
-    return aliases.get(intent, intent if intent in CRAFT_INTENT_DEFINITIONS else "auto")
-
-
-def _craft_intent_payload(value: Any) -> dict[str, str]:
-    intent = _normalise_craft_intent(value)
-    data = CRAFT_INTENT_DEFINITIONS.get(intent, CRAFT_INTENT_DEFINITIONS["auto"])
-    return {
-        "id": intent,
-        "label_ja": str(data.get("label_ja") or intent),
-        "label_en": str(data.get("label_en") or intent),
-        "instruction": str(data.get("instruction") or ""),
-    }
-
-
-def _craft_intent_from_action(action: str) -> str:
-    text = str(action or "")
-    lowered = text.lower()
-    if any(word in lowered or word in text for word in ("鍛冶", "鍛える", "打つ", "forge", "smith", "weapon", "armor")):
-        return "smithing"
-    if any(word in lowered or word in text for word in ("錬金", "調合", "薬", "ポーション", "alchemy", "brew", "potion", "medicine")):
-        return "alchemy"
-    if any(word in lowered or word in text for word in ("料理", "調理", "焼く", "煮る", "cook", "meal", "food", "drink")):
-        return "cooking"
-    if any(word in lowered or word in text for word in ("合成", "融合", "synthesis", "synth", "fuse")):
-        return "synthesis"
-    if any(word in lowered or word in text for word in ("混合", "混ぜ", "mix", "blend")):
-        return "mix"
-    return "auto"
-
-
-def _craft_fallback_category(ingredients: list[dict[str, Any]]) -> str:
-    for item in ingredients:
-        category = str(item.get("category") or "")
-        if category.startswith("weapon_"):
-            return category
-        if category.startswith("armor_") or category.startswith("accessory_"):
-            return category
-    if any(str(item.get("category") or "").startswith("material_") for item in ingredients):
-        return "tool"
-    return "junk"
 
 
 def _should_use_action_roll(action: str, input_type: str, purpose: str) -> bool:
@@ -19095,21 +19451,6 @@ def _roll_target_for_action(action: str, purpose: str) -> int:
         target = max(target, 16)
     if any(word in lowered or word in text for word in ("miracle", "fate", "one chance", "奇跡", "時の運", "一か八か")):
         target = max(target, 18)
-    return _normalise_roll_target(target)
-
-
-def _craft_roll_target(ingredients: list[dict[str, Any]]) -> int:
-    items = [normalise_item(item) for item in ingredients if isinstance(item, dict)]
-    target = 10
-    if any(is_equipment_item(item) for item in items):
-        target = 12
-    rarity_rank = max((_roll_rarity_rank(str(item.get("rarity") or "common")) for item in items), default=0)
-    target += min(4, rarity_rank)
-    categories = {str(item.get("category") or "") for item in items}
-    if categories & {"relic", "material_magical", "material_gem"}:
-        target += 2
-    if len(items) >= 4:
-        target += 2
     return _normalise_roll_target(target)
 
 

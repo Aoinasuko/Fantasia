@@ -36,6 +36,7 @@ class LlmToolName(str, Enum):
     MOVE_PLAYER = "move_player"
     START_COMBAT = "start_combat"
     DISCOVER_LOCATION = "discover_location"
+    GENERATE_DUNGEON = "generate_dungeon"
     GENERATE_QUEST = "generate_quest"
     SPAWN_NPC = "spawn_npc"
     SPAWN_ENEMY = "spawn_enemy"
@@ -254,6 +255,14 @@ def run_llm_tool(engine: Any, call: LlmToolCall) -> LlmToolResult:
             event=dict(result),
             acted=bool(result.get("acted")),
         )
+    if name == LlmToolName.GENERATE_DUNGEON:
+        event = engine._apply_response_generate_dungeon_tool(response, source, default_location=call.location)
+        return LlmToolResult(
+            name,
+            lines=[str(line) for line in event.get("lines", []) if str(line).strip()],
+            event=event,
+            acted=bool(event.get("created") or event.get("revealed")),
+        )
     return LlmToolResult(name)
 
 
@@ -323,8 +332,10 @@ def tool_prompt_instruction() -> str:
         "exp_delta, time_passage, game_over, npc_change_relationship, npc_move, npc_join_party, "
         "npc_remove_party, npc_dead, npc_capture_player, npc_update_memory, npc_update_description, "
         "world_home_construction, world_mainnode_reveal, world_subnode_reveal, "
-        "crime_risk, item_add, item_remove, item_equip, item_unequip, visual_intent, start_combat, discover_location, generate_quest, spawn_npc, spawn_enemy, "
+        "crime_risk, item_add, item_remove, item_equip, item_unequip, visual_intent, start_combat, discover_location, generate_dungeon, generate_quest, spawn_npc, spawn_enemy, "
         "spawn_boss, request_npc_generation, quest_event, quest_progress, quest_update. "
+        "Use generate_dungeon only when a definite clue, diary, map, document, rumor, or magical effect reveals an unknown dungeon near the current or adjacent main node; "
+        "arguments may include {\"name\":\"dungeon name\",\"description\":\"short description\",\"dungeon_subtype\":\"forest|mountain|ruin|cave|mine|labyrinth|crypt|lair\",\"anchor_location\":\"current or adjacent location\",\"reason\":\"why it is revealed\"}. "
         "Use an empty tool_judgements array when no state changes are needed."
     )
 
@@ -517,6 +528,10 @@ def _merge_tool_payload(payload: dict[str, Any], tool_name: LlmToolName, args: d
         return
     if tool_name == LlmToolName.DISCOVER_LOCATION:
         payload["discovered_location"] = _single_or_value(args, "location", "discovered_location", "value")
+        return
+    if tool_name == LlmToolName.GENERATE_DUNGEON:
+        value = args.get("generate_dungeon") if args.get("generate_dungeon") not in (None, "", [], {}) else args
+        payload["generate_dungeon"] = value or True
         return
     if tool_name == LlmToolName.GENERATE_QUEST:
         _append_payload_list(payload, "quests", _single_or_value(args, "quest", "quests", "value"))

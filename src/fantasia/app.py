@@ -18,6 +18,7 @@ from .assets import check_runtime_assets, format_asset_report
 from .cloud_models import cached_cloud_model_ids, fetch_cloud_model_ids
 from .config import load_config
 from .crashlog import install_crash_logging, install_tk_crash_logging
+from .craft import craft_items
 from .device import detect_device, device_report
 from .game import (
     ACTOR_SUBNODE_ID_FLAG,
@@ -3313,6 +3314,17 @@ class FantasiaApp(tk.Tk):
             return True
         return False
 
+    def _open_pending_home_menu(self) -> None:
+        pending = str(self.engine.state.flags.pop("pending_home_menu", "") or "").strip()
+        if not pending:
+            return
+        self.engine.save_game()
+        if pending == "storage":
+            self._open_home_storage_window()
+            return
+        if pending == "craft":
+            self._open_craft_window()
+
     def _open_movement_window(self) -> None:
         options = [option for option in self.engine.available_movement_options() if isinstance(option, dict)]
         if not options:
@@ -3838,6 +3850,7 @@ class FantasiaApp(tk.Tk):
         dialog.rowconfigure(1, weight=1)
 
         detail_var = tk.StringVar(value="")
+        craft_preview_var = tk.StringVar(value="種別:- / 予想目標値:-")
         craft_intent_var = tk.StringVar(value=_craft_intent_label(self.config_data, "auto"))
         tk.Label(dialog, text=_ui_text(self.config_data, "game_inventory"), bg=APP_DEEP_BG, fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 6))
         tk.Label(dialog, text=_ui_text(self.config_data, "craft_materials"), bg=APP_DEEP_BG, fg="#f2f2f2", font=self.ui_fonts.bold(-1)).grid(row=0, column=2, sticky="ew", padx=16, pady=(14, 6))
@@ -3869,20 +3882,34 @@ class FantasiaApp(tk.Tk):
         actions.columnconfigure(0, weight=1)
         tk.Label(
             actions,
+            textvariable=craft_preview_var,
+            bg=APP_DEEP_BG,
+            fg="#d8d4cf",
+            anchor="w",
+            font=self.ui_fonts.bold(-3),
+        ).grid(row=0, column=0, sticky="w", padx=(0, 12))
+        tk.Label(
+            actions,
             text=_ui_text(self.config_data, "craft_intent"),
             bg=APP_DEEP_BG,
             fg="#f2f2f2",
             font=self.ui_fonts.bold(-3),
         ).grid(row=0, column=1, sticky="e", padx=(0, 6))
-        ttk.Combobox(
+        craft_intent_combo = ttk.Combobox(
             actions,
             textvariable=craft_intent_var,
             values=_craft_intent_options(self.config_data),
             state="readonly",
             width=14,
-        ).grid(row=0, column=2, sticky="e", padx=(0, 8))
+        )
+        craft_intent_combo.grid(row=0, column=2, sticky="e", padx=(0, 8))
         self._instant_button(actions, _ui_text(self.config_data, "craft_create"), lambda: craft_selected()).grid(row=0, column=3, sticky="e", padx=(0, 8))
         self._instant_button(actions, _ui_text(self.config_data, "character_close"), lambda: close_dialog()).grid(row=0, column=4, sticky="e")
+
+        def refresh_craft_preview() -> None:
+            craft_intent = _craft_intent_id_from_label(self.config_data, craft_intent_var.get())
+            preview = self.engine.craft_preview_for_selected_items(craft_inventory, craft_intent)
+            craft_preview_var.set(str(preview.get("text") or "種別:- / 予想目標値:-"))
 
         def refresh() -> None:
             player_list.delete(0, "end")
@@ -3896,6 +3923,9 @@ class FantasiaApp(tk.Tk):
                 detail_var.set(f"{_ui_text(self.config_data, 'craft_materials')}: {names}")
             else:
                 detail_var.set(_ui_text(self.config_data, "craft_empty_help"))
+            refresh_craft_preview()
+
+        craft_intent_combo.bind("<<ComboboxSelected>>", lambda _event: refresh_craft_preview())
 
         def selected_index(listbox: tk.Listbox) -> int | None:
             selection = listbox.curselection()
@@ -3970,7 +4000,7 @@ class FantasiaApp(tk.Tk):
             )
             return
             if len(craft_inventory) < 2:
-                result, message = craft_items(craft_inventory, language=language)
+                result, message = craft_items(craft_inventory, language=language, craft_intent=craft_intent)
                 messagebox.showwarning(_ui_text(self.config_data, "craft_title"), message)
                 return
             craft_roll = self.engine.roll_craft_check(craft_inventory)
@@ -3989,7 +4019,7 @@ class FantasiaApp(tk.Tk):
                 self._save_inventory_change()
                 refresh()
                 return
-            result, message = craft_items(craft_inventory, language=language, craft_roll=craft_roll)
+            result, message = craft_items(craft_inventory, language=language, craft_roll=craft_roll, craft_intent=craft_intent)
             if not result:
                 messagebox.showwarning(_ui_text(self.config_data, "craft_title"), message)
                 return
@@ -6354,6 +6384,8 @@ class FantasiaApp(tk.Tk):
         self._refresh_status_panel()
         self._render_stage()
         self._schedule_visual_updates()
+        if self.engine.state.flags.get("pending_home_menu"):
+            self.after(0, self._open_pending_home_menu)
 
     def _append_log(self, text: str) -> None:
         self._cancel_typewriter()

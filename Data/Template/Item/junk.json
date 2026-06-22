@@ -75,5 +75,49 @@
     "power": 0,
     "send_llm": "",
     "element": "弓の素材"
+  },
+  {
+    "name": "壊れた武器の一部",
+    "category": "junk",
+    "level": 0,
+    "value": 10,
+    "desc": "元の武器が何であるかわからないほどに壊れた武器の一部。組み合わせれば新しい武器にできるかもしれない。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": "武器の素材"
+  },
+  {
+    "name": "壊れた防具の一部",
+    "category": "junk",
+    "level": 0,
+    "value": 15,
+    "desc": "防具の一部。修理すれば使えそうだ。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": "防具の素材"
+  },
+  {
+    "name": "壊れた護符の一部",
+    "category": "junk",
+    "level": 0,
+    "value": 15,
+    "desc": "護符の一部。修理すれば使えそうだ。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": "護符の素材"
+  },
+  {
+    "name": "壊れた指輪の一部",
+    "category": "junk",
+    "level": 0,
+    "value": 15,
+    "desc": "指輪の一部。修理すれば使えそうだ。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": "指輪の素材"
   }
 ]
