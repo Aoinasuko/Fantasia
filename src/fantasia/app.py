@@ -3658,8 +3658,14 @@ class FantasiaApp(tk.Tk):
         detail = tk.Text(dialog, bg=APP_PANEL_BG, fg="#f2f2f2", relief="solid", bd=1, wrap="word", height=12, font=self.ui_fonts.normal(-2))
         detail.grid(row=1, column=1, sticky="nsew", padx=(8, 16), pady=(0, 10))
 
+        def quest_danger(quest) -> int:
+            extra = quest.extra if isinstance(quest.extra, dict) else {}
+            reward = extra.get("reward") if isinstance(extra.get("reward"), dict) else {}
+            return max(0, _safe_int(str(extra.get("danger_level") or reward.get("danger_level") or 0), 0))
+
         for quest in quests:
-            listbox.insert("end", quest.name)
+            danger = quest_danger(quest)
+            listbox.insert("end", f"{quest.name} / {_ui_text(self.config_data, 'quest_board_danger')} {danger}")
         if not quests:
             listbox.insert("end", _ui_text(self.config_data, "quest_board_empty"))
 
@@ -3683,6 +3689,7 @@ class FantasiaApp(tk.Tk):
             lines = [
                 quest.name,
                 f"{_ui_text(self.config_data, 'quest_board_status')}: {quest.status or 'available'}",
+                f"{_ui_text(self.config_data, 'quest_board_danger')}: {quest_danger(quest)}",
                 f"{_ui_text(self.config_data, 'quest_board_reward')}: {reward_text or '-'}",
                 "",
                 quest.overview or "",
@@ -5378,6 +5385,12 @@ class FantasiaApp(tk.Tk):
         if self.last_character_preview_path and self.last_character_preview_name == name:
             character.image_paths.setdefault("add_border_image", self.last_character_preview_path)
             character.image_paths.setdefault("generated_image", self.last_character_preview_path)
+        if _subject_image_path(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image")):
+            character.flags.pop("portrait_generation_skipped", None)
+            character.extra.pop("portrait_generation_skipped", None)
+        else:
+            character.flags["portrait_generation_skipped"] = True
+            character.extra["portrait_generation_skipped"] = True
         return character
 
     def _generate_image(self) -> None:
@@ -5896,17 +5909,33 @@ class FantasiaApp(tk.Tk):
     def _stage_character_layers(self) -> list[tuple[str, str]]:
         state = self.engine.state
         names: list[str] = []
+        excluded_refs: set[str] = set()
+        active_encounter = state.flags.get("active_encounter")
+        if isinstance(active_encounter, dict) and active_encounter.get("status") != "ended":
+            for entry in self._battle_target_entries(active_encounter):
+                name = str(entry.get("name") or "").strip()
+                uuid = str(entry.get("uuid") or "").strip()
+                character = entry.get("character")
+                if isinstance(character, Character):
+                    name = character.name or name
+                    uuid = str(character.uuid or uuid)
+                if name:
+                    excluded_refs.add(name)
+                if uuid:
+                    excluded_refs.add(uuid)
         active_conversation = state.flags.get("active_conversation")
         if isinstance(active_conversation, dict):
-            names.append(str(active_conversation.get("character") or ""))
-        active_encounter = state.flags.get("active_encounter")
-        if isinstance(active_encounter, dict):
-            names.extend(str(entry.get("name") or "") for entry in self._battle_target_entries(active_encounter))
+            conversation_name = str(active_conversation.get("character") or "")
+            if conversation_name not in excluded_refs:
+                names.append(conversation_name)
         current_location = self._current_location_name()
         names.extend(
             character.name
             for character in state.world_data.characters.values()
-            if not character.flags.get("is_player") and self._character_is_present_at(character, current_location)
+            if not character.flags.get("is_player")
+            and character.name not in excluded_refs
+            and str(character.uuid or "") not in excluded_refs
+            and self._character_is_present_at(character, current_location)
         )
         layers: list[tuple[str, str]] = []
         seen: set[str] = set()
@@ -5916,10 +5945,15 @@ class FantasiaApp(tk.Tk):
             character = state.world_data.character(name)
             if not character:
                 continue
+            identity = str(character.uuid or character.name)
+            if identity in seen or character.name in excluded_refs or identity in excluded_refs:
+                continue
             image_path = _subject_image_path(character.image_paths, ("no_bg_image", "add_border_image", "generated_image", "face_image"))
             if image_path:
                 layers.append((character.name, image_path))
                 seen.add(name)
+                seen.add(character.name)
+                seen.add(identity)
             if len(layers) >= 3:
                 break
         return layers
@@ -5946,10 +5980,15 @@ class FantasiaApp(tk.Tk):
             monster = state.world_data.character(name)
             if not monster:
                 continue
+            identity = str(monster.uuid or monster.name)
+            if identity in seen:
+                continue
             image_path = _subject_image_path(monster.image_paths, ("no_bg_image", "add_border_image", "base_image", "generated_image", "face_image"))
             if image_path:
                 layers.append((monster.name, image_path))
                 seen.add(name)
+                seen.add(monster.name)
+                seen.add(identity)
             if len(layers) >= 2:
                 break
         return layers
@@ -6387,6 +6426,23 @@ class FantasiaApp(tk.Tk):
         self._refresh_status_panel()
         self._render_stage()
 
+    def _on_auto_player_image_generated(self, path: Path, player_key: str, player_name: str) -> None:
+        player = self.engine.player_character()
+        if player and (not player_key or player_key in {str(player.uuid or ""), player.name}):
+            player.flags.pop("portrait_generation_skipped", None)
+            player.extra.pop("portrait_generation_skipped", None)
+            image_path = str(path)
+            player.image_paths.setdefault("add_border_image", image_path)
+            player.image_paths.setdefault("generated_image", image_path)
+            self.engine.state.flags["player_character"] = player.to_dict()
+        self.engine.state.flags["auto_player_image_generation"] = {
+            "key": player_key,
+            "name": player_name,
+            "status": "completed",
+            "path": str(path),
+        }
+        self._on_layer_image_generated(path)
+
     def _on_scene_image_generated(self, path: Path) -> None:
         self.engine.state.flags.pop("pending_background_location", None)
         self.engine.state.flags.pop("pending_background_context", None)
@@ -6479,10 +6535,25 @@ class FantasiaApp(tk.Tk):
 
         player = self.engine.player_character()
         if player and not _subject_image_path(player.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image")):
+            if player.flags.get("portrait_generation_skipped") or player.extra.get("portrait_generation_skipped"):
+                return
+            player_key = str(player.uuid or state.player_uuid or state.player_name or player.name)
+            player_image_request = state.flags.get("auto_player_image_generation")
+            if (
+                isinstance(player_image_request, dict)
+                and str(player_image_request.get("key") or "") == player_key
+                and str(player_image_request.get("status") or "") in {"pending", "completed"}
+            ):
+                return
+            state.flags["auto_player_image_generation"] = {
+                "key": player_key,
+                "name": player.name,
+                "status": "pending",
+            }
             self._run_visual_task(
                 _ui_text(self.config_data, "task_generating_player_image"),
-                lambda name=state.player_name: self.engine.generate_character_image(name),
-                lambda result: self._on_layer_image_generated(result.path),
+                lambda ref=player_key: self.engine.generate_character_image(ref),
+                lambda result, ref=player_key, name=player.name: self._on_auto_player_image_generated(result.path, ref, name),
             )
 
     def _battle_target_entries(self, encounter: dict[str, object]) -> list[dict[str, object]]:
@@ -7962,6 +8033,7 @@ UI_TEXT["en"].update(
         "quest_board_not_guild": "The quest board is available inside the guild.",
         "quest_board_reward": "Reward",
         "quest_board_status": "Status",
+        "quest_board_danger": "Danger",
         "quest_board_objective": "Objective",
         "task_world_map_travel": "Traveling...",
         "task_subnode_map_travel": "Moving...",
@@ -8214,6 +8286,7 @@ UI_TEXT["ja"].update(
         "quest_board_not_guild": "依頼掲示板はギルドの中で確認できます。",
         "quest_board_reward": "報酬",
         "quest_board_status": "状態",
+        "quest_board_danger": "危険度",
         "quest_board_objective": "目的",
         "task_world_map_travel": "移動中...",
         "task_subnode_map_travel": "\u79fb\u52d5\u4e2d...",

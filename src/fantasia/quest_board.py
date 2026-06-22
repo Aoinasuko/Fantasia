@@ -19,6 +19,8 @@ def available_quest_board_quests(self) -> list[QuestData]:
             continue
         if quest.neighboring_settlement and settlement_name and quest.neighboring_settlement != settlement_name:
             continue
+        self._assign_quest_danger(quest, quest.neighboring_settlement or settlement_name)
+        self._ensure_quest_reward(quest)
         quests.append(quest)
     return quests
 
@@ -140,4 +142,3 @@ def _resolve_dedicated_quest_report(self, action: str, input_type: str, quest: Q
         self.state.display_log.extend(reward_lines)
     self.save_game()
     return self.state.log_text(16)
-

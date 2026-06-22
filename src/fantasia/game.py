@@ -2273,6 +2273,20 @@ class GameEngine:
         character.category = character.category or "player"
         character.flags["is_player"] = True
         character.flags.setdefault("source", "character_setup")
+        for existing_uuid, existing in list(self.state.world_data.characters.items()):
+            if str(existing.uuid or "") == str(character.uuid or ""):
+                continue
+            if existing.name != name:
+                continue
+            if not (existing.flags.get("is_player") or existing.flags.get("source") in {"character_setup", "character_setup_preview"}):
+                continue
+            if not character.image_paths:
+                character.image_paths.update(existing.image_paths)
+            if not character.prompts:
+                character.prompts.update(existing.prompts)
+            if existing.extra.get("image_pipeline") and not character.extra.get("image_pipeline"):
+                character.extra["image_pipeline"] = existing.extra.get("image_pipeline")
+            self.state.world_data.characters.pop(existing_uuid, None)
         _normalise_actor_power_loadout(character)
         self.state.player_name = name
         self.state.player_uuid = character.uuid
@@ -11274,6 +11288,10 @@ class GameEngine:
         )
         character.prompts["character_image_creator"] = prompt_record
         character.extra["image_pipeline"] = processed.metadata
+        if character.flags.get("is_player") or str(character.uuid or "") == str(self.state.player_uuid or ""):
+            character.flags.pop("portrait_generation_skipped", None)
+            character.extra.pop("portrait_generation_skipped", None)
+            self.state.flags["player_character"] = character.to_dict()
         self.state.last_image_path = str(saved_border)
         self.state.world_data.history.append(
             {
@@ -16301,8 +16319,18 @@ class GameEngine:
         return self.save_store.list_saves()
 
     def _character_for_image(self, character_name: str | None) -> Character:
-        if character_name:
-            character = self.state.world_data.character(character_name)
+        ref = str(character_name or "").strip()
+        player = self.player_character()
+        if player and (
+            not ref
+            or ref == str(player.uuid or "")
+            or ref == player.name
+            or ref == str(self.state.player_uuid or "")
+            or ref == str(self.state.player_name or "")
+        ):
+            return player
+        if ref:
+            character = self.state.world_data.character(ref)
             if character:
                 return character
         if self.state.world_data.characters:

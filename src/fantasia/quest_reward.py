@@ -50,8 +50,11 @@ def _assign_quest_danger(self, quest: QuestData, origin_location: str = "") -> i
     kind = str(hint.get("location_kind") or "").strip().lower()
     origin = str(origin_location or quest.neighboring_settlement or self.state.current_location or self.state.world_data.starting_location)
     base_danger = self._current_location_danger(origin)
-    danger = _quest_destination_danger(hint, kind, base_danger)
-    quest.extra["danger_level"] = max(1, _clamp_world_danger(danger))
+    raw_danger = _quest_destination_danger(hint, kind, base_danger)
+    danger_cap = _clamp_world_danger(base_danger + 5)
+    quest.extra["danger_level"] = max(1, min(_clamp_world_danger(raw_danger), danger_cap))
+    quest.extra["origin_danger_level"] = base_danger
+    quest.extra["danger_cap"] = danger_cap
     quest.extra["danger_source"] = "local_quest_generation"
     return int(quest.extra["danger_level"])
 

@@ -10,6 +10,8 @@ def _generate_settlement_quests(
     settlement_name: str,
     target_count: int | None = None,
 ) -> dict[str, Any]:
+    settlement_danger = self._current_location_danger(settlement_name)
+    quest_danger_cap = _clamp_world_danger(settlement_danger + 5)
     world_payload = _ai_json(
         _world_ai_context(world, include_characters=True, include_monsters=False, include_quests=True)
     )
@@ -56,6 +58,8 @@ def _generate_settlement_quests(
                     "街道をふさぐ魔物や危険生物の排除、討伐、退治、狩猟は必ず quest_type=\"defeat\" です。"
                     "薬や食料など指定品をどこかから調達する依頼だけ quest_type=\"procure\" にしてください。"
                     "報酬金、経験値、報酬アイテムはゲーム側で決定するため、reward は返さないでください。"
+                    f"この拠点の危険度は {settlement_danger} です。生成する依頼は危険度 {quest_danger_cap} 以下の規模にしてください。"
+                    "街の外れ、近隣の街道、浅い洞窟、近場の小規模な魔物など、その危険度に見合う内容だけにしてください。"
                     "各クエストには destination_hint を含めてください。"
                     "destination_hint は location_kind, anchor_kind, objective_subnode_name, objective_description を持つ短いヒントです。"
                     "destination_hint は目的地そのものではなく、ゲーム側がロケーションとサブノードを確定するための材料です。"
@@ -67,6 +71,8 @@ def _generate_settlement_quests(
                 "content": (
                     f"プレイヤー名: {player_name}\n"
                     f"対象拠点: {settlement_name}\n"
+                    f"拠点危険度: {settlement_danger}\n"
+                    f"依頼危険度上限: {quest_danger_cap}\n"
                     f"バッチ番号: {batch_index}\n"
                     f"今回の生成件数: {request_min}〜{requested_count}\n"
                     f"既存依頼名: {json.dumps(sorted(seen_names), ensure_ascii=False)}\n"
@@ -83,6 +89,8 @@ def _generate_settlement_quests(
                     "When a template fits a quest objective, include target_npc_template_id in the quest object. "
                     "Use enemy_templates for defeat targets and rescue blockers. "
                     "Use friendly_templates for rescue targets and delivery targets. "
+                    "For destination_hint.location_kind, choose a dungeon subtype: forest, mountain, ruin, cave, mine, labyrinth, crypt, or lair. "
+                    "Do not use road, plain, coast, river, settlement, or wilderness as the quest objective location kind. "
                     "The game will instantiate that template and let a later LLM pass fill only missing flavor details."
                 ),
             }

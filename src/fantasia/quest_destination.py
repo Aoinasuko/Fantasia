@@ -27,15 +27,19 @@ def _ensure_quest_destination(self, quest: QuestData, response: dict[str, Any] |
     if isinstance(existing, dict):
         location_name = str(existing.get("location") or existing.get("destination_location") or "").strip()
         if location_name and location_name in world.locations:
-            subnode = self._ensure_quest_objective_subnode(world.locations[location_name], quest, existing)
-            existing["location"] = location_name
-            existing["objective_subnode_id"] = subnode.get("id") or existing.get("objective_subnode_id") or ""
-            existing["objective_subnode_name"] = subnode.get("name") or existing.get("objective_subnode_name") or ""
-            quest.extra["destination"] = existing
-            quest.extra["objective_location"] = location_name
-            quest.extra["objective_subnode_id"] = str(existing.get("objective_subnode_id") or "")
-            quest.extra["objective_subnode_name"] = str(existing.get("objective_subnode_name") or "")
-            return existing
+            location = world.locations[location_name]
+            if _quest_location_is_dungeon_target(location):
+                subnode = self._ensure_quest_objective_subnode(location, quest, existing)
+                existing["location"] = location_name
+                existing["location_kind"] = str(location.extra.get("location_kind") or "")
+                existing["dungeon_subtype"] = _quest_location_dungeon_subtype(location)
+                existing["objective_subnode_id"] = subnode.get("id") or existing.get("objective_subnode_id") or ""
+                existing["objective_subnode_name"] = subnode.get("name") or existing.get("objective_subnode_name") or ""
+                quest.extra["destination"] = existing
+                quest.extra["objective_location"] = location_name
+                quest.extra["objective_subnode_id"] = str(existing.get("objective_subnode_id") or "")
+                quest.extra["objective_subnode_name"] = str(existing.get("objective_subnode_name") or "")
+                return existing
 
     hint = _quest_destination_hint(quest, response)
     origin = self._quest_origin_location(quest)
@@ -45,6 +49,7 @@ def _ensure_quest_destination(self, quest: QuestData, response: dict[str, Any] |
     destination = {
         "location": location.name,
         "location_kind": str(location.extra.get("location_kind") or ""),
+        "dungeon_subtype": _quest_location_dungeon_subtype(location),
         "danger_level": _safe_int(location.extra.get("danger_level"), 0),
         "anchor_location": anchor,
         "objective_subnode_id": str(subnode.get("id") or ""),
@@ -138,6 +143,157 @@ def _quest_hint_requests_dungeon(self, quest: QuestData, hint: dict[str, Any]) -
     ).lower()
     return any(word in text for word in ("dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair", "洞窟", "遺跡", "鉱山", "迷宮", "巣穴", "森", "山"))
 
+def _quest_dungeon_subtype(quest: QuestData, hint: dict[str, Any]) -> str:
+    kind = str(hint.get("location_kind") or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "woods": "forest",
+        "wood": "forest",
+        "wilds": "forest",
+        "wilderness": "forest",
+        "cavern": "cave",
+        "caverns": "cave",
+        "ruins": "ruin",
+        "old_ruin": "ruin",
+        "mines": "mine",
+        "quarry": "mine",
+        "maze": "labyrinth",
+        "dungeon": "dungeon",
+    }
+    kind = aliases.get(kind, kind)
+    if kind in {"forest", "mountain", "ruin", "cave", "mine", "labyrinth", "crypt", "lair", "dungeon"}:
+        return kind
+    text = str(hint.get("source_text") or "").casefold()
+    checks = (
+        ("forest", ("forest", "woods", "grove", "swamp", "jungle")),
+        ("mountain", ("mountain", "peak", "ridge", "cliff", "ravine")),
+        ("ruin", ("ruin", "ruins", "temple", "shrine", "old fort", "ancient")),
+        ("cave", ("cave", "cavern", "grotto", "tunnel")),
+        ("mine", ("mine", "mineshaft", "quarry", "ore")),
+        ("labyrinth", ("labyrinth", "maze")),
+        ("crypt", ("crypt", "tomb", "grave")),
+        ("lair", ("lair", "nest", "den")),
+    )
+    for subtype, markers in checks:
+        if any(marker in text for marker in markers):
+            return subtype
+    quest_type = str(quest.extra.get("quest_type") or quest.extra.get("objective_type") or "").strip().lower()
+    return {
+        "rescue": "ruin",
+        "retrieve": "cave",
+        "defeat": "lair",
+        "delivery": "ruin",
+        "investigate": "ruin",
+        "procure": "forest",
+    }.get(quest_type, "dungeon")
+
+def _quest_location_is_dungeon_target(location: LocationData | None) -> bool:
+    if location is None:
+        return False
+    extra = location.extra if isinstance(location.extra, dict) else {}
+    flags = location.flags if isinstance(location.flags, dict) else {}
+    if _is_dungeon_location(location) or flags.get("dungeon") or flags.get("dangerous"):
+        return True
+    return str(extra.get("main_node_type") or extra.get("category") or "").strip().lower() == "dungeon"
+
+def _quest_location_dungeon_subtype(location: LocationData | None) -> str:
+    if location is None:
+        return ""
+    extra = location.extra if isinstance(location.extra, dict) else {}
+    for key in ("dungeon_subtype", "quest_dungeon_subtype", "main_node_subtype", "location_kind", "kind"):
+        value = str(extra.get(key) or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if value:
+            return {
+                "woods": "forest",
+                "wood": "forest",
+                "wilderness": "forest",
+                "cavern": "cave",
+                "ruins": "ruin",
+                "mines": "mine",
+                "maze": "labyrinth",
+            }.get(value, value)
+    return "dungeon" if _quest_location_is_dungeon_target(location) else ""
+
+def _quest_dungeon_subtype_matches(location: LocationData, subtype: str) -> bool:
+    if not _quest_location_is_dungeon_target(location):
+        return False
+    requested = str(subtype or "dungeon").strip().lower()
+    if requested == "dungeon":
+        return True
+    return _quest_location_dungeon_subtype(location) == requested
+
+def _quest_destination_candidate_locations(self, origin: str, anchor: str, branch_anchor: str) -> list[str]:
+    world = self.state.world_data
+    seeds = _dedupe_strs([branch_anchor, anchor, origin, self.state.current_location, world.starting_location])
+    result: list[str] = []
+    frontier: list[tuple[str, int]] = [(name, 0) for name in seeds if name in world.locations]
+    seen: set[str] = set()
+    while frontier:
+        name, depth = frontier.pop(0)
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        result.append(name)
+        if depth >= 2:
+            continue
+        for neighbor in self._world_neighbors_no_ensure(world, name):
+            if neighbor and neighbor not in seen:
+                frontier.append((neighbor, depth + 1))
+    return result
+
+def _find_nearby_quest_dungeon_by_subtype(self, origin: str, anchor: str, branch_anchor: str, subtype: str) -> str:
+    world = self.state.world_data
+    for name in _quest_destination_candidate_locations(self, origin, anchor, branch_anchor):
+        location = world.locations.get(name)
+        if location and _quest_dungeon_subtype_matches(location, subtype):
+            return name
+    return ""
+
+def _quest_existing_dungeon_objective_subnode(
+    self,
+    location: LocationData,
+    graph: dict[str, Any],
+    quest: QuestData,
+    hint: dict[str, Any],
+) -> dict[str, Any]:
+    nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+    if not nodes:
+        return {}
+    node_name, description = self._quest_objective_subnode_display(quest, hint)
+    rng = random.Random(f"quest-objective-subnode|{self.state.world_name}|{location.name}|{quest.name}")
+    blocked_kinds = {"entrance", "exit", "gate", "external"}
+    candidates: list[str] = []
+    fallback: list[str] = []
+    for node_id, node in nodes.items():
+        if not isinstance(node, dict):
+            continue
+        node_id_text = str(node_id)
+        node_kind = str(node.get("kind") or "").strip().lower()
+        if node_id_text == DUNGEON_ENTRY_SUBNODE_ID or node.get("world_map_exit") or node_kind in blocked_kinds:
+            continue
+        if node.get("quest_objective") and str(node.get("quest_name") or "") != quest.name:
+            fallback.append(node_id_text)
+            continue
+        candidates.append(node_id_text)
+    if not candidates:
+        candidates = [node_id for node_id in (DUNGEON_DEEPEST_SUBNODE_ID, "main_02", "main_01") if node_id in nodes]
+    if not candidates:
+        candidates = fallback
+    if not candidates:
+        candidates = [str(node_id) for node_id in nodes if str(node_id) != DUNGEON_ENTRY_SUBNODE_ID]
+    if not candidates:
+        return {}
+    candidates = sorted(_dedupe_strs(candidates))
+    node_id = candidates[rng.randrange(len(candidates))]
+    node = nodes.get(node_id)
+    if not isinstance(node, dict):
+        return {}
+    node.setdefault("id", node_id)
+    node["quest_name"] = quest.name
+    node["quest_objective"] = True
+    node["quest_objective_name"] = node_name
+    node["quest_objective_description"] = description
+    return node
+
 def _quest_dungeon_branch_anchor(self, origin: str, fallback: str = "") -> str:
     world = self.state.world_data
     specs = self._route_skeleton_specs(world)
@@ -171,9 +327,10 @@ def _quest_dungeon_branch_anchor(self, origin: str, fallback: str = "") -> str:
 def _create_quest_dungeon_location(self, quest: QuestData, hint: dict[str, Any], origin: str, anchor: str) -> LocationData:
     world = self.state.world_data
     branch_anchor = self._quest_dungeon_branch_anchor(origin, anchor)
+    subtype = _quest_dungeon_subtype(quest, hint)
     kind = "dungeon"
     explicit_name = str(hint.get("location") or hint.get("destination_location") or "").strip()
-    base_name = explicit_name or _quest_destination_name(quest, {**hint, "location_kind": "dungeon"}, origin, branch_anchor)
+    base_name = explicit_name or _quest_destination_name(quest, {**hint, "location_kind": subtype or "dungeon"}, origin, branch_anchor)
     location_name = _unique_world_location_name(world, base_name)
     anchor_node = self._location_graph_for_update(world).get("nodes", {}).get(branch_anchor, {})
     anchor_danger = _safe_int(anchor_node.get("danger") if isinstance(anchor_node, dict) else 0, self._current_location_danger(branch_anchor))
@@ -186,7 +343,9 @@ def _create_quest_dungeon_location(self, quest: QuestData, hint: dict[str, Any],
         {
             "location_kind": kind,
             "main_node_type": "dungeon",
-            "main_node_subtype": str(hint.get("location_kind") or "dungeon"),
+            "main_node_subtype": subtype,
+            "dungeon_subtype": subtype,
+            "quest_dungeon_subtype": subtype,
             "role": "quest_dungeon",
             "danger_level": _clamp_world_danger(danger),
             "danger_source": "quest_dungeon",
@@ -220,6 +379,7 @@ def _create_quest_dungeon_location(self, quest: QuestData, hint: dict[str, Any],
             "quest": quest.name,
             "location": location_name,
             "branch_anchor": branch_anchor,
+            "dungeon_subtype": subtype,
         }
     )
     return location
@@ -227,44 +387,21 @@ def _create_quest_dungeon_location(self, quest: QuestData, hint: dict[str, Any],
 def _quest_destination_location(self, quest: QuestData, hint: dict[str, Any], origin: str, anchor: str) -> LocationData:
     world = self.state.world_data
     explicit_name = str(hint.get("location") or hint.get("destination_location") or "").strip()
+    subtype = _quest_dungeon_subtype(quest, hint)
     if explicit_name:
         resolved = self._find_world_location_by_name(explicit_name)
         if resolved:
             location = world.locations[resolved]
-            if not self._world_neighbors_no_ensure(world, resolved) and anchor and anchor != resolved:
-                self._connect_world_locations(world, anchor, resolved)
-            return location
+            if _quest_dungeon_subtype_matches(location, subtype) or (_quest_location_is_dungeon_target(location) and subtype == "dungeon"):
+                if not self._world_neighbors_no_ensure(world, resolved) and anchor and anchor != resolved:
+                    self._connect_world_locations(world, anchor, resolved)
+                return location
 
-    kind = str(hint.get("location_kind") or "wilderness").strip() or "wilderness"
-    if self._quest_hint_requests_dungeon(quest, hint):
-        return self._create_quest_dungeon_location(quest, hint, origin, anchor)
-    nearby_existing = self._find_nearby_location_by_kind(anchor or origin, kind)
-    if nearby_existing and not _quest_text_requests_new_site(str(hint.get("source_text") or "")):
-        return world.locations[nearby_existing]
-
-    base_name = explicit_name or _quest_destination_name(quest, hint, origin, anchor)
-    location_name = _unique_world_location_name(world, base_name)
-    origin_node = self._location_graph_for_update(world).get("nodes", {}).get(origin, {})
-    base_danger = _safe_int(origin_node.get("danger") if isinstance(origin_node, dict) else 0, 0)
-    danger = _quest_destination_danger(hint, kind, base_danger)
-    description = str(hint.get("description") or "").strip()
-    if not description:
-        description = f"依頼「{quest.name}」の目標が存在する{_quest_location_kind_label(kind)}。"
-    location = world.ensure_location(location_name, description)
-    location.extra["location_kind"] = kind
-    location.extra["danger_level"] = danger
-    location.extra["quest_destination_for"] = quest.name
-    location.flags["discovered"] = True
-    if _world_kind_is_settlement(kind):
-        location.flags["settlement"] = True
-    if _world_location_blocks_world_map_departure(location):
-        location.flags["dangerous"] = True
-    self._set_location_graph_node(world, location_name, kind=kind, danger=danger, location=location)
-    if anchor and anchor != location_name:
-        self._connect_world_locations(world, anchor, location_name)
-    elif origin and origin != location_name:
-        self._connect_world_locations(world, origin, location_name)
-    return location
+    branch_anchor = self._quest_dungeon_branch_anchor(origin, anchor)
+    existing = _find_nearby_quest_dungeon_by_subtype(self, origin, anchor, branch_anchor, subtype)
+    if existing:
+        return world.locations[existing]
+    return self._create_quest_dungeon_location(quest, {**hint, "location_kind": subtype}, origin, anchor)
 
 def _find_world_location_by_name(self, name: str) -> str:
     key = _world_location_name_key(name)
@@ -301,6 +438,7 @@ def _ensure_quest_objective_subnode(self, location: LocationData, quest: QuestDa
     graph = self._ensure_location_subnode_graph(self.state.world_data, location.name)
     nodes = graph.setdefault("nodes", {})
     node_id = str(hint.get("objective_subnode_id") or "").strip()
+    explicit_node_id = bool(node_id)
     if not node_id:
         node_id = f"quest:{_world_location_name_key(quest.name) or 'objective'}"
     node_name, description = self._quest_objective_subnode_display(quest, hint)
@@ -317,6 +455,10 @@ def _ensure_quest_objective_subnode(self, location: LocationData, quest: QuestDa
         else:
             self._ensure_subnode_connected_to_anchor(graph, node_id, kind="quest_path", prefer_deep=True)
         return existing
+    if not explicit_node_id and _quest_location_is_dungeon_target(location):
+        existing_dungeon_node = _quest_existing_dungeon_objective_subnode(self, location, graph, quest, hint)
+        if existing_dungeon_node:
+            return existing_dungeon_node
     x = 560
     y = 360 + (len(nodes) % 3) * 90
     if _is_dungeon_location(location) or _world_location_blocks_world_map_departure(location):
@@ -464,4 +606,3 @@ def _quest_destination_for_action(
     if not location_name or location_name not in self.state.world_data.locations:
         return {}
     return destination
-
