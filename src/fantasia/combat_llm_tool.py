@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Any
 
 from .character import Character
-from .status_effects import FLED_STATUS_ID, SURRENDERED_STATUS_ID, _merge_status_effect, _normalise_status_effect
+from .status_effects import FLED_STATUS_ID, SURRENDERED_STATUS_ID, canonical_status_effect_id, _merge_status_effect, _normalise_status_effect
 
 
 class CombatToolName(str, Enum):
@@ -102,7 +102,9 @@ def combat_tool_prompt_instruction() -> str:
         "Use accept_player_surrender or capture_player to end combat after accepting surrender. "
         "Use reject_player_surrender only when combat continues. Use npc_surrender when the "
         "opponent yields, npc_flee when the opponent escapes, apply_combat_status for combat-only "
-        "conditions, and combat_end for a final truce, capture, or other non-damage end."
+        "conditions, and combat_end for a final truce, capture, or other non-damage end. "
+        "For apply_combat_status, arguments must contain status_effects or status_effect with explicit effect_id; "
+        "status effects without effect_id are ignored."
     )
 
 
@@ -117,54 +119,24 @@ def combat_response_tool_calls(response: Any, *, source: str = "") -> list[dict[
     if not isinstance(response, dict):
         return []
     calls: list[dict[str, Any]] = []
-    raw_tools: list[Any] = []
-    for key in ("tool_judgements", "tool_judgments", "tool_confidences", "combat_tool_judgements", "tools"):
-        value = response.get(key)
-        if isinstance(value, list):
-            raw_tools.extend(value)
+    raw_tools = response.get("tool_judgements")
+    if not isinstance(raw_tools, list):
+        return []
     for raw in raw_tools:
-        confidence = 0.0
-        if isinstance(raw, str):
-            name = raw
-            args: Any = {}
-        elif isinstance(raw, dict):
-            name = str(raw.get("name") or raw.get("tool_name") or raw.get("tool") or raw.get("type") or "")
-            confidence = _confidence_value(raw.get("confidence") or raw.get("score") or raw.get("probability") or raw.get("judgement"))
-            args = raw.get("arguments")
-            if args is None:
-                args = raw.get("args")
-            if args is None:
-                args = raw.get("parameters")
-            if args is None:
-                args = raw.get("payload")
-            if args is None:
-                args = {
-                    key: value
-                    for key, value in raw.items()
-                    if key
-                    not in {
-                        "name",
-                        "tool_name",
-                        "tool",
-                        "type",
-                        "confidence",
-                        "score",
-                        "probability",
-                        "judgement",
-                        "arguments",
-                        "args",
-                        "parameters",
-                        "payload",
-                    }
-                }
-        else:
+        if not isinstance(raw, dict):
             continue
-        if confidence < 1.0:
+        name = str(raw.get("name") or "").strip()
+        if _confidence_value(raw.get("confidence")) != 1.0:
             continue
         canonical = _canonical_combat_tool_name(name)
         if canonical is None:
             continue
-        calls.append({"name": canonical.value, "arguments": _tool_arguments(args), "source": source})
+        args = raw.get("arguments")
+        if args is None:
+            args = {}
+        if not isinstance(args, dict):
+            continue
+        calls.append({"name": canonical.value, "arguments": dict(args), "source": source})
     return calls
 
 
@@ -376,14 +348,12 @@ def _tool_apply_combat_status(
     target_key = "opponent" if target in {"opponent", "enemy", "npc", "monster"} else "player"
     if target_key == "opponent" and isinstance(opponent, Character):
         engine._set_encounter_active_opponent(encounter, opponent)
-    status_value = (
-        payload.get("status")
-        or payload.get("status_effect")
-        or payload.get("status_effects")
-        or payload.get("condition")
-        or payload.get("conditions")
-        or payload
-    )
+    status_value = _explicit_combat_status_effects(payload.get("status_effects") or payload.get("status_effect"))
+    if not status_value:
+        return CombatToolResult(
+            CombatToolName.APPLY_COMBAT_STATUS,
+            event={"kind": "apply_combat_status", "target": target_key, "count": 0, "skipped": "missing_effect_id"},
+        )
     context_actor = opponent if target_key == "player" else engine.player_character()
     applied = engine._add_actor_status_effects(
         target_key,
@@ -401,6 +371,21 @@ def _tool_apply_combat_status(
         event={"kind": "apply_combat_status", "target": target_key, "count": len(applied)},
         acted=bool(applied),
     )
+
+
+def _explicit_combat_status_effects(value: Any) -> list[dict[str, Any]]:
+    items = value if isinstance(value, list) else [value]
+    effects: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        effect_id = canonical_status_effect_id(item.get("effect_id"))
+        if not effect_id:
+            continue
+        effect = dict(item)
+        effect["effect_id"] = effect_id
+        effects.append(effect)
+    return effects
 
 
 def _tool_combat_end(engine: Any, encounter: dict[str, Any], payload: dict[str, Any]) -> CombatToolResult:
@@ -421,69 +406,19 @@ def _encounter_opponents(engine: Any, encounter: dict[str, Any]) -> list[Charact
         return [opponent] if isinstance(opponent, Character) else []
 
 
-_COMBAT_TOOL_ALIASES = {
-    "combat_end": CombatToolName.COMBAT_END,
-    "end_combat": CombatToolName.COMBAT_END,
-    "finish_combat": CombatToolName.COMBAT_END,
-    "player_surrender": CombatToolName.PLAYER_SURRENDER,
-    "surrender_player": CombatToolName.PLAYER_SURRENDER,
-    "accept_player_surrender": CombatToolName.ACCEPT_PLAYER_SURRENDER,
-    "surrender_accept": CombatToolName.ACCEPT_PLAYER_SURRENDER,
-    "accept_surrender": CombatToolName.ACCEPT_PLAYER_SURRENDER,
-    "enemy_accept_player_surrender": CombatToolName.ACCEPT_PLAYER_SURRENDER,
-    "reject_player_surrender": CombatToolName.REJECT_PLAYER_SURRENDER,
-    "surrender_reject": CombatToolName.REJECT_PLAYER_SURRENDER,
-    "reject_surrender": CombatToolName.REJECT_PLAYER_SURRENDER,
-    "enemy_reject_player_surrender": CombatToolName.REJECT_PLAYER_SURRENDER,
-    "capture_player": CombatToolName.CAPTURE_PLAYER,
-    "npc_capture_player": CombatToolName.CAPTURE_PLAYER,
-    "player_capture": CombatToolName.CAPTURE_PLAYER,
-    "npc_surrender": CombatToolName.NPC_SURRENDER,
-    "enemy_surrender": CombatToolName.NPC_SURRENDER,
-    "opponent_surrender": CombatToolName.NPC_SURRENDER,
-    "npc_flee": CombatToolName.NPC_FLEE,
-    "enemy_flee": CombatToolName.NPC_FLEE,
-    "opponent_flee": CombatToolName.NPC_FLEE,
-    "apply_combat_status": CombatToolName.APPLY_COMBAT_STATUS,
-    "combat_status": CombatToolName.APPLY_COMBAT_STATUS,
-    "status": CombatToolName.APPLY_COMBAT_STATUS,
-}
-
-
 def _canonical_combat_tool_name(name: str) -> CombatToolName | None:
     key = str(name or "").strip().casefold().replace("-", "_").replace(" ", "_")
     if not key:
         return None
-    if key in _COMBAT_TOOL_ALIASES:
-        return _COMBAT_TOOL_ALIASES[key]
     try:
         return CombatToolName(key)
     except ValueError:
         return None
 
 
-def _tool_arguments(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        return dict(value)
-    if value is None:
-        return {}
-    return {"value": value}
-
-
 def _confidence_value(value: Any) -> float:
     if isinstance(value, bool):
-        return 1.0 if value else 0.0
+        return 0.0
     if isinstance(value, (int, float)):
         return max(0.0, min(1.0, float(value)))
-    if isinstance(value, str):
-        text = value.strip()
-        if text.endswith("%"):
-            try:
-                return max(0.0, min(1.0, float(text[:-1].strip()) / 100.0))
-            except ValueError:
-                return 0.0
-        try:
-            return max(0.0, min(1.0, float(text)))
-        except ValueError:
-            return 0.0
     return 0.0

@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from .status_effects import canonical_status_effect_id
+
 class LlmToolName(str, Enum):
     STATUS_EFFECTS = "status_effects"
     HP_EFFECTS = "hp_effects"
@@ -259,57 +261,27 @@ def response_tool_calls(response: Any, *, source: str = "") -> list[dict[str, An
     if not isinstance(response, dict):
         return []
     calls: list[dict[str, Any]] = []
-    raw_tools: list[Any] = []
-    for key in ("tool_judgements", "tool_judgments", "tool_confidences", "llm_tool_judgements", "tools"):
-        value = response.get(key)
-        if isinstance(value, list):
-            raw_tools.extend(value)
+    raw_tools = response.get("tool_judgements")
+    if not isinstance(raw_tools, list):
+        return []
     for raw in raw_tools:
-        confidence = 0.0
-        if isinstance(raw, str):
-            name = raw.strip()
-            args: Any = {}
-        elif isinstance(raw, dict):
-            name = str(raw.get("name") or raw.get("tool_name") or raw.get("tool") or raw.get("type") or "").strip()
-            confidence = _confidence_value(raw.get("confidence") or raw.get("score") or raw.get("probability") or raw.get("judgement"))
-            args = raw.get("arguments")
-            if args is None:
-                args = raw.get("args")
-            if args is None:
-                args = raw.get("parameters")
-            if args is None:
-                args = raw.get("payload")
-            if args is None:
-                args = {
-                    key: value
-                    for key, value in raw.items()
-                    if key
-                    not in {
-                        "name",
-                        "tool_name",
-                        "tool",
-                        "type",
-                        "confidence",
-                        "score",
-                        "probability",
-                        "judgement",
-                        "arguments",
-                        "args",
-                        "parameters",
-                        "payload",
-                    }
-                }
-        else:
+        if not isinstance(raw, dict):
             continue
-        if confidence < 1.0:
+        name = str(raw.get("name") or "").strip()
+        if _confidence_value(raw.get("confidence")) != 1.0:
             continue
         canonical = _canonical_tool_name(name)
         if not canonical:
             continue
+        args = raw.get("arguments")
+        if args is None:
+            args = {}
+        if not isinstance(args, dict):
+            continue
         calls.append(
             {
                 "name": canonical.value,
-                "arguments": _tool_arguments(args),
+                "arguments": dict(args),
                 "source": source,
             }
         )
@@ -323,7 +295,7 @@ def tool_effect_payload(response: Any) -> dict[str, Any]:
             tool_name = LlmToolName(item["name"])
         except ValueError:
             continue
-        args = _tool_arguments(item.get("arguments"))
+        args = item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
         _merge_tool_payload(payload, tool_name, args)
     return payload
 
@@ -345,6 +317,8 @@ def tool_prompt_instruction() -> str:
         "Each tool judgement item must be {\"name\":\"tool_name\",\"confidence\":0.0-1.0,\"arguments\":{...},\"reason\":\"...\"}. "
         "The game executes only tool judgements whose confidence is exactly 1.0; 0.99 or missing confidence is not executed. "
         "Set confidence to 1.0 only when the state change is definitely intended by the action and current context. "
+        "For the status_effects tool, arguments must be {\"status_effects\":[{\"effect_id\":\"HP_Damage/SP_Damage/Paralysis/Silence/Psychosis/Inoperable/SendLLM/Atk_Mod/Def_Mod\",...}]}; "
+        "status effects without explicit effect_id are ignored. "
         "Supported tools: move_player, status_effects, hp_effects, sp_effects, gold_delta, hunger_delta, "
         "exp_delta, time_passage, game_over, npc_change_relationship, npc_move, npc_join_party, "
         "npc_remove_party, npc_dead, npc_capture_player, npc_update_memory, npc_update_description, "
@@ -511,131 +485,21 @@ def _merge_item_event(target: dict[str, Any], event: dict[str, Any]) -> None:
             target.setdefault(key, []).append(values)
 
 
-_TOOL_ALIASES = {
-    "status": LlmToolName.STATUS_EFFECTS,
-    "status_effect": LlmToolName.STATUS_EFFECTS,
-    "status_effects": LlmToolName.STATUS_EFFECTS,
-    "hp": LlmToolName.HP_EFFECTS,
-    "hp_effect": LlmToolName.HP_EFFECTS,
-    "hp_effects": LlmToolName.HP_EFFECTS,
-    "sp": LlmToolName.SP_EFFECTS,
-    "sp_effect": LlmToolName.SP_EFFECTS,
-    "sp_effects": LlmToolName.SP_EFFECTS,
-    "gold": LlmToolName.GOLD_DELTA,
-    "gold_delta": LlmToolName.GOLD_DELTA,
-    "money_delta": LlmToolName.GOLD_DELTA,
-    "hunger": LlmToolName.HUNGER_DELTA,
-    "hunger_delta": LlmToolName.HUNGER_DELTA,
-    "exp": LlmToolName.EXP_DELTA,
-    "xp": LlmToolName.EXP_DELTA,
-    "exp_delta": LlmToolName.EXP_DELTA,
-    "experience_delta": LlmToolName.EXP_DELTA,
-    "time": LlmToolName.TIME_PASSAGE,
-    "time_passage": LlmToolName.TIME_PASSAGE,
-    "advance_time": LlmToolName.TIME_PASSAGE,
-    "time_passed": LlmToolName.TIME_PASSAGE,
-    "game_over": LlmToolName.GAME_OVER,
-    "bad_end": LlmToolName.GAME_OVER,
-    "npc_change_relationship": LlmToolName.NPC_CHANGE_RELATIONSHIP,
-    "npc_relationship": LlmToolName.NPC_CHANGE_RELATIONSHIP,
-    "relationship_change": LlmToolName.NPC_CHANGE_RELATIONSHIP,
-    "affinity_change": LlmToolName.NPC_CHANGE_RELATIONSHIP,
-    "npc_move": LlmToolName.NPC_MOVE,
-    "npc_movement": LlmToolName.NPC_MOVE,
-    "move_npc": LlmToolName.NPC_MOVE,
-    "npc_join_party": LlmToolName.NPC_JOIN_PARTY,
-    "join_party": LlmToolName.NPC_JOIN_PARTY,
-    "npc_remove_party": LlmToolName.NPC_REMOVE_PARTY,
-    "remove_party": LlmToolName.NPC_REMOVE_PARTY,
-    "npc_leave_party": LlmToolName.NPC_REMOVE_PARTY,
-    "npc_dead": LlmToolName.NPC_DEAD,
-    "npc_death": LlmToolName.NPC_DEAD,
-    "kill_npc": LlmToolName.NPC_DEAD,
-    "npc_capture_player": LlmToolName.NPC_CAPTURE_PLAYER,
-    "capture_player": LlmToolName.NPC_CAPTURE_PLAYER,
-    "npc_update_memory": LlmToolName.NPC_UPDATE_MEMORY,
-    "memory_update": LlmToolName.NPC_UPDATE_MEMORY,
-    "memory_updates": LlmToolName.NPC_UPDATE_MEMORY,
-    "npc_update_description": LlmToolName.NPC_UPDATE_DESCRIPTION,
-    "npc_description_update": LlmToolName.NPC_UPDATE_DESCRIPTION,
-    "world_home_construction": LlmToolName.WORLD_HOME_CONSTRUCTION,
-    "home_construction": LlmToolName.WORLD_HOME_CONSTRUCTION,
-    "world_mainnode_reveal": LlmToolName.WORLD_MAINNODE_REVEAL,
-    "mainnode_reveal": LlmToolName.WORLD_MAINNODE_REVEAL,
-    "world_subnode_reveal": LlmToolName.WORLD_SUBNODE_REVEAL,
-    "subnode_reveal": LlmToolName.WORLD_SUBNODE_REVEAL,
-    "subnode_map_reveal": LlmToolName.WORLD_SUBNODE_REVEAL,
-    "crime": LlmToolName.CRIME_RISK,
-    "crime_risk": LlmToolName.CRIME_RISK,
-    "item_add": LlmToolName.ITEM_ADD,
-    "item_remove": LlmToolName.ITEM_REMOVE,
-    "item_equip": LlmToolName.ITEM_EQUIP,
-    "item_unequip": LlmToolName.ITEM_UNEQUIP,
-    "visual": LlmToolName.VISUAL_INTENT,
-    "visual_intent": LlmToolName.VISUAL_INTENT,
-    "move": LlmToolName.MOVE_PLAYER,
-    "movement": LlmToolName.MOVE_PLAYER,
-    "move_player": LlmToolName.MOVE_PLAYER,
-    "start_combat": LlmToolName.START_COMBAT,
-    "combat": LlmToolName.START_COMBAT,
-    "discover_location": LlmToolName.DISCOVER_LOCATION,
-    "discovered_location": LlmToolName.DISCOVER_LOCATION,
-    "generate_quest": LlmToolName.GENERATE_QUEST,
-    "generated_quest": LlmToolName.GENERATE_QUEST,
-    "quest": LlmToolName.GENERATE_QUEST,
-    "spawn_npc": LlmToolName.SPAWN_NPC,
-    "npcs": LlmToolName.SPAWN_NPC,
-    "spawn_enemy": LlmToolName.SPAWN_ENEMY,
-    "enemies": LlmToolName.SPAWN_ENEMY,
-    "spawn_boss": LlmToolName.SPAWN_BOSS,
-    "boss_npc": LlmToolName.SPAWN_BOSS,
-    "request_npc_generation": LlmToolName.REQUEST_NPC_GENERATION,
-    "new_npc_request": LlmToolName.REQUEST_NPC_GENERATION,
-    "new_npc_requests": LlmToolName.REQUEST_NPC_GENERATION,
-    "quest_event": LlmToolName.QUEST_EVENT,
-    "event": LlmToolName.QUEST_EVENT,
-    "quest_progress": LlmToolName.QUEST_PROGRESS,
-    "quest_update": LlmToolName.QUEST_UPDATE,
-    "npc_action": LlmToolName.NPC_ACTION,
-}
-
-
 def _canonical_tool_name(name: str) -> LlmToolName | None:
     key = str(name or "").strip().casefold().replace("-", "_").replace(" ", "_")
     if not key:
         return None
-    if key in _TOOL_ALIASES:
-        return _TOOL_ALIASES[key]
     try:
         return LlmToolName(key)
     except ValueError:
         return None
 
 
-def _tool_arguments(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        return dict(value)
-    if value is None:
-        return {}
-    return {"value": value}
-
-
 def _confidence_value(value: Any) -> float:
     if isinstance(value, bool):
-        return 1.0 if value else 0.0
+        return 0.0
     if isinstance(value, (int, float)):
         return max(0.0, min(1.0, float(value)))
-    if isinstance(value, str):
-        text = value.strip()
-        if text.endswith("%"):
-            try:
-                return max(0.0, min(1.0, float(text[:-1].strip()) / 100.0))
-            except ValueError:
-                return 0.0
-        try:
-            return max(0.0, min(1.0, float(text)))
-        except ValueError:
-            return 0.0
     return 0.0
 
 
@@ -681,7 +545,9 @@ def _merge_tool_payload(payload: dict[str, Any], tool_name: LlmToolName, args: d
         payload["quest_update"] = _single_or_value(args, "quest_update", "update", "value")
         return
     if tool_name == LlmToolName.STATUS_EFFECTS:
-        _merge_or_wrap(payload, args, "status_effects", ("effects", "add", "apply"))
+        effects = _explicit_status_effects(args.get("status_effects"))
+        if effects:
+            payload["status_effects"] = effects
         return
     if tool_name == LlmToolName.HP_EFFECTS:
         _merge_or_wrap(payload, args, "hp_effects", ("effects",))
@@ -833,6 +699,21 @@ def _item_tool_payload(source: dict[str, Any], *keys: str) -> Any:
     entry = dict(source)
     entry.setdefault("item", value)
     return entry
+
+
+def _explicit_status_effects(value: Any) -> list[dict[str, Any]]:
+    items = value if isinstance(value, list) else [value]
+    effects: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        effect_id = canonical_status_effect_id(item.get("effect_id"))
+        if not effect_id:
+            continue
+        effect = dict(item)
+        effect["effect_id"] = effect_id
+        effects.append(effect)
+    return effects
 
 
 def _append_payload_list(payload: dict[str, Any], key: str, value: Any) -> None:

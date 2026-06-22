@@ -88,8 +88,10 @@ APP_BUTTON_BORDER = "#f2f2f2"
 UI_BUTTON_ICON_DIR = ASSETS_DIR / "ui" / "buttons"
 UI_TOOL_ICON_DISPLAY_SIZE = 56
 UI_TOOL_BUTTON_SIZE = 64
-UI_NPC_ROSTER_MIN_HEIGHT = 300
+UI_NPC_ROSTER_MIN_HEIGHT = 240
 UI_PLAYER_SLOT_HEIGHT = 78
+UI_COMPANION_SLOT_HEIGHT = UI_PLAYER_SLOT_HEIGHT * 2
+UI_PARTY_COMPANION_LIMIT = 2
 BUILTIN_FONT_PATH = "assets/fonts/JF-Dot-MPlus10.ttf"
 BUILTIN_FONT_NAME = "JF-Dot-MPlus10"
 CRAFT_INTENT_IDS = ("auto", "mix", "synthesis", "smithing", "alchemy", "cooking")
@@ -1660,7 +1662,7 @@ class FantasiaApp(tk.Tk):
         right_roster.columnconfigure(0, weight=1)
         right_roster.rowconfigure(0, weight=1, minsize=UI_NPC_ROSTER_MIN_HEIGHT)
         right_roster.rowconfigure(1, weight=0, minsize=UI_PLAYER_SLOT_HEIGHT)
-        right_roster.rowconfigure(2, weight=0, minsize=UI_PLAYER_SLOT_HEIGHT)
+        right_roster.rowconfigure(2, weight=0, minsize=UI_COMPANION_SLOT_HEIGHT)
         right_roster.rowconfigure(3, weight=0, minsize=GAME_STATUS_PANEL_HEIGHT)
         self.npc_roster_canvas = tk.Canvas(right_roster, bg=APP_PANEL_BG, highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=2)
         self.npc_roster_canvas.grid(row=0, column=0, sticky="nsew", pady=(0, 14))
@@ -1670,7 +1672,7 @@ class FantasiaApp(tk.Tk):
         self.player_roster_canvas.grid(row=1, column=0, sticky="nsew", pady=(14, 4))
         self.player_roster_canvas.bind("<Configure>", lambda _event: self._render_actor_rosters())
         self.player_roster_canvas.bind("<Button-1>", self._on_roster_click)
-        self.companion_roster_canvas = tk.Canvas(right_roster, bg=APP_PANEL_BG, height=UI_PLAYER_SLOT_HEIGHT, highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=2)
+        self.companion_roster_canvas = tk.Canvas(right_roster, bg=APP_PANEL_BG, height=UI_COMPANION_SLOT_HEIGHT, highlightbackground="#d8d4cf", highlightcolor="#d8d4cf", highlightthickness=2)
         self.companion_roster_canvas.grid(row=2, column=0, sticky="nsew", pady=(4, 8))
         self.companion_roster_canvas.bind("<Configure>", lambda _event: self._render_actor_rosters())
         self.companion_roster_canvas.bind("<Button-1>", self._on_roster_click)
@@ -2337,7 +2339,7 @@ class FantasiaApp(tk.Tk):
             anchor="w",
             font=self.ui_fonts.bold(-3),
         ).grid(row=0, column=0, sticky="w", padx=(0, 8))
-        name_var = tk.StringVar(value=str(current_entry.get("name") or current_entry.get("skill") or current_entry.get("trait") or ""))
+        name_var = tk.StringVar(value=str(current_entry.get("name") or ""))
         name_entry = tk.Entry(
             top,
             textvariable=name_var,
@@ -2380,7 +2382,7 @@ class FantasiaApp(tk.Tk):
             font=self.ui_fonts.bold(-2),
         ).grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 0))
         description_text = self._instant_text(description_frame, 1, 0, height=10, padx=8, pady=(4, 8))
-        current_description = str(current_entry.get("desc") or current_entry.get("description") or current_entry.get("effect") or "").strip()
+        current_description = str(current_entry.get("desc") or "").strip()
         if current_description:
             description_text.insert("1.0", current_description)
 
@@ -2451,7 +2453,7 @@ class FantasiaApp(tk.Tk):
                 )
 
             def done(entries) -> None:
-                normalized = _normalise_character_skills(entries) if is_skill else _character_trait_entries(entries)
+                normalized = _normalise_character_skills(entries)
                 if not normalized:
                     raise ValueError(_ui_text(self.config_data, "character_entry_empty_result"))
                 candidates: list[dict[str, object]] = []
@@ -2460,7 +2462,7 @@ class FantasiaApp(tk.Tk):
                     if seed_name:
                         entry["name"] = seed_name
                     if seed_description:
-                        entry["desc" if is_skill else "description"] = seed_description
+                        entry["desc"] = seed_description
                     entry["element"] = element_id
                     normalized_entry = _normalise_character_skills([entry])
                     if normalized_entry:
@@ -2478,10 +2480,10 @@ class FantasiaApp(tk.Tk):
                 if generate_btn.winfo_exists():
                     generate_btn.configure(text=_ui_text(self.config_data, "character_close"), command=dialog.destroy)
                 self._render_character_preview()
-                kind_label = _ui_text(self.config_data, "character_skills" if is_skill else "character_traits").rstrip(":：")
+                kind_label = _ui_text(self.config_data, "character_skills").rstrip(":：")
                 self._append_log("\n" + _ui_text(self.config_data, "log_character_generated").format(kind=kind_label) + "\n")
 
-            kind_label = _ui_text(self.config_data, "character_skills" if is_skill else "character_traits").rstrip(":：")
+            kind_label = _ui_text(self.config_data, "character_skills").rstrip(":：")
             self._run_task(_ui_text(self.config_data, "character_generating_entries").format(kind=kind_label), task, done)
 
         generate_btn = self._instant_button(
@@ -2753,9 +2755,8 @@ class FantasiaApp(tk.Tk):
         self.roster_image_refs = []
         self._draw_roster_canvas(self.npc_roster_canvas, self._npc_roster_items(), "NPC / ENEMY")
         player_items = self._player_roster_items()
-        player_canvases = getattr(self, "player_roster_canvases", [self.player_roster_canvas])
-        for index, canvas in enumerate(player_canvases):
-            self._draw_roster_canvas(canvas, player_items[index:index + 1], "PLAYER" if index == 0 else "ALLY")
+        self._draw_roster_canvas(self.player_roster_canvas, player_items[:1], "PLAYER")
+        self._draw_roster_canvas(self.companion_roster_canvas, player_items[1:1 + UI_PARTY_COMPANION_LIMIT], "ALLY")
 
     def _ellipsize_canvas_text(self, text: str, font_spec: object, max_width: int) -> str:
         value = " ".join(str(text or "").split())
@@ -2801,8 +2802,15 @@ class FantasiaApp(tk.Tk):
                 font=self.ui_fonts.bold(-2),
             )
             return
-        visible_items = items[:1] if is_party_panel else items[:3]
-        row_height = height if is_party_panel else max(76, min(128, height // max(1, min(len(items), 3))))
+        visible_limit = UI_PARTY_COMPANION_LIMIT if title == "ALLY" else 1 if title == "PLAYER" else 3
+        visible_items = items[:visible_limit]
+        row_count = max(1, min(len(visible_items), visible_limit))
+        if title == "PLAYER":
+            row_height = height
+        elif title == "ALLY":
+            row_height = max(76, min(128, height // UI_PARTY_COMPANION_LIMIT))
+        else:
+            row_height = max(76, min(128, height // row_count))
         for index, item in enumerate(visible_items):
             top = index * row_height
             bottom = min(height, top + row_height)
@@ -2926,7 +2934,7 @@ class FantasiaApp(tk.Tk):
                 self.engine._ensure_character_runtime_data(character)
             data = character.to_dict() if character else {}
             if kind == "companion":
-                companion = self._companion_character_dict()
+                companion = self._companion_character_dict(uuid or name)
                 data = {**data, **companion} if data else companion
             if kind == "player":
                 player = self._player_character_dict()
@@ -3124,28 +3132,56 @@ class FantasiaApp(tk.Tk):
         if not player:
             return []
         items = [self._character_roster_item(player, kind="player")]
-        companion = self._companion_character_dict()
-        if companion:
+        for companion in self._companion_character_dicts():
             items.append(self._character_roster_item(companion, kind="companion"))
         return items
 
-    def _companion_character_dict(self) -> dict[str, object]:
+    def _companion_character_dicts(self) -> list[dict[str, object]]:
         state = self.engine.state
-        for uuid in state.party_uuids[1:2]:
-            character = state.world_data.character(str(uuid))
+        result: list[dict[str, object]] = []
+        seen: set[str] = set()
+
+        def append_ref(ref: str, party_entry: dict[str, object] | None = None) -> None:
+            ref = str(ref or "").strip()
+            if not ref:
+                return
+            character = state.world_data.character(ref)
             if character:
-                return character.to_dict()
-        if len(state.party) > 1 and isinstance(state.party[1], dict):
-            party_entry = dict(state.party[1])
+                key = str(character.uuid or character.name)
+                if key in seen:
+                    return
+                seen.add(key)
+                data = character.to_dict()
+                if party_entry:
+                    data.update(party_entry)
+                result.append(data)
+                return
+            if party_entry:
+                key = str(party_entry.get("uuid") or party_entry.get("name") or party_entry.get("character_name") or ref)
+                if key in seen:
+                    return
+                seen.add(key)
+                result.append(dict(party_entry))
+
+        for uuid in state.party_uuids[1:1 + UI_PARTY_COMPANION_LIMIT]:
+            append_ref(str(uuid))
+        for raw_entry in state.party[1:1 + UI_PARTY_COMPANION_LIMIT]:
+            if not isinstance(raw_entry, dict):
+                continue
+            party_entry = dict(raw_entry)
             name = str(party_entry.get("name") or party_entry.get("character_name") or "").strip()
             uuid = str(party_entry.get("uuid") or "").strip()
-            character = state.world_data.character(uuid or name)
-            if character:
-                data = character.to_dict()
-                data.update(party_entry)
-                return data
-            return party_entry
-        return {}
+            append_ref(uuid or name, party_entry)
+        return result[:UI_PARTY_COMPANION_LIMIT]
+
+    def _companion_character_dict(self, ref: str = "") -> dict[str, object]:
+        ref = str(ref or "").strip()
+        companions = self._companion_character_dicts()
+        if ref:
+            for companion in companions:
+                if ref in {str(companion.get("uuid") or ""), str(companion.get("name") or ""), str(companion.get("character_name") or "")}:
+                    return companion
+        return companions[0] if companions else {}
 
     def _character_roster_item(self, character_data: dict[str, object], *, kind: str) -> dict[str, object]:
         player = character_data
@@ -6914,7 +6950,7 @@ def _parse_character_skills(text: str) -> list[dict[str, object]]:
             "usesp": max(1, min(12, _safe_int(parts[3], 1) if len(parts) > 3 else 1)),
             "power": power,
             "ability": parts[5].lower() if len(parts) > 5 and parts[5] else "str",
-            "type": [{"type": item} for item in _skill_effect_type_list(parts[6] if len(parts) > 6 else "damage_hp_single")],
+            "type": [{"type": item} for item in _skill_effect_type_list(parts[6] if len(parts) > 6 else "")],
         }
         skills.append(skill)
     return _normalise_character_skills(skills)
@@ -6942,7 +6978,9 @@ def _format_character_skills(skills: list[dict[str, object]]) -> str:
         cost = skill.get("usesp", 1)
         power = _entry_power(skill)
         ability = str(skill.get("ability") or "str")
-        effect_types = ",".join(_skill_effect_type_list(skill.get("type")) or ["damage_hp_single"])
+        effect_types = ",".join(_skill_effect_type_list(skill.get("type")))
+        if not effect_types:
+            continue
         lines.append(f"{name} | {category} | {description} | {cost} | {power} | {ability} | {effect_types}".rstrip(" |"))
     return "\n".join(lines)
 
@@ -6956,8 +6994,6 @@ def _format_character_entry_names(entries: list[dict[str, object]]) -> str:
 
 
 def _character_entry_description(entry: dict[str, object], kind: str) -> str:
-    if kind == "skills":
-        return str(entry.get("desc") or entry.get("description") or entry.get("effect") or "").strip()
     return str(entry.get("desc") or "").strip()
 
 
@@ -7154,7 +7190,9 @@ def _normalise_character_skills(skills: list[dict[str, object]]) -> list[dict[st
         if not name:
             continue
         power = _entry_power(raw)
-        effect_types = _skill_effect_type_list(raw.get("type")) or ["damage_hp_single"]
+        effect_types = _skill_effect_type_list(raw.get("type"))
+        if not effect_types:
+            continue
         skill = {
             "name": name,
             "desc": str(raw.get("desc") or "").strip(),
@@ -7478,7 +7516,7 @@ def _format_named_description_section(title: str, value: object) -> list[str]:
     return _format_display_entry_section(
         title,
         value,
-        description_keys=("desc", "description", "effect_text", "display_effect", "effect", "summary", "usefulness", "text", "note", "details"),
+        description_keys=("desc",),
     )
 
 

@@ -413,6 +413,10 @@ SETTLEMENT_OPTIONAL_SHOP_TYPES = (
 )
 
 DANGER_SUBNODE_RANDOM_ENCOUNTER_CHANCE = 0.20
+PARTY_COMPANION_LIMIT = 2
+INITIAL_ROUTE_WORLD_LOCATION_COUNT = 10
+QUEST_BOARD_REGEN_MIN = 3
+QUEST_BOARD_REGEN_MAX = 5
 
 SHOP_FACILITY_PRICE_MULTIPLIERS = {
     "black_market": 3.0,
@@ -768,7 +772,7 @@ class GameEngine:
         requested_world_name = world_name.strip()
         player = (player_character.name if player_character else "").strip() or "Player"
         premise_text = premise.strip() or "霧深い辺境と忘れられた遺跡を巡る幻想RPG"
-        target_location_count = _world_location_target_count(location_count)
+        target_location_count = INITIAL_ROUTE_WORLD_LOCATION_COUNT
         customization = _world_customization_settings(crime_risk, enemy_strength)
 
         self._emit_world_generation_progress(progress_callback, "content_check", "内容確認中", 0, 100)
@@ -809,7 +813,6 @@ class GameEngine:
             progress_start=26,
             progress_end=48,
         )
-        self._ensure_world_generation_dungeon_content(world, premise_text, progress_callback=progress_callback, progress_value=48)
         self._recalculate_world_graph_layout(world)
 
         self._emit_world_generation_progress(progress_callback, "story", "ストーリーを生成中", 50, 100)
@@ -847,12 +850,19 @@ class GameEngine:
         self._emit_world_generation_progress(progress_callback, "characters", "NPCを生成中", 72, 100)
         self._enrich_initial_characters(player, premise_text, world, progress_callback=progress_callback, progress_start=72, progress_end=84)
         self._emit_world_generation_progress(progress_callback, "quests", "クエストと報酬を生成中", 84, 100)
-        settlement_quests = self._generate_settlement_quests(player, world, settlement_location)
+        initial_quest_count = self._quest_board_target_count(world, settlement_location, day=1)
+        settlement_quests = self._generate_settlement_quests(player, world, settlement_location, target_count=initial_quest_count)
         self._apply_settlement_quests(world, settlement_quests, settlement_location)
+        world.extra.setdefault("quest_board_generation", {})[settlement_location] = {
+            "day": 1,
+            "count": initial_quest_count,
+            "source": "world_generation_initial",
+        }
         world.history.append(
             {
                 "manager": "settlement_quest_generator",
                 "location": settlement_location,
+                "count": initial_quest_count,
                 "response": _strip_response_metadata(settlement_quests),
             }
         )
@@ -969,56 +979,46 @@ class GameEngine:
         target_count: int,
         customization: dict[str, str],
     ) -> None:
-        rng = random.Random(f"local-world-skeleton|{world.world_name}|{premise}|{target_count}")
-        coords = self._local_world_grid_coordinates(target_count, rng)
-        coord_index = {coord: index for index, coord in enumerate(coords)}
-        max_distance = max((max(abs(x), abs(y)) for x, y in coords), default=0)
-        final_coord = self._choose_final_destination_coord(coords, rng)
-        settlement_coords = self._choose_settlement_coords(coords, final_coord, target_count, rng)
+        target_count = INITIAL_ROUTE_WORLD_LOCATION_COUNT
+        rng = random.Random(f"route-world-skeleton|{world.world_name}|{premise}")
+        route_slots = [
+            ("settlement", "settlement", "starting_town", "starting_settlement", "未命名の街00"),
+            ("single", "road", "road", "route", "未命名の街道01"),
+            ("single", "road", "crossroad", "route", "未命名の分かれ道02"),
+            ("settlement", "settlement", "village", "settlement", "未命名の村03"),
+            ("single", "road", "road", "route", "未命名の街道04"),
+            ("single", "wilderness", "plain", "route", "未命名の野05"),
+            ("settlement", "settlement", "town", "settlement", "未命名の街06"),
+            ("single", "road", "road", "route", "未命名の街道07"),
+            ("single", "landmark", "landmark", "route", "未命名の目印08"),
+            ("single", "landmark", "final_destination", "final_destination", "未命名の最終地点09"),
+        ]
+        coords = [(index, 0) for index in range(len(route_slots))]
+        max_distance = len(route_slots) - 1
         specs: list[dict[str, Any]] = []
         graph = {
             "edge_hours": WORLD_MAP_EDGE_HOURS,
             "target_count": target_count,
-            "generation_mode": "local_skeleton",
+            "generation_mode": "route_skeleton",
             "grid_origin": [0, 0],
-            "danger_rule": "danger is rolled from Chebyshev grid distance from the starting town",
+            "danger_rule": "danger is rolled from route distance from the starting town",
             "nodes": {},
             "edges": [],
         }
         world.extra["location_graph"] = graph
         world.extra["local_world_skeleton"] = {
-            "version": 1,
+            "version": 2,
             "target_count": target_count,
             "max_grid_distance": max_distance,
             "final_destination_concept": str((world.extra.get("raw_create_world_theme") or {}).get("final_destination_concept") or ""),
             "locations": specs,
         }
 
-        for index, (grid_x, grid_y) in enumerate(coords):
-            distance = max(abs(grid_x), abs(grid_y))
+        for index, slot in enumerate(route_slots):
+            category, kind, subtype, role, placeholder = slot
+            grid_x, grid_y = coords[index]
+            distance = index
             slot_id = f"loc_{index:03d}"
-            if index == 0:
-                category = "settlement"
-                kind = "settlement"
-                subtype = "starting_town"
-                role = "starting_settlement"
-                placeholder = "未命名の街00"
-            elif (grid_x, grid_y) == final_coord:
-                category = "dungeon"
-                kind = "dungeon"
-                subtype = "final_destination"
-                role = "final_destination"
-                placeholder = f"未命名の最終領域{index:02d}"
-            elif (grid_x, grid_y) in settlement_coords:
-                category = "settlement"
-                kind = "settlement"
-                subtype = "village"
-                role = "settlement"
-                placeholder = f"未命名の村{index:02d}"
-            else:
-                category, kind, subtype = self._local_world_node_category(distance, rng)
-                role = category
-                placeholder = self._local_world_placeholder_name(category, subtype, index)
             danger = self._local_world_danger_for_distance(distance, rng, seed=f"{world.world_name}:{slot_id}")
             if role == "final_destination":
                 danger = max(danger, rng.randint(WORLD_FINAL_DANGER_MIN, WORLD_FINAL_DANGER_MAX))
@@ -1056,11 +1056,7 @@ class GameEngine:
             location.flags["discovered"] = index == 0
             if category == "settlement":
                 location.flags["settlement"] = True
-            if category == "dungeon":
-                location.flags["dungeon"] = True
-                self._install_local_dungeon_subnode_graph(location, rng)
-            else:
-                self._ensure_location_subnode_graph(world, location.name)
+            self._ensure_location_subnode_graph(world, location.name)
             if role == "final_destination":
                 location.flags["final_destination"] = True
             self._set_location_graph_node(world, location.name, kind=kind, danger=danger, location=location)
@@ -1076,13 +1072,22 @@ class GameEngine:
                 "grid_x": grid_x,
                 "grid_y": grid_y,
                 "grid_distance": distance,
-                "coord_index": coord_index[(grid_x, grid_y)],
+                "coord_index": index,
             }
             specs.append(spec)
             if role == "starting_settlement":
                 world.starting_location = location.name
 
-        self._connect_local_world_skeleton_edges(world, specs, coords, rng)
+        endpoint_use: dict[str, int] = {}
+        for previous, current in zip(specs, specs[1:]):
+            self._connect_world_locations_by_subnodes(
+                world,
+                previous["name"],
+                current["name"],
+                self._local_external_subnode_for_spec(world, previous, endpoint_use),
+                self._local_external_subnode_for_spec(world, current, endpoint_use),
+                kind="main_route",
+            )
         self._set_starting_settlement_gate(world)
 
     def _local_world_grid_coordinates(self, target_count: int, rng: random.Random) -> list[tuple[int, int]]:
@@ -1437,7 +1442,8 @@ class GameEngine:
         settlement_specs = [spec for spec in specs if isinstance(spec, dict) and spec.get("category") == "settlement"]
         single_specs = [spec for spec in specs if isinstance(spec, dict) and spec.get("category") == "single"]
         dungeon_specs = [spec for spec in specs if isinstance(spec, dict) and spec.get("category") == "dungeon"]
-        total_steps = 1 + max(1, (len(single_specs) + 2) // 3) + max(1, len(dungeon_specs))
+        total_steps = (1 if settlement_specs else 0) + ((len(single_specs) + 2) // 3 if single_specs else 0) + len(dungeon_specs)
+        total_steps = max(1, total_steps)
         step = 0
 
         self._describe_local_world_settlements(player_name, premise, world, theme, settlement_specs)
@@ -2594,6 +2600,7 @@ class GameEngine:
             return []
         settlement = self._current_settlement_location()
         settlement_name = settlement.name if settlement else self.state.current_location
+        self._refresh_quest_board_for_settlement(settlement_name)
         quests: list[QuestData] = []
         for quest in self.state.world_data.quests:
             if quest.status not in {"available", ""}:
@@ -2604,6 +2611,52 @@ class GameEngine:
                 continue
             quests.append(quest)
         return quests
+
+    def _quest_board_target_count(self, world: WorldData, settlement_name: str, *, day: int | None = None) -> int:
+        day_value = max(1, int(day or 1))
+        rng = random.Random(f"quest-board-count|{world.world_name}|{settlement_name}|{day_value}")
+        return rng.randint(QUEST_BOARD_REGEN_MIN, QUEST_BOARD_REGEN_MAX)
+
+    def _refresh_quest_board_for_settlement(self, settlement_name: str) -> None:
+        settlement_name = str(settlement_name or "").strip()
+        if not settlement_name:
+            return
+        world = self.state.world_data
+        day = self.current_absolute_day()
+        board_state = world.extra.setdefault("quest_board_generation", {})
+        if not isinstance(board_state, dict):
+            board_state = {}
+            world.extra["quest_board_generation"] = board_state
+        record = board_state.get(settlement_name)
+        if isinstance(record, dict) and _safe_int(record.get("day"), 0) == day:
+            return
+        world.quests = [
+            quest
+            for quest in world.quests
+            if not (
+                quest.status in {"available", ""}
+                and not quest.flags.get("wild")
+                and str(quest.flags.get("source") or "") == "settlement_quest_generator"
+                and (not quest.neighboring_settlement or quest.neighboring_settlement == settlement_name)
+            )
+        ]
+        target_count = self._quest_board_target_count(world, settlement_name, day=day)
+        response = self._generate_settlement_quests(self.state.player_name, world, settlement_name, target_count=target_count)
+        self._apply_settlement_quests(world, response, settlement_name)
+        board_state[settlement_name] = {
+            "day": day,
+            "count": target_count,
+            "source": "quest_board_open",
+        }
+        world.history.append(
+            {
+                "manager": "settlement_quest_generator",
+                "location": settlement_name,
+                "count": target_count,
+                "trigger": "quest_board_open",
+                "response": _strip_response_metadata(response),
+            }
+        )
 
     def travel_to_facility(self, facility_name: str) -> str:
         self.dismiss_active_cg()
@@ -5682,6 +5735,16 @@ class GameEngine:
         graph = world.extra.get("location_graph")
         if (
             isinstance(graph, dict)
+            and graph.get("generation_mode") == "route_skeleton"
+            and isinstance(graph.get("nodes"), dict)
+            and isinstance(graph.get("edges"), list)
+        ):
+            for name, location in world.locations.items():
+                self._set_location_graph_node(world, name, location=location)
+            self._recalculate_world_graph_layout(world)
+            return graph
+        if (
+            isinstance(graph, dict)
             and isinstance(graph.get("nodes"), dict)
             and isinstance(graph.get("edges"), list)
             and (response is None or len(graph.get("nodes", {})) >= target_count)
@@ -7726,6 +7789,9 @@ class GameEngine:
             destination_description=str(target.get("description") or ""),
             route_text=f"{location_name}内の{current_id}から{target_id}へ移動する。",
         )
+        time_event: dict[str, Any] = {}
+        if _is_dungeon_location(self.state.world_data.locations.get(location_name)):
+            time_event = self._advance_world_time(1, source="dungeon_subnode_travel", reason="dungeon room travel", append_log=False)
         self._set_current_subnode(location_name, target_id)
         self._activate_facility_for_subnode(location_name, target)
         narration = str(narrator_response.get("narration") or f"{name}\u3078\u79fb\u52d5\u3057\u305f\u3002")
@@ -7750,6 +7816,9 @@ class GameEngine:
         if not self._active_encounter():
             self.state.flags["screen_mode"] = "exploration"
         self._append_turn("\u30b5\u30d6\u30de\u30c3\u30d7\u79fb\u52d5", narration, location_name, choices, input_type="choice")
+        if time_event.get("line"):
+            self.state.display_log.append(str(time_event["line"]))
+        self.state.display_log.extend(str(item) for item in time_event.get("companion_lines", []) if item)
         self._apply_visual_intent(narrator_response, "subnode_travel", location_name, location_name)
         self.save_game()
         return self.state.log_text(16)
@@ -8523,8 +8592,8 @@ class GameEngine:
         character.flags["uuid"] = character.uuid
 
     def _party_companions(self) -> list[Character]:
-        refs = [str(item or "").strip() for item in self.state.party_uuids[1:2] if str(item or "").strip()]
-        for item in self.state.party[1:2]:
+        refs = [str(item or "").strip() for item in self.state.party_uuids[1:] if str(item or "").strip()]
+        for item in self.state.party[1:]:
             if not isinstance(item, dict):
                 continue
             uuid = str(item.get("uuid") or "").strip()
@@ -8544,7 +8613,7 @@ class GameEngine:
                 continue
             seen.add(character.uuid)
             result.append(character)
-        return result[:1]
+        return result[:PARTY_COMPANION_LIMIT]
 
     def _sync_companion_party_entry(self, character: Character) -> None:
         if character.flags.get("is_player"):
@@ -8581,15 +8650,23 @@ class GameEngine:
         if character.flags.get("is_player") or _character_state_is_dead(character):
             return []
         self._ensure_character_runtime_data(character)
-        for existing in self._party_companions():
+        companions = self._party_companions()
+        for existing in companions:
             if existing.name == character.name or existing.uuid == character.uuid:
-                continue
-            self._return_companion_to_origin(existing, source=source, reason="replaced")
+                self._set_character_presence(existing, self.state.current_location or existing.location or self.state.world_data.starting_location, "party")
+                self._sync_companion_party_entry(existing)
+                return []
+        if len(companions) >= PARTY_COMPANION_LIMIT:
+            return [f"> [Party] Party is full. Dismiss a companion before inviting {character.name}."]
         self._set_character_presence(character, self.state.current_location or character.location or self.state.world_data.starting_location, "party")
-        entry = character.to_dict()
-        entry["party_role"] = "companion"
-        self.state.party_uuids = ([player.uuid] if player else []) + [character.uuid]
-        self.state.party = ([player_entry] if player_entry else []) + [entry]
+        companions.append(character)
+        companion_entries: list[dict[str, Any]] = []
+        for companion in companions[:PARTY_COMPANION_LIMIT]:
+            entry = companion.to_dict()
+            entry["party_role"] = "companion"
+            companion_entries.append(entry)
+        self.state.party_uuids = ([player.uuid] if player else []) + [companion.uuid for companion in companions[:PARTY_COMPANION_LIMIT]]
+        self.state.party = ([player_entry] if player_entry else []) + companion_entries
         event = {
             "source": source,
             "character": character.name,
@@ -9102,37 +9179,6 @@ class GameEngine:
         sign = f"+{actual_delta}" if actual_delta > 0 else str(actual_delta)
         reason_text = f" {reason}" if reason else ""
         return [f"> [好感度] {character.name}: {old_value} -> {new_value} ({sign}){reason_text}"]
-
-    def _apply_response_state_side_effects(
-        self,
-        response: dict[str, Any],
-        source: str,
-        *,
-        default_character: Character | None = None,
-        default_location: str = "",
-        encounter: dict[str, Any] | None = None,
-    ) -> list[str]:
-        lines: list[str] = []
-        lines.extend(self._apply_response_relationship_effects(response, source, default_character=default_character))
-        lines.extend(self._apply_response_npc_move_effects(response, source, default_character=default_character, default_location=default_location))
-        lines.extend(self._apply_response_npc_join_party_effects(response, source, default_character=default_character))
-        lines.extend(self._apply_response_npc_remove_party_effects(response, source, default_character=default_character, default_location=default_location))
-        lines.extend(self._apply_response_npc_dead_effects(response, source, default_character=default_character))
-        lines.extend(self._apply_response_npc_memory_effects(response, source, default_character=default_character))
-        lines.extend(self._apply_response_npc_description_effects(response, source, default_character=default_character))
-        lines.extend(self._apply_response_world_mainnode_reveals(response, source, default_location=default_location))
-        lines.extend(self._apply_response_subnode_map_reveals(response, source, default_location=default_location))
-        lines.extend(
-            self._apply_response_capture_relocation_effects(
-                response,
-                source,
-                default_character=default_character,
-                default_location=default_location,
-                encounter=encounter,
-            )
-        )
-        lines.extend(self._apply_response_home_construction_effects(response, source))
-        return lines
 
     def _apply_response_npc_move_effects(
         self,
@@ -10103,8 +10149,8 @@ class GameEngine:
                 "content": (
                     "あなたはAI駆動RPGのストーリー設計担当です。"
                     "Fantasiaのcreate_story相当として、world_situation, flow, "
-                    "current_rumor, story_quests を持つJSONだけを返してください。"
-                    "story_quests は複数のクエスト候補の配列にしてください。"
+                    "current_rumor を持つJSONだけを返してください。"
+                    "クエスト候補は返さないでください。クエストは街の掲示板を開いた時に別処理で生成します。"
                 ),
             },
             {
@@ -10113,14 +10159,14 @@ class GameEngine:
                     f"プレイヤー名: {player_name}\n"
                     f"雰囲気: {premise_context}\n"
                     f"世界データ: {world_payload}\n"
-                    "この世界の初期ストーリー状況、進行の流れ、現在の噂、クエスト候補を作ってください。"
+                    "この世界の初期ストーリー状況、進行の流れ、現在の噂だけを作ってください。"
                 ),
             },
         ]
         return self._chat_json(
             "create_story",
             messages,
-            max_tokens=900,
+            max_tokens=520,
             world_name=world.world_name,
             player_name=player_name,
         )
@@ -10309,6 +10355,7 @@ class GameEngine:
         player_name: str,
         world: WorldData,
         settlement_name: str,
+        target_count: int | None = None,
     ) -> dict[str, Any]:
         world_payload = _ai_json(
             _world_ai_context(world, include_characters=True, include_monsters=False, include_quests=True)
@@ -10335,10 +10382,12 @@ class GameEngine:
         seen_names = {quest.name for quest in world.quests}
         batch_records: list[dict[str, Any]] = []
         batch_index = 1
-        while len(collected) < SETTLEMENT_QUEST_MAX_PER_SETTLEMENT:
-            remaining = SETTLEMENT_QUEST_MAX_PER_SETTLEMENT - len(collected)
+        quest_limit = max(1, min(SETTLEMENT_QUEST_MAX_PER_SETTLEMENT, int(target_count or SETTLEMENT_QUEST_MAX_PER_SETTLEMENT)))
+        while len(collected) < quest_limit:
+            remaining = quest_limit - len(collected)
             requested_count = min(SETTLEMENT_QUEST_BATCH_MAX, remaining)
-            if requested_count < SETTLEMENT_QUEST_BATCH_MIN and collected:
+            request_min = min(SETTLEMENT_QUEST_BATCH_MIN, requested_count)
+            if requested_count < SETTLEMENT_QUEST_BATCH_MIN and collected and len(collected) >= QUEST_BOARD_REGEN_MIN:
                 break
             messages = [
                 {
@@ -10348,8 +10397,8 @@ class GameEngine:
                         "Fantasiaのsettlement_quest_generator相当として、"
                         "quests を持つJSONだけを返してください。"
                         "quests はクエスト候補オブジェクトの配列にしてください。"
-                        f"このバッチでは {SETTLEMENT_QUEST_BATCH_MIN}〜{requested_count} 件だけ生成してください。"
-                        f"1つの拠点に登録する依頼は最大 {SETTLEMENT_QUEST_MAX_PER_SETTLEMENT} 件です。"
+                        f"このバッチでは {request_min}〜{requested_count} 件だけ生成してください。"
+                        f"1つの拠点に登録する依頼は最大 {quest_limit} 件です。"
                         "各クエストには quest_type を必ず含め、rescue/retrieve/defeat/delivery/investigate/procure のいずれかにしてください。"
                         "街道をふさぐ魔物や危険生物の排除、討伐、退治、狩猟は必ず quest_type=\"defeat\" です。"
                         "薬や食料など指定品をどこかから調達する依頼だけ quest_type=\"procure\" にしてください。"
@@ -10366,7 +10415,7 @@ class GameEngine:
                         f"プレイヤー名: {player_name}\n"
                         f"対象拠点: {settlement_name}\n"
                         f"バッチ番号: {batch_index}\n"
-                        f"今回の生成件数: {SETTLEMENT_QUEST_BATCH_MIN}〜{requested_count}\n"
+                        f"今回の生成件数: {request_min}〜{requested_count}\n"
                         f"既存依頼名: {json.dumps(sorted(seen_names), ensure_ascii=False)}\n"
                         f"世界データ: {world_payload}\n"
                         "この拠点で自然に発生するクエスト候補を、既存依頼と重複しないように作ってください。"
@@ -10408,7 +10457,7 @@ class GameEngine:
                 collected.append(item)
                 seen_names.add(name)
                 added += 1
-                if len(collected) >= SETTLEMENT_QUEST_MAX_PER_SETTLEMENT:
+                if len(collected) >= quest_limit:
                     break
             if added <= 0:
                 break
@@ -10482,11 +10531,6 @@ class GameEngine:
         world.world_situation = str(response.get("world_situation") or world.world_situation)
         world.flow = response.get("flow", world.flow)
         world.current_rumor = str(response.get("current_rumor") or world.current_rumor)
-        story_quests = response.get("story_quests")
-        if isinstance(story_quests, list):
-            world.quests = [_quest_from_raw(item, index) for index, item in enumerate(story_quests)]
-            for quest in world.quests:
-                self._ensure_quest_reward(quest)
         world.extra["raw_create_story"] = _strip_response_metadata(response)
 
     def _apply_settlement_detail(
@@ -17196,12 +17240,26 @@ class GameEngine:
         if str(pack.get("status") or "") not in {"escorting", "retrieved"}:
             return
         subnode_id = subnode_id or self._runtime_subnode_for_presence(location)
+        delivered_any = False
+        at_report_location = self.is_current_location_guild() and self._quest_report_location_matches(quest, location)
         for entry in pack.get("npcs", []):
             if not isinstance(entry, dict) or str(entry.get("status") or "") != "escorting":
                 continue
             character = self._quest_objective_character(entry)
             if character and not _character_state_is_dead(character):
-                self._set_character_presence(character, location, "escorted", subnode_id=subnode_id)
+                if at_report_location:
+                    entry["status"] = "delivered"
+                    character.flags.pop("quest_escort", None)
+                    character.extra.pop("quest_escort", None)
+                    self._set_character_presence(character, location, "present", subnode_id=subnode_id)
+                    delivered_any = True
+                else:
+                    self._set_character_presence(character, location, "escorted", subnode_id=subnode_id)
+        if delivered_any:
+            pack["status"] = QUEST_REPORT_STAGE
+            quest.extra["quest_stage"] = QUEST_REPORT_STAGE
+            self._set_quest_flag(quest, "objective_rescued", True)
+            self._set_quest_flag(quest, "ready_to_report", True)
 
     def _quest_objective_completion_allowed(
         self,
@@ -17293,6 +17351,8 @@ class GameEngine:
         if not (location and origin and (location == origin or (settlement and settlement.name == origin))):
             return False
         report_subnode = str(quest.extra.get("report_subnode_id") or quest.extra.get("origin_subnode_id") or "").strip()
+        if self.is_current_location_guild():
+            return True
         if not report_subnode:
             return True
         try:
@@ -17467,6 +17527,119 @@ class GameEngine:
                 return anchor_name
         return origin
 
+    def _quest_hint_requests_dungeon(self, quest: QuestData, hint: dict[str, Any]) -> bool:
+        kind = str(hint.get("location_kind") or "").strip().lower()
+        if kind in {"dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair", "forest", "mountain"}:
+            return True
+        text = " ".join(
+            str(part or "")
+            for part in (
+                quest.name,
+                quest.overview,
+                hint.get("source_text"),
+                hint.get("description"),
+                hint.get("objective_description"),
+                hint.get("objective_subnode_description"),
+                hint.get("objective_subnode_name"),
+            )
+        ).lower()
+        return any(word in text for word in ("dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair", "洞窟", "遺跡", "鉱山", "迷宮", "巣穴", "森", "山"))
+
+    def _route_skeleton_specs(self, world: WorldData) -> list[dict[str, Any]]:
+        skeleton = world.extra.get("local_world_skeleton") if isinstance(world.extra, dict) else {}
+        specs = skeleton.get("locations") if isinstance(skeleton, dict) else []
+        if not isinstance(specs, list):
+            return []
+        result = [spec for spec in specs if isinstance(spec, dict) and str(spec.get("name") or "") in world.locations]
+        result.sort(key=lambda item: _safe_int(item.get("coord_index"), _safe_int(item.get("grid_x"), 0)))
+        return result
+
+    def _quest_dungeon_branch_anchor(self, origin: str, fallback: str = "") -> str:
+        world = self.state.world_data
+        specs = self._route_skeleton_specs(world)
+        origin = str(origin or "").strip()
+        fallback = str(fallback or "").strip()
+        origin_index = next((index for index, spec in enumerate(specs) if str(spec.get("name") or "") == origin), -1)
+        if origin_index >= 0:
+            for spec in specs[origin_index + 1 :]:
+                category = str(spec.get("category") or "")
+                role = str(spec.get("role") or "")
+                if category == "settlement" or role == "final_destination":
+                    break
+                if category == "single":
+                    name = str(spec.get("name") or "")
+                    if name in world.locations:
+                        return name
+            for spec in reversed(specs[:origin_index]):
+                category = str(spec.get("category") or "")
+                role = str(spec.get("role") or "")
+                if category == "settlement" or role == "final_destination":
+                    break
+                if category == "single":
+                    name = str(spec.get("name") or "")
+                    if name in world.locations:
+                        return name
+        fallback_location = world.locations.get(fallback)
+        if fallback_location and str(fallback_location.extra.get("main_node_type") or "") == "single":
+            return fallback
+        return origin if origin in world.locations else fallback
+
+    def _create_quest_dungeon_location(self, quest: QuestData, hint: dict[str, Any], origin: str, anchor: str) -> LocationData:
+        world = self.state.world_data
+        branch_anchor = self._quest_dungeon_branch_anchor(origin, anchor)
+        kind = "dungeon"
+        explicit_name = str(hint.get("location") or hint.get("destination_location") or "").strip()
+        base_name = explicit_name or _quest_destination_name(quest, {**hint, "location_kind": "dungeon"}, origin, branch_anchor)
+        location_name = _unique_world_location_name(world, base_name)
+        anchor_node = self._location_graph_for_update(world).get("nodes", {}).get(branch_anchor, {})
+        anchor_danger = _safe_int(anchor_node.get("danger") if isinstance(anchor_node, dict) else 0, self._current_location_danger(branch_anchor))
+        danger = max(anchor_danger + 1, _quest_destination_danger(hint, kind, anchor_danger))
+        description = str(hint.get("description") or hint.get("objective_subnode_description") or "").strip()
+        if not description:
+            description = f"依頼「{quest.name}」の目的地となる探索地。"
+        location = world.ensure_location(location_name, description)
+        location.extra.update(
+            {
+                "location_kind": kind,
+                "main_node_type": "dungeon",
+                "main_node_subtype": str(hint.get("location_kind") or "dungeon"),
+                "role": "quest_dungeon",
+                "danger_level": _clamp_world_danger(danger),
+                "danger_source": "quest_dungeon",
+                "quest_destination_for": quest.name,
+                "generated_for_quest": quest.name,
+                "branch_anchor_location": branch_anchor,
+            }
+        )
+        location.flags["dungeon"] = True
+        location.flags["dangerous"] = True
+        location.flags["discovered"] = True
+        anchor_location = world.locations.get(branch_anchor)
+        if anchor_location:
+            anchor_location.flags["discovered"] = True
+            anchor_node = self._set_location_graph_node(world, branch_anchor, location=anchor_location)
+            anchor_node["discovered"] = True
+        self._install_local_dungeon_subnode_graph(location, random.Random(f"quest-dungeon|{world.world_name}|{quest.name}|{branch_anchor}"))
+        self._set_location_graph_node(world, location_name, kind=kind, danger=location.extra["danger_level"], location=location)
+        if branch_anchor and branch_anchor != location_name:
+            self._connect_world_locations_by_subnodes(
+                world,
+                branch_anchor,
+                location_name,
+                DEFAULT_SUBNODE_ID,
+                DUNGEON_ENTRY_SUBNODE_ID,
+                kind="quest_dungeon_branch",
+            )
+        world.history.append(
+            {
+                "manager": "quest_dungeon_generator",
+                "quest": quest.name,
+                "location": location_name,
+                "branch_anchor": branch_anchor,
+            }
+        )
+        return location
+
     def _quest_destination_location(self, quest: QuestData, hint: dict[str, Any], origin: str, anchor: str) -> LocationData:
         world = self.state.world_data
         explicit_name = str(hint.get("location") or hint.get("destination_location") or "").strip()
@@ -17479,6 +17652,8 @@ class GameEngine:
                 return location
 
         kind = str(hint.get("location_kind") or "wilderness").strip() or "wilderness"
+        if self._quest_hint_requests_dungeon(quest, hint):
+            return self._create_quest_dungeon_location(quest, hint, origin, anchor)
         nearby_existing = self._find_nearby_location_by_kind(anchor or origin, kind)
         if nearby_existing and not _quest_text_requests_new_site(str(hint.get("source_text") or "")):
             return world.locations[nearby_existing]
@@ -19119,7 +19294,7 @@ def _character_entry_duplicate_guard(entries: Any, kind: str) -> list[dict[str, 
         if name:
             item["name"] = _short_text(name, 80)
         if description:
-            item["description"] = _short_text(description, 160)
+            item["desc" if kind == "traits" else "description"] = _short_text(description, 160)
         result.append(item)
     return result[:12]
 
@@ -19754,7 +19929,23 @@ def _quest_completion_report_action(action: str) -> bool:
     if original == QUEST_REPORT_CHOICE_LABEL:
         return True
     text = original.casefold()
-    if any(phrase in original for phrase in ("依頼を報告", "依頼の報告", "達成報告", "完了報告", "報酬を受け取", "報酬を請求")):
+    if any(
+        phrase in original
+        for phrase in (
+            "依頼を報告",
+            "依頼の報告",
+            "依頼完了",
+            "クエスト報告",
+            "ギルドに報告",
+            "受付に報告",
+            "報告する",
+            "達成報告",
+            "完了報告",
+            "報酬をもら",
+            "報酬を受け取",
+            "報酬を請求",
+        )
+    ):
         return True
     return any(word in text for word in ("report quest", "turn in quest", "claim reward"))
 

@@ -470,7 +470,7 @@ def _resolve_enemy_turn(
     action_type = str(decision.get("action_type") or "attack").strip()
     lines: list[str] = []
     if _player_surrender_resolution_pending(encounter, player_response) and not _has_surrender_resolution_tool(decision):
-        decision["tools"] = [
+        decision["tool_judgements"] = [
             {
                 "name": "accept_player_surrender",
                 "confidence": 1.0,
@@ -511,7 +511,7 @@ def _resolve_enemy_turn(
     if action_type == "flee":
         result = apply_combat_response_tools(
             engine,
-            {"tools": [{"name": "npc_flee", "confidence": 1.0, "arguments": {"reason": "enemy_action_type"}}]},
+            {"tool_judgements": [{"name": "npc_flee", "confidence": 1.0, "arguments": {"reason": "enemy_action_type"}}]},
             source="combat_enemy_action",
             action=action,
             input_type=input_type,
@@ -527,7 +527,7 @@ def _resolve_enemy_turn(
     if action_type == "surrender":
         result = apply_combat_response_tools(
             engine,
-            {"tools": [{"name": "npc_surrender", "confidence": 1.0, "arguments": {"reason": "enemy_action_type"}}]},
+            {"tool_judgements": [{"name": "npc_surrender", "confidence": 1.0, "arguments": {"reason": "enemy_action_type"}}]},
             source="combat_enemy_action",
             action=action,
             input_type=input_type,
@@ -699,9 +699,8 @@ def _combat_player_action_intent(engine: Any, action: str, input_type: str, enco
     narration = str(response.get("narration") or response.get("text") or f"あなたは「{action}」を試みた。")
     choices = [str(item) for item in as_list(response.get("choices")) if str(item).strip()]
     result = {"intent": str(response.get("intent") or "free_action"), "narration": narration, "choices": choices or engine._encounter_choices(encounter)}
-    for key in ("tool_judgements", "tool_judgments", "tool_confidences", "combat_tool_judgements", "tools"):
-        if isinstance(response.get(key), list):
-            result[key] = response[key]
+    if isinstance(response.get("tool_judgements"), list):
+        result["tool_judgements"] = response["tool_judgements"]
     return result
 
 
@@ -763,12 +762,7 @@ def _has_surrender_resolution_tool(response: dict[str, Any]) -> bool:
         & {
             "accept_player_surrender",
             "capture_player",
-            "npc_capture_player",
             "reject_player_surrender",
-            "surrender_accept",
-            "surrender_reject",
-            "accept_surrender",
-            "reject_surrender",
         }
     )
 

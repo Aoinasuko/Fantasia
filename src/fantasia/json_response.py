@@ -20,7 +20,6 @@ class FieldRule:
     expected: tuple[type, ...]
     required: bool = True
     non_empty: bool = True
-    aliases: tuple[str, ...] = ()
     string_items: bool = True
 
     @property
@@ -60,35 +59,36 @@ class ManagerSchema:
         if optional:
             lines.append("任意キー:")
             lines.extend(f"- {field.name}: {field.type_label}" for field in optional)
-        if any(field.name in {"player_hp_delta", "hp_delta", "heal_hp", "restore_hp", "recover_hp", "damage_hp", "player_hp", "hp_effect", "hp_effects"} for field in self.fields):
+        uses_tool_judgements = any(field.name == "tool_judgements" for field in self.fields)
+        if not uses_tool_judgements and any(field.name in {"player_hp_delta", "hp_delta", "heal_hp", "restore_hp", "recover_hp", "damage_hp", "player_hp", "hp_effect", "hp_effects"} for field in self.fields):
             lines.append(
                 "- HP changes: use player_hp_delta/hp_delta for signed changes, heal_hp/restore_hp/recover_hp for healing, damage_hp for damage, or player_hp for an absolute current HP value. The game clamps HP to the valid range."
             )
-        if any(field.name in {"player_sp_delta", "sp_delta", "restore_sp", "recover_sp", "consume_sp", "player_sp", "sp_effect", "sp_effects"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"player_sp_delta", "sp_delta", "restore_sp", "recover_sp", "consume_sp", "player_sp", "sp_effect", "sp_effects"} for field in self.fields):
             lines.append(
                 "- SP changes: use player_sp_delta/sp_delta for signed changes, restore_sp/recover_sp for recovery, consume_sp for spent SP, or player_sp for an absolute current SP value. Combat skills store their cost in usesp."
             )
-        if any(field.name in {"player_hunger_delta", "hunger_delta", "restore_hunger", "recover_hunger", "player_hunger", "hunger", "hunger_effect", "hunger_effects"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"player_hunger_delta", "hunger_delta", "restore_hunger", "recover_hunger", "player_hunger", "hunger", "hunger_effect", "hunger_effects"} for field in self.fields):
             lines.append(
                 "- Hunger changes: use player_hunger_delta/hunger_delta for signed changes, restore_hunger/recover_hunger for meals or food, or player_hunger/hunger for an absolute hunger value. The game clamps hunger to 0-50."
             )
-        if any(field.name in {"gold_delta", "player_gold_delta", "pay_gold", "spend_gold", "receive_gold", "gold_effect", "gold_effects"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"gold_delta", "player_gold_delta", "pay_gold", "spend_gold", "receive_gold", "gold_effect", "gold_effects"} for field in self.fields):
             lines.append(
                 "- Gold changes: use gold_delta/player_gold_delta for signed changes, receive_gold/gain_gold for income, and pay_gold/spend_gold/cost_gold for payments. The game clamps gold at 0."
             )
-        if any(field.name in {"time_passed_hours", "time_passed_days", "advance_time_hours", "time_effect", "time_effects"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"time_passed_hours", "time_passed_days", "advance_time_hours", "time_effect", "time_effects"} for field in self.fields):
             lines.append(
                 "- Time passage: when the action should consume world time, return time_passed_hours or time_passed_days. The game calendar uses 60 days each for 春/夏/秋/冬."
             )
-        if any(field.name in {"player_exp_delta", "exp", "experience", "reward_exp", "xp", "exp_effect", "exp_effects"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"player_exp_delta", "exp", "experience", "reward_exp", "xp", "exp_effect", "exp_effects"} for field in self.fields):
             lines.append(
                 "- Experience: return exp/reward_exp/xp or player_exp_delta when the player learned, survived, completed a quest, defeated an enemy, or otherwise earned growth. Level-up is controlled by the game."
             )
-        if any(field.name in {"item_equip", "item_unequip"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"item_equip", "item_unequip"} for field in self.fields):
             lines.append(
                 "- Equipment changes: use item_equip to equip a named item or item object, and item_unequip with slot/item to remove equipment. Slots are weapon/armor_shield/armor_head/armor_body/armor_arm/armor_leg/armor_cloth/accessory_ring/accessory_amulet."
             )
-        if any(field.name in {"status_effects", "player_status_effects", "character_status_effects", "long_term_statuses"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"status_effects", "player_status_effects", "character_status_effects", "long_term_statuses"} for field in self.fields):
             lines.append(
                 "- 状態付与が必要な場合は status_effects/player_status_effects/character_status_effects に、"
                 "name, description, remove_condition, power, duration, effect_id, llm_effect を持つオブジェクトを返してください。"
@@ -103,12 +103,12 @@ class ManagerSchema:
                 "and do not include HP damage."
             )
         lines.append("例:")
-        if any(field.name in {"status_effects", "player_status_effects", "character_status_effects", "long_term_statuses"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"status_effects", "player_status_effects", "character_status_effects", "long_term_statuses"} for field in self.fields):
             lines.append(
                 "- 治療、解呪、休息、交渉などで状態が解除される場合は remove_status_effects/cure_status_effects/treated_status_effects に、"
                 "target, name, effect_id, reason, treatment を持つオブジェクトを返してください。永続状態も解除対象にできます。"
             )
-        if any(field.name in {"item_add", "item_remove", "item_equip", "item_unequip"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"item_add", "item_remove", "item_equip", "item_unequip"} for field in self.fields):
             lines.append(
                 "- Item acquisition uses item_add with objects shaped like {name, category, quantity, description, value}. "
                 "Keep acquisition context such as reward/drop/loot in description, source, or reason, not in the item name."
@@ -118,7 +118,7 @@ class ManagerSchema:
                 "armor_shield/armor_head/armor_body/armor_arm/armor_leg/armor_cloth/accessory_ring/accessory_amulet. "
                 "Rarity should be common/uncommon/rare/epic/legendary/artifact. To equip an item, use item_equip."
             )
-        if any(field.name in {"item_add", "item_remove", "item_equip", "item_unequip"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"item_add", "item_remove", "item_equip", "item_unequip"} for field in self.fields):
             lines.append(
                 "- Item consumption/loss/transfer uses item_remove with item_uuid, item_uuids, name, or item references."
             )
@@ -131,60 +131,89 @@ class ManagerSchema:
                 "- プレイヤー、主人公、あなた、自分、PC はNPCとして生成しないでください。"
                 "現在地にいる既存NPCの名前、役割、別名を指す場合は new_npc_requests に入れないでください。"
             )
-        if any(field.name in {"relationship_change", "relationship_changes", "npc_relationship_change", "affinity_change", "affinity_changes"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"relationship_change", "relationship_changes", "npc_relationship_change", "affinity_change", "affinity_changes"} for field in self.fields):
             lines.append(
                 "- NPC好感度が変化する場合は relationship_change または affinity_changes に "
                 "{target/name/npc_name, delta, reason} を返してください。delta は差分で、0が中立、-10が完全敵対、10が完全信頼です。"
             )
-        if any(field.name in {"relationship_change", "relationship_changes", "npc_relationship_change", "affinity_change", "affinity_changes"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"relationship_change", "relationship_changes", "npc_relationship_change", "affinity_change", "affinity_changes"} for field in self.fields):
             lines.append(
                 "- NPC affinity scale is -100 to 100. Return only the change as delta, normally clamped from -10 to +10 per event."
             )
-        if any(field.name in {"npc_movement", "npc_movements", "character_movement", "character_movements", "move_npc", "move_npcs"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"npc_movement", "npc_movements", "character_movement", "character_movements", "move_npc", "move_npcs"} for field in self.fields):
             lines.append(
                 "- NPCが同行・離脱・別地点へ移動した場合は npc_movements に "
                 "{target/name/npc_name, location/to/destination, state, reason} を返してください。文章だけで同行させず、必ず実データ更新用に返してください。"
             )
-        if any(field.name in {"npc_movement", "npc_movements", "character_movement", "character_movements", "move_npc", "move_npcs"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"npc_movement", "npc_movements", "character_movement", "character_movements", "move_npc", "move_npcs"} for field in self.fields):
             lines.append(
                 "- Party movement must also be explicit: use state='party' or join_party=true when an NPC joins, "
                 "leave_party=true when an NPC leaves, wait=true or state='waiting' when an NPC waits on the current map, "
                 "and state='dead' when an NPC dies."
             )
-        if any(field.name in {"map_reveal", "map_reveals", "world_map_reveal", "world_map_reveals", "unlock_world_map_route"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"map_reveal", "map_reveals", "world_map_reveal", "world_map_reveals", "unlock_world_map_route"} for field in self.fields):
             lines.append(
                 "- ワールドマップの経路を開放する場合は map_reveal を返してください。"
                 "例: {target_location: \"目的地名\", reason: \"目的地への地図を受け取った\"}。"
                 "現在受注中のクエスト目的地なら {target: \"quest_destination\"} でも構いません。"
                 "既知の経路を指定する場合は route/path にロケーション名配列を入れてください。"
             )
-        if any(field.name in {"time_passed_hours", "advance_time_hours", "long_time_passage_hours", "time_skip_hours", "spend_time_hours", "long_time_passage"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"time_passed_hours", "advance_time_hours", "long_time_passage_hours", "time_skip_hours", "spend_time_hours", "long_time_passage"} for field in self.fields):
             lines.append(
                 "- 休憩、睡眠、待機、数日間の滞在などで長い時間が経つ場合は、"
                 "long_time_passage_hours/time_skip_hours/spend_time_hours などに1時間単位の経過時間を返してください。"
                 "数日間なら days ではなく hours に換算しても構いません。単純な短い移動では返さないでください。"
             )
-        if any(field.name in {"game_over", "force_game_over", "fatal_outcome", "bad_end"} for field in self.fields):
+        if not uses_tool_judgements and any(field.name in {"game_over", "force_game_over", "fatal_outcome", "bad_end"} for field in self.fields):
             lines.append(
                 "- プレイヤーの行動結果が確実に冒険終了・死亡・脱出不能・破滅などのゲームオーバーだと判断できる場合だけ "
                 "game_over=true と game_over_reason/game_over_narration を返してください。"
                 "ゲームオーバー時に「リスタート」「再開」など存在しない選択肢を作らないでください。"
             )
         example = dict(self.example)
-        if any(field.name == "tool_judgements" for field in self.fields):
+        if uses_tool_judgements:
             for key in (
                 "location",
+                "destination_location",
+                "objective_subnode_name",
                 "hp_delta",
+                "hp_effect",
+                "hp_effects",
                 "sp_delta",
+                "sp_effect",
+                "sp_effects",
+                "player_hunger_delta",
+                "hunger_delta",
+                "player_gold_delta",
+                "gold_delta",
+                "player_exp_delta",
+                "exp_delta",
+                "time_passed_hours",
+                "time_passed_days",
+                "advance_time_hours",
                 "item_add",
                 "item_remove",
                 "item_equip",
                 "item_unequip",
                 "status_effects",
+                "player_status_effects",
+                "character_status_effects",
                 "relationship_change",
                 "memory_updates",
                 "npc_movements",
+                "npc_move",
+                "npc_join_party",
+                "npc_remove_party",
+                "npc_dead",
+                "npc_capture_player",
+                "npc_update_memory",
+                "npc_update_description",
                 "map_reveal",
+                "world_home_construction",
+                "world_mainnode_reveal",
+                "world_subnode_reveal",
+                "home_construction",
+                "subnode_map_reveal",
                 "discovered_location",
                 "quest_update",
                 "quest_progress",
@@ -483,8 +512,8 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "dungeon_subnode_generator": ManagerSchema(
         manager_name="dungeon_subnode_generator",
         fields=(
-            FieldRule("nodes", (list, dict), aliases=("subnodes", "rooms"), string_items=False),
-            FieldRule("edges", (list, dict), aliases=("connections", "paths"), non_empty=False, string_items=False),
+            FieldRule("nodes", (list, dict), string_items=False),
+            FieldRule("edges", (list, dict), non_empty=False, string_items=False),
             FieldRule("summary", (str,), required=False, non_empty=False),
         ),
         example={
@@ -508,8 +537,8 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "craft_item_generator": ManagerSchema(
         manager_name="craft_item_generator",
         fields=(
-            FieldRule("narration", (str,), aliases=("text", "message")),
-            FieldRule("item", (dict,), aliases=("crafted_item", "result"), string_items=False),
+            FieldRule("narration", (str,)),
+            FieldRule("item", (dict,), string_items=False),
         ),
         example={
             "narration": "素材を削り、磨き、旅で使える小さな道具に仕上げた。",
@@ -557,7 +586,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
         manager_name="input_gatekeeper",
         fields=(
             FieldRule("content_violation", (bool,)),
-            FieldRule("action_possible", (bool,), aliases=("possible", "allowed", "feasible")),
+            FieldRule("action_possible", (bool,)),
             FieldRule("reason", (str,)),
             FieldRule("message", (str,)),
             FieldRule("suggested_action", (str,), required=False, non_empty=False),
@@ -573,7 +602,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "check_action_feasibility": ManagerSchema(
         manager_name="check_action_feasibility",
         fields=(
-            FieldRule("action_possible", (bool,), aliases=("possible", "allowed", "feasible")),
+            FieldRule("action_possible", (bool,)),
             FieldRule("reason", (str,)),
             FieldRule("message", (str,)),
             FieldRule("suggested_action", (str,), required=False, non_empty=False),
@@ -613,7 +642,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
         manager_name="create_settlement_detail",
         fields=(
             FieldRule("settlement_structure_description", (str,)),
-            FieldRule("atmosphere", (str,), aliases=("atomosphere",)),
+            FieldRule("atmosphere", (str,)),
             FieldRule("settlement_structure", (dict, list), non_empty=False, string_items=False),
             FieldRule("facilities", (list,), non_empty=False, string_items=False),
             FieldRule("residents", (list,), non_empty=False, string_items=False),
@@ -677,7 +706,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "settlement_quest_generator": ManagerSchema(
         manager_name="settlement_quest_generator",
         fields=(
-            FieldRule("quests", (list,), aliases=("settlement_quests", "story_quests"), non_empty=False, string_items=False),
+            FieldRule("quests", (list,), non_empty=False, string_items=False),
         ),
         example={
             "quests": [
@@ -700,8 +729,8 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "facility_request_evaluator": ManagerSchema(
         manager_name="facility_request_evaluator",
         fields=(
-            FieldRule("allowed", (bool,), aliases=("can_create",)),
-            FieldRule("narration", (str,), aliases=("text", "reason")),
+            FieldRule("allowed", (bool,)),
+            FieldRule("narration", (str,)),
             FieldRule("facility", (dict,), required=False, non_empty=False, string_items=False),
             FieldRule("npc", (dict,), required=False, non_empty=False, string_items=False),
             FieldRule("choices", (list,), required=False, non_empty=False),
@@ -727,7 +756,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
         fields=(
             FieldRule("usable", (bool,)),
             FieldRule("reason", (str,), required=False, non_empty=False),
-            FieldRule("narration", (str,), required=False, non_empty=False, aliases=("text", "message")),
+            FieldRule("narration", (str,), required=False, non_empty=False),
             FieldRule("furniture_level_gain", (int, str), required=False, non_empty=False),
             FieldRule("consume_item", (bool,), required=False, non_empty=False),
         ),
@@ -742,7 +771,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "quest_starter": ManagerSchema(
         manager_name="quest_starter",
         fields=(
-            FieldRule("narration", (str,), aliases=("text", "narr")),
+            FieldRule("narration", (str,)),
             FieldRule("choices", (list,)),
             *INTENT_TOOL_FIELDS,
             FieldRule("quest_name", (str,), required=False),
@@ -794,7 +823,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "quest_referee_with_free_action": ManagerSchema(
         manager_name="quest_referee_with_free_action",
         fields=(
-            FieldRule("narration", (str,), aliases=("text", "narr")),
+            FieldRule("narration", (str,)),
             FieldRule("choices", (list,)),
             *INTENT_TOOL_FIELDS,
             FieldRule("finished", (bool,), required=False, non_empty=False),
@@ -811,7 +840,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "quest_referee_event_resolve": ManagerSchema(
         manager_name="quest_referee_event_resolve",
         fields=(
-            FieldRule("narration", (str,), aliases=("text", "narr")),
+            FieldRule("narration", (str,)),
             FieldRule("choices", (list,)),
             *INTENT_TOOL_FIELDS,
             FieldRule("finished", (bool,), required=False, non_empty=False),
@@ -827,8 +856,8 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "quest_procurement_checker": ManagerSchema(
         manager_name="quest_procurement_checker",
         fields=(
-            FieldRule("accepted", (bool,), aliases=("acceptable", "is_acceptable", "matched")),
-            FieldRule("item_uuid", (str,), aliases=("accepted_item_uuid", "uuid"), non_empty=False),
+            FieldRule("accepted", (bool,)),
+            FieldRule("item_uuid", (str,), non_empty=False),
             FieldRule("item_name", (str,), required=False, non_empty=False),
             FieldRule("reason", (str,), non_empty=False),
         ),
@@ -843,7 +872,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
         manager_name="field_event_evaluator",
         fields=(
             FieldRule("event_occurred", (bool,)),
-            FieldRule("narration", (str,), aliases=("text",)),
+            FieldRule("narration", (str,)),
             FieldRule("choices", (list,)),
             *INTENT_TOOL_FIELDS,
         ),
@@ -885,13 +914,13 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "danger_subnode_monster_generator": ManagerSchema(
         manager_name="danger_subnode_monster_generator",
         fields=(
-            FieldRule("name", (str,), aliases=("monster_name", "enemy_name", "target_name")),
+            FieldRule("name", (str,)),
             FieldRule("role", (str,), required=False, non_empty=False),
             FieldRule("category", (str,), required=False, non_empty=False),
             FieldRule("description", (str,), required=False, non_empty=False),
             FieldRule("gender", (str,), required=False, non_empty=False),
             FieldRule("age", (str,), required=False, non_empty=False),
-            FieldRule("look", (str,), required=False, non_empty=False, aliases=("appearance",)),
+            FieldRule("look", (str,), required=False, non_empty=False),
             FieldRule("personality", (str,), required=False, non_empty=False),
             FieldRule("traits", (list,), required=False, non_empty=False, string_items=False),
             FieldRule("skills", (list,), required=False, non_empty=False, string_items=False),
@@ -923,7 +952,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
         fields=(
             FieldRule("content_violation", (bool,)),
             FieldRule("intent", (dict, str), string_items=False),
-            FieldRule("narration", (str,), aliases=("text",)),
+            FieldRule("narration", (str,)),
             FieldRule("process", (list, dict, str), non_empty=False, string_items=False),
             FieldRule("finished", (bool,)),
             FieldRule("choices", (list,), required=False),
@@ -1030,7 +1059,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("gender", (str,), required=False, non_empty=False),
             FieldRule("age", (str,), required=False, non_empty=False),
             FieldRule("personality", (str,), required=False, non_empty=False),
-            FieldRule("look", (str,), required=False, non_empty=False, aliases=("appearance",)),
+            FieldRule("look", (str,), required=False, non_empty=False),
             FieldRule("image_generation_prompt", (list, str), required=False, non_empty=False, string_items=False),
             FieldRule("skills", (list,), string_items=False),
             FieldRule("behavior_policy", (str,), required=False, non_empty=False),
@@ -1068,7 +1097,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "conversation_starter": ManagerSchema(
         manager_name="conversation_starter",
         fields=(
-            FieldRule("narration", (str,), aliases=("text",)),
+            FieldRule("narration", (str,)),
             FieldRule("speaker", (str,)),
             FieldRule("choices", (list,)),
             *INTENT_TOOL_FIELDS,
@@ -1090,7 +1119,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "conversation_facilitator": ManagerSchema(
         manager_name="conversation_facilitator",
         fields=(
-            FieldRule("narration", (str,), aliases=("text",)),
+            FieldRule("narration", (str,)),
             FieldRule("speaker", (str,)),
             FieldRule("choices", (list,)),
             *INTENT_TOOL_FIELDS,
@@ -1111,7 +1140,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "conversation_resolver": ManagerSchema(
         manager_name="conversation_resolver",
         fields=(
-            FieldRule("narration", (str,), aliases=("text",)),
+            FieldRule("narration", (str,)),
             FieldRule("summary", (str,)),
             FieldRule("choices", (list,)),
             *INTENT_TOOL_FIELDS,
@@ -1134,13 +1163,13 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "encounter_target_resolver": ManagerSchema(
         manager_name="encounter_target_resolver",
         fields=(
-            FieldRule("target_name", (str,), aliases=("name", "monster_name", "enemy_name")),
+            FieldRule("target_name", (str,)),
             FieldRule("opponent_type", (str,), required=False),
             FieldRule("category", (str,), required=False),
             FieldRule("description", (str,), required=False),
             FieldRule("gender", (str,), required=False, non_empty=False),
             FieldRule("age", (str,), required=False, non_empty=False),
-            FieldRule("look", (str,), required=False, non_empty=False, aliases=("appearance",)),
+            FieldRule("look", (str,), required=False, non_empty=False),
             FieldRule("personality", (str,), required=False, non_empty=False),
             FieldRule("traits", (list,), required=False, non_empty=False, string_items=False),
             FieldRule("image_generation_prompt", (list, str), required=False, non_empty=False),
@@ -1165,9 +1194,9 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "hostile_npc_encounter_evaluator": ManagerSchema(
         manager_name="hostile_npc_encounter_evaluator",
         fields=(
-            FieldRule("narration", (str,), aliases=("text", "message")),
-            FieldRule("combat_started", (bool,), aliases=("start_combat", "battle_started")),
-            FieldRule("opponent_name", (str,), required=False, non_empty=False, aliases=("target_name", "enemy_name")),
+            FieldRule("narration", (str,)),
+            FieldRule("combat_started", (bool,)),
+            FieldRule("opponent_name", (str,), required=False, non_empty=False),
             FieldRule("stance", (str,), required=False, non_empty=False),
             FieldRule("choices", (list,), required=False, non_empty=False),
             FieldRule("reason", (str,), required=False, non_empty=False),
@@ -1184,9 +1213,9 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "combat_transition_detector": ManagerSchema(
         manager_name="combat_transition_detector",
         fields=(
-            FieldRule("combat_started", (bool,), aliases=("start_combat", "battle_started")),
-            FieldRule("opponent_name", (str,), required=False, non_empty=False, aliases=("target_name", "enemy_name")),
-            FieldRule("narration", (str,), required=False, non_empty=False, aliases=("text", "message")),
+            FieldRule("combat_started", (bool,)),
+            FieldRule("opponent_name", (str,), required=False, non_empty=False),
+            FieldRule("narration", (str,), required=False, non_empty=False),
             FieldRule("reason", (str,), required=False, non_empty=False),
         ),
         example={
@@ -1199,7 +1228,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "combat_player_action": ManagerSchema(
         manager_name="combat_player_action",
         fields=(
-            FieldRule("narration", (str,), aliases=("text", "message")),
+            FieldRule("narration", (str,)),
             FieldRule("intent", (str,)),
             FieldRule("choices", (list,), required=False, non_empty=False),
             FieldRule("tool_judgements", (list,), non_empty=False, string_items=False),
@@ -1222,7 +1251,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
         manager_name="combat_enemy_action",
         fields=(
             FieldRule("action_type", (str,)),
-            FieldRule("narration", (str,), required=False, non_empty=False, aliases=("text", "message")),
+            FieldRule("narration", (str,), required=False, non_empty=False),
             FieldRule("attack_name", (str,), required=False, non_empty=False),
             FieldRule("skill_name", (str,), required=False, non_empty=False),
             FieldRule("element", (str,), required=False, non_empty=False),
@@ -1254,7 +1283,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "combat_log_narrator": ManagerSchema(
         manager_name="combat_log_narrator",
         fields=(
-            FieldRule("narration", (str,), aliases=("text", "message")),
+            FieldRule("narration", (str,)),
         ),
         example={
             "narration": "あなたの一撃は緑スライムの粘液を浅く散らしたが、弾力に阻まれて深くは通らなかった。",
@@ -1263,8 +1292,8 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "context_reference_resolver": ManagerSchema(
         manager_name="context_reference_resolver",
         fields=(
-            FieldRule("target_type", (str,), aliases=("type", "kind")),
-            FieldRule("target_name", (str,), aliases=("name", "target", "character_name", "quest_name"), non_empty=False),
+            FieldRule("target_type", (str,)),
+            FieldRule("target_name", (str,), non_empty=False),
             FieldRule("resolved_action", (str,), required=False, non_empty=False),
             FieldRule("confidence", (int, str), required=False, non_empty=False),
             FieldRule("reason", (str,)),
@@ -1312,7 +1341,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("backstory", (str,)),
             FieldRule("personality", (str,)),
             FieldRule("look", (str,)),
-            FieldRule("image_generation_prompt", (list, str), aliases=("image_prompt", "prompt")),
+            FieldRule("image_generation_prompt", (list, str)),
             FieldRule("traits", (list,), non_empty=False, string_items=False),
             FieldRule("skills", (list,), non_empty=False, string_items=False),
             FieldRule("ability", (dict, list, str), required=False, non_empty=False, string_items=False),
@@ -1399,7 +1428,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "narrator_initial": ManagerSchema(
         manager_name="narrator_initial",
         fields=(
-            FieldRule("narration", (str,), aliases=("text",)),
+            FieldRule("narration", (str,)),
             FieldRule("location", (str,)),
             FieldRule("choices", (list,)),
             *VISUAL_FIELDS,
@@ -1413,7 +1442,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
     "narrator": ManagerSchema(
         manager_name="narrator",
         fields=(
-            FieldRule("narration", (str,), aliases=("text",)),
+            FieldRule("narration", (str,)),
             FieldRule("location", (str,)),
             FieldRule("choices", (list,)),
             *VISUAL_FIELDS,
@@ -1523,6 +1552,7 @@ def schema_instruction(manager_name: str) -> str:
             "- Each tool judgement item must be {\"name\":\"tool_name\",\"confidence\":0.0-1.0,\"arguments\":{...},\"reason\":\"...\"}.\n"
             "- The game executes only tool judgements whose confidence is exactly 1.0. 0.99 or missing confidence is not executed.\n"
             "- Set confidence to 1.0 only when the state change is definitely intended by the action and current context.\n"
+            "- For the status_effects tool, arguments must be {\"status_effects\":[{\"effect_id\":\"HP_Damage/SP_Damage/Paralysis/Silence/Psychosis/Inoperable/SendLLM/Atk_Mod/Def_Mod\",...}]}; entries without effect_id are ignored.\n"
             "- Supported tool names: move_player, status_effects, hp_effects, sp_effects, gold_delta, hunger_delta, "
             "exp_delta, time_passage, game_over, npc_change_relationship, npc_move, npc_join_party, npc_remove_party, npc_dead, "
             "npc_capture_player, npc_update_memory, npc_update_description, world_home_construction, world_mainnode_reveal, world_subnode_reveal, "
@@ -1707,7 +1737,7 @@ def schema_instruction(manager_name: str) -> str:
             "{\n"
             '  "settlement_structure_description": "拠点構造の文章",\n'
             '  "atmosphere": "拠点の雰囲気",\n'
-            '  "settlement_structure": {"core": "中心施設", "spots": ["施設や広場"]},\n'
+            '  "settlement_structure": {"core": "中心施設", "spots": ["施設や生活区"]},\n'
             '  "facilities": [{"name": "施設名", "type": "guild", "description": "説明", "npc_name": "担当者名", "npc_role": "役割"}],\n'
             '  "residents": [],\n'
             '  "adventurers": []\n'
@@ -1727,15 +1757,12 @@ def validate_manager_response(manager_name: str, value: Any) -> tuple[dict[str, 
     response = dict(value)
     errors: list[str] = []
     for field in schema.fields:
-        _apply_alias(response, field)
         if field.name not in response or response[field.name] is None:
             if field.required:
                 errors.append(f"missing required key: {field.name}")
             continue
 
         item = response[field.name]
-        item = _normalize_value(field, item)
-        response[field.name] = item
         if not isinstance(item, field.expected):
             errors.append(f"{field.name} must be {field.type_label}, got {type(item).__name__}")
             continue
@@ -1747,7 +1774,38 @@ def validate_manager_response(manager_name: str, value: Any) -> tuple[dict[str, 
                 if field.non_empty and not response[field.name]:
                     errors.append(f"{field.name} must contain at least one non-empty item")
 
+    if manager_name in {"create_initial_character_profile", "create_trait"}:
+        errors.extend(_validate_trait_entries(response, "traits"))
+
     return response, errors
+
+
+def _validate_trait_entries(response: dict[str, Any], field_name: str) -> list[str]:
+    traits = response.get(field_name)
+    if traits in (None, []):
+        return []
+    if not isinstance(traits, list):
+        return [f"{field_name} must be array"]
+    errors: list[str] = []
+    cleaned: list[dict[str, str]] = []
+    for index, raw in enumerate(traits):
+        if not isinstance(raw, dict):
+            errors.append(f"{field_name}[{index}] must be object")
+            continue
+        extra_keys = sorted(str(key) for key in raw if key not in {"name", "desc"})
+        if extra_keys:
+            errors.append(f"{field_name}[{index}] has unsupported keys: {', '.join(extra_keys)}")
+        name = str(raw.get("name") or "").strip()
+        desc = str(raw.get("desc") or "").strip()
+        if not name:
+            errors.append(f"{field_name}[{index}].name must not be empty")
+        if not desc:
+            errors.append(f"{field_name}[{index}].desc must not be empty")
+        if name and desc and not extra_keys:
+            cleaned.append({"name": name, "desc": desc})
+    if not errors:
+        response[field_name] = cleaned
+    return errors
 
 
 def retry_prompt(manager_name: str, errors: list[str], previous_response: Any) -> str:
@@ -1786,7 +1844,7 @@ def _manager_retry_guidance(manager_name: str, errors: list[str], previous_respo
             "{\n"
             '  "settlement_structure_description": "拠点構造の文章",\n'
             '  "atmosphere": "拠点の雰囲気",\n'
-            '  "settlement_structure": {"core": "中心施設", "spots": ["施設や広場"]},\n'
+            '  "settlement_structure": {"core": "中心施設", "spots": ["施設や生活区"]},\n'
             '  "facilities": [],\n'
             '  "residents": [],\n'
             '  "adventurers": []\n'
@@ -1846,34 +1904,21 @@ _RETRY_METADATA_KEYS = {
 }
 
 
-def _apply_alias(response: dict[str, Any], field: FieldRule) -> None:
-    if field.name in response:
-        return
-    for alias in field.aliases:
-        if alias in response:
-            response[field.name] = response[alias]
-            return
-
-
 def _canonicalize_manager_response(manager_name: str, value: Any) -> Any:
     if manager_name == "local_world_settlement_describer":
         return _wrap_collection_response(
             value,
             "settlements",
-            aliases=("settlement", "town", "village", "items"),
             item_keys=("slot_id", "name", "title", "description", "overview", "summary"),
         )
     if manager_name == "local_world_single_location_describer":
         return _wrap_collection_response(
             value,
             "locations",
-            aliases=("location", "place", "item", "items"),
             item_keys=("slot_id", "name", "title", "description", "overview", "summary"),
         )
     if manager_name == "local_world_dungeon_location_describer":
         return _repair_local_world_dungeon_description_response(value)
-    if manager_name == "create_settlement_detail":
-        return _repair_settlement_detail_response(value)
     if manager_name == "create_initial_character_profile":
         if isinstance(value, dict):
             for key in ("character", "profile", "npc"):
@@ -1889,23 +1934,18 @@ def _canonicalize_manager_response(manager_name: str, value: Any) -> Any:
         return _wrap_collection_response(
             value,
             "quests",
-            aliases=("quest", "generated_quest", "settlement_quest", "quest_list"),
             item_keys=("name", "overview", "quest_type", "neighboring_settlement", "choices", "reward", "status", "objective"),
         )
     if manager_name == "create_skill":
         return _wrap_collection_response(
             value,
             "skills",
-            aliases=("skill", "generated_skill", "skill_list"),
             item_keys=("name", "desc", "usesp", "power", "ability", "element", "type"),
         )
-    if manager_name == "create_trait":
-        return _repair_create_trait_response(value)
     if manager_name == "craft_item_generator":
         return _wrap_item_response(
             value,
             "item",
-            aliases=("crafted_item", "result", "generated_item"),
             item_keys=("name", "category", "description", "quantity", "value", "rarity", "effects", "llm_effects"),
         )
     return value
@@ -1950,203 +1990,10 @@ def _repair_local_world_dungeon_description_response(value: Any) -> Any:
     return value
 
 
-def _repair_settlement_detail_response(value: Any) -> Any:
-    if not isinstance(value, dict):
-        return value
-    response = dict(value)
-    structure_keys = (
-        "core",
-        "spots",
-        "districts",
-        "landmarks",
-        "places",
-        "buildings",
-        "shops",
-        "gates",
-    )
-    has_structure_piece = any(key in response for key in structure_keys)
-    has_settlement_piece = any(
-        key in response
-        for key in (
-            "settlement_structure",
-            "settlement_structure_description",
-            "atmosphere",
-            "facilities",
-            "residents",
-            "adventurers",
-        )
-    )
-    if not has_structure_piece and not has_settlement_piece:
-        return value
-
-    if "settlement_structure" not in response:
-        structure = {key: response[key] for key in structure_keys if key in response}
-        if structure:
-            response["settlement_structure"] = structure
-
-    if not response.get("settlement_structure_description"):
-        response["settlement_structure_description"] = _settlement_structure_summary(response.get("settlement_structure"))
-    if not response.get("atmosphere"):
-        response["atmosphere"] = "人々の生活音と旅人の気配が混ざる、物語の始まりにふさわしい拠点。"
-    if "facilities" not in response or not isinstance(response.get("facilities"), list):
-        response["facilities"] = _settlement_facilities_from_structure(response.get("settlement_structure"))
-    if "residents" not in response or not isinstance(response.get("residents"), list):
-        response["residents"] = []
-    if "adventurers" not in response or not isinstance(response.get("adventurers"), list):
-        response["adventurers"] = []
-    return response
-
-
-def _settlement_structure_summary(structure: Any) -> str:
-    if isinstance(structure, dict):
-        core = str(structure.get("core") or "").strip()
-        spots = [str(item).strip() for item in _list_from_any(structure.get("spots")) if str(item).strip()]
-        if core and spots:
-            return f"{core}を中心に、{', '.join(spots[:6])} が並ぶ拠点。"
-        if core:
-            return f"{core}を中心に人と施設が集まる拠点。"
-        for key in ("districts", "landmarks", "places", "buildings", "shops", "gates"):
-            values = [str(item).strip() for item in _list_from_any(structure.get(key)) if str(item).strip()]
-            if values:
-                return f"{', '.join(values[:6])} が配置された拠点。"
-    if isinstance(structure, list):
-        values = [str(item).strip() for item in structure if str(item).strip()]
-        if values:
-            return f"{', '.join(values[:6])} が配置された拠点。"
-    return "中心施設と生活区、旅人向けの施設がまとまった拠点。"
-
-
-def _is_reserved_settlement_facility_text(name: Any) -> bool:
-    normalized = _normalise_text(name)
-    if not normalized:
-        return False
-    exact_names = (
-        "\u4e2d\u592e\u5e83\u5834",
-        "\u5e83\u5834",
-        "\u9580",
-        "\u6b63\u9580",
-        "\u57ce\u9580",
-        "\u5165\u53e3",
-        "\u5165\u308a\u53e3",
-        "\u51fa\u5165\u53e3",
-        "\u753a\u306e\u5165\u308a\u53e3",
-        "\u8857\u306e\u5165\u308a\u53e3",
-        "\u6751\u306e\u5165\u308a\u53e3",
-        "gate",
-        "gates",
-        "entrance",
-        "entry",
-        "plaza",
-        "centralplaza",
-    )
-    if normalized in {_normalise_text(item) for item in exact_names}:
-        return True
-    fragments = (
-        "\u4e2d\u592e\u5e83\u5834",
-        "\u5165\u308a\u53e3",
-        "\u5165\u53e3",
-        "\u51fa\u5165\u53e3",
-        "\u6b63\u9580",
-        "\u57ce\u9580",
-        "\u9580\u756a",
-        "\u9580\u524d",
-        "centralplaza",
-        "entrance",
-        "gateway",
-        "gatehouse",
-        "plaza",
-    )
-    if any(_normalise_text(fragment) in normalized for fragment in fragments):
-        return True
-    return normalized == "\u9580" or normalized.startswith("\u9580") or normalized.endswith("\u9580")
-
-
-def _settlement_facilities_from_structure(structure: Any) -> list[dict[str, Any]]:
-    names: list[str] = []
-    if isinstance(structure, dict):
-        for key in ("spots", "shops", "buildings", "places", "districts", "landmarks"):
-            names.extend(str(item).strip() for item in _list_from_any(structure.get(key)) if str(item).strip())
-        core = str(structure.get("core") or "").strip()
-        if core:
-            names.append(core)
-    elif isinstance(structure, list):
-        names.extend(str(item).strip() for item in structure if str(item).strip())
-
-    facilities: list[dict[str, Any]] = []
-    for name in names:
-        if _is_reserved_settlement_facility_text(name):
-            continue
-        facility_type = _settlement_facility_type(name)
-        if not facility_type:
-            continue
-        if any(_normalise_text(item.get("name")) == _normalise_text(name) for item in facilities):
-            continue
-        facilities.append(
-            {
-                "name": name,
-                "type": facility_type,
-                "description": f"{name}はこの拠点の内部施設。",
-                "npc_name": "",
-                "npc_role": _settlement_facility_role(facility_type),
-            }
-        )
-    return facilities
-
-
-def _settlement_facility_type(name: str) -> str:
-    text = str(name or "").casefold()
-    mapping = (
-        ("guild", ("guild", "adventurer", "quest board", "ギルド", "冒険者", "依頼掲示板", "掲示板")),
-        ("town_hall", ("town hall", "city hall", "municipal", "役場", "市庁舎", "役所", "行政庁")),
-        ("black_market", ("black market", "闇商店", "闇市")),
-        ("blacksmith", ("blacksmith", "smith", "鍛冶", "武器", "防具", "武具")),
-        ("apothecary", ("apothecary", "potion", "medicine", "薬", "薬品", "治療")),
-        ("food_store", ("food", "grocery", "食料", "食品")),
-        ("material_store", ("material", "素材", "鉱石", "採集")),
-        ("magic_store", ("magic", "scroll", "魔術", "魔法", "巻物")),
-        ("inn", ("inn", "宿", "旅籠")),
-        ("temple", ("temple", "church", "shrine", "神殿", "教会", "寺院", "大聖堂")),
-        ("market", ("market", "shop", "store", "市場", "商店", "通り")),
-    )
-    for facility_type, needles in mapping:
-        if any(needle in text for needle in needles):
-            return facility_type
-    return ""
-
-
-def _settlement_facility_role(facility_type: str) -> str:
-    return {
-        "guild": "ギルド受付",
-        "town_hall": "役場職員",
-        "black_market": "闇商人",
-        "blacksmith": "鍛冶職人",
-        "apothecary": "薬師",
-        "food_store": "食料店主",
-        "material_store": "素材商",
-        "magic_store": "魔術商",
-        "inn": "宿の主人",
-        "temple": "神官",
-        "market": "商人",
-    }.get(facility_type, "施設の担当者")
-
-
-def _list_from_any(value: Any) -> list[Any]:
-    if isinstance(value, list):
-        return value
-    if value in (None, "", {}):
-        return []
-    return [value]
-
-
-def _normalise_text(value: Any) -> str:
-    return "".join(str(value or "").casefold().split())
-
-
 def _wrap_item_response(
     value: Any,
     item_key: str,
     *,
-    aliases: tuple[str, ...],
     item_keys: tuple[str, ...],
 ) -> Any:
     if not isinstance(value, dict):
@@ -2154,10 +2001,6 @@ def _wrap_item_response(
     response = dict(value)
     if item_key in response:
         return response
-    for alias in aliases:
-        if alias in response:
-            response[item_key] = response[alias]
-            return response
     if any(key in response for key in item_keys):
         item = {key: item_value for key, item_value in response.items() if key in item_keys}
         response = {key: item_value for key, item_value in response.items() if key not in item_keys}
@@ -2170,7 +2013,6 @@ def _wrap_collection_response(
     value: Any,
     collection_key: str,
     *,
-    aliases: tuple[str, ...],
     item_keys: tuple[str, ...],
 ) -> Any:
     if isinstance(value, list):
@@ -2184,57 +2026,11 @@ def _wrap_collection_response(
             response[collection_key] = [response[collection_key]]
         return response
 
-    for alias in aliases:
-        if alias in response:
-            item = response[alias]
-            response[collection_key] = item if isinstance(item, list) else [item]
-            return response
-
     if any(key in response for key in item_keys):
-        item = {key: item_value for key, item_value in response.items() if not str(key).startswith("_")}
-        response = {key: item_value for key, item_value in response.items() if str(key).startswith("_")}
+        item = {key: item_value for key, item_value in response.items() if key in item_keys}
+        response = {key: item_value for key, item_value in response.items() if key not in item_keys}
         response[collection_key] = [item]
     return response
-
-
-def _repair_create_trait_response(value: Any) -> Any:
-    response = _wrap_collection_response(
-        value,
-        "traits",
-        aliases=("trait", "generated_trait", "trait_list"),
-        item_keys=("name", "desc"),
-    )
-    if not isinstance(response, dict):
-        return response
-    traits = response.get("traits")
-    if isinstance(traits, dict):
-        traits = [traits]
-    if not isinstance(traits, list):
-        return response
-    cleaned: list[dict[str, str]] = []
-    for raw in traits:
-        if not isinstance(raw, dict):
-            continue
-        name = str(raw.get("name") or "").strip()
-        if not name:
-            continue
-        cleaned.append({"name": name, "desc": str(raw.get("desc") or "").strip()})
-    response["traits"] = cleaned
-    return response
-
-
-def _normalize_value(field: FieldRule, item: Any) -> Any:
-    if bool in field.expected and isinstance(item, str):
-        lowered = item.strip().lower()
-        if lowered in {"true", "yes", "1", "はい"}:
-            return True
-        if lowered in {"false", "no", "0", "いいえ"}:
-            return False
-    if list in field.expected and isinstance(item, str):
-        return [item]
-    if str in field.expected and not isinstance(item, (str, list, dict)):
-        return str(item)
-    return item
 
 
 def _is_empty(item: Any) -> bool:

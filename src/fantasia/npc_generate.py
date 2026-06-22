@@ -1476,9 +1476,10 @@ def master_ai_npc_generater(
                 "あなたはAI駆動RPGのNPC生成担当です。"
                 "Fantasiaのmaster_ai_npc_generater相当として、"
                 "master_ai_facilitatorが必要とした未登録NPCを生成してください。"
-                "NPCカテゴリ、説明、性格、外見、職業、archetype、skillsを持つJSONだけを返してください。"
+                "NPCカテゴリ、説明、性格、外見、職業、archetype、skills、traitsを持つJSONだけを返してください。"
                 "skillsは必ず name, desc, usesp(1-12), power(1-5), ability, element, type を持つ新形式にしてください。"
                 "typeは heal_single, damage_hp_single, effect_enemy_single 等の戦闘効果ID配列です。"
+                "traitsを返す場合は各traitを name と desc だけにしてください。"
                 "resistanceを返す場合は [{type, amount}] とし、弱い耐性は0.2、強い耐性は0.5だけを使ってください。"
                 "店主・一般NPCは合計8、通常NPCは8-12、終盤・精鋭・ボス級は16-25を目安にしてください。"
             ),
@@ -1546,7 +1547,6 @@ def npc_detail_generater(
                 "必ずname, talk_style, archetype, skillsを持つJSONだけを返してください。"
                 "skillsは必ず name, desc, usesp(1-12), power(1-5), ability, element, type を持つ新形式にしてください。"
                 "typeは heal_single, damage_hp_single, effect_enemy_single 等の戦闘効果ID配列です。"
-                "traitsを返す場合は name と desc だけにしてください。"
             ),
         },
         {

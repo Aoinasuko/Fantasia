@@ -118,7 +118,7 @@ def normalise_combat_skill(value: Any) -> dict[str, Any]:
         return {}
     effects = normalise_effect_items(value.get("type"), allowed=COMBAT_SKILL_EFFECT_TYPES)
     if not effects:
-        effects = [{"type": "damage_hp_single"}]
+        return {}
     return {
         "name": name,
         "desc": str(value.get("desc") or "").strip(),

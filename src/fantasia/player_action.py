@@ -135,7 +135,23 @@ def _explicit_quest_report_action(action: str) -> bool:
     if text == QUEST_REPORT_CHOICE_LABEL:
         return True
     lowered = text.casefold()
-    if any(phrase in text for phrase in ("依頼を報告", "依頼の報告", "達成報告", "完了報告", "報酬を受け取", "報酬を請求")):
+    if any(
+        phrase in text
+        for phrase in (
+            "依頼を報告",
+            "依頼の報告",
+            "依頼完了",
+            "クエスト報告",
+            "ギルドに報告",
+            "受付に報告",
+            "報告する",
+            "達成報告",
+            "完了報告",
+            "報酬をもら",
+            "報酬を受け取",
+            "報酬を請求",
+        )
+    ):
         return True
     return any(word in lowered for word in ("report quest", "turn in quest", "claim reward"))
 
