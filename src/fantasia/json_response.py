@@ -465,6 +465,19 @@ SCHEMAS: dict[str, ManagerSchema] = {
                     "slot_id": "loc_000",
                     "name": "灯守りの街",
                     "description": "霧の外縁を見張る灯台を持つ、旅人と職人の小さな街。",
+                    "facilities": [
+                        {
+                            "name": "灯火鉄工房",
+                            "type": "blacksmith",
+                            "description": "霧に濡れた武具を直す炉と作業台が並ぶ鍛冶屋。",
+                            "npc_name": "ガルド",
+                            "npc_role": "鍛冶職人",
+                            "npc_gender": "male",
+                            "npc_age": "middle-aged",
+                            "npc_look": "煤のついた革前掛けと太い腕を持つ職人",
+                            "npc_personality": "無口だが仕事は丁寧",
+                        }
+                    ],
                 }
             ],
         },
@@ -507,6 +520,27 @@ SCHEMAS: dict[str, ManagerSchema] = {
                     }
                 ],
             },
+        },
+    ),
+    "world_generation_dungeon_boss": ManagerSchema(
+        manager_name="world_generation_dungeon_boss",
+        fields=(
+            FieldRule("boss_npc", (dict,), string_items=False),
+            FieldRule("reason", (str,), required=False, non_empty=False),
+        ),
+        example={
+            "boss_npc": {
+                "name": "星喰らいの守護者",
+                "role": "ラストダンジョンのボス",
+                "description": "世界の外縁に封じられた力を守る、最後の敵。",
+                "gender": "none",
+                "age": "ancient",
+                "look": "黒い星明かりをまとった巨大な影。",
+                "personality": "侵入者の覚悟を冷たく試す。",
+                "image_generation_prompt": ["fantasy final dungeon boss", "starless guardian"],
+                "hostile": True,
+            },
+            "reason": "世界設定と最終目的地の封印テーマに合わせた。",
         },
     ),
     "dungeon_subnode_generator": ManagerSchema(
@@ -1622,6 +1656,10 @@ def schema_instruction(manager_name: str) -> str:
             "\nlocal_world_settlement_describer rules:\n"
             "- Return one settlement object for each supplied slot_id.\n"
             "- Each settlement must include slot_id, name, and description.\n"
+            "- For non-starting settlement slots that include required_shop_facilities, include facilities with one facility for every listed type.\n"
+            "- Each generated facility must include name, type, description, npc_name, npc_role, npc_gender, npc_age, npc_look, and npc_personality.\n"
+            "- npc_look and npc_personality describe the facility keeper, not the facility. Never copy the facility description into those fields.\n"
+            "- Do not include gates, entrances, central plazas, or plazas as facilities.\n"
             "- Do not change map structure, coordinates, danger, or connections.\n"
             "- All human-readable names and descriptions must be Japanese.\n"
             "- Return compact JSON only. Do not add Markdown or commentary.\n"
@@ -1641,6 +1679,16 @@ def schema_instruction(manager_name: str) -> str:
             "- Return location{slot_id,name,description,subnodes} for the one supplied dungeon slot.\n"
             "- Only name and describe the listed internal subnodes. Do not include entrance, entrance_b, deepest, or any unlisted subnode.\n"
             "- Do not change graph shape, external links, coordinates, danger, entrance nodes, or deepest node.\n"
+            "- All human-readable names and descriptions must be Japanese.\n"
+            "- Return compact JSON only. Do not add Markdown or commentary.\n"
+        )
+    if manager_name == "world_generation_dungeon_boss":
+        instruction += (
+            "\nworld_generation_dungeon_boss rules:\n"
+            "- Return exactly one top-level boss_npc object.\n"
+            "- boss_npc must include name, role, description, gender, age, look, personality, image_generation_prompt, and hostile=true.\n"
+            "- The boss must match the supplied world setting, final_destination_concept, and final dungeon.\n"
+            "- Do not return locations, subnodes, quests, rewards, or map changes.\n"
             "- All human-readable names and descriptions must be Japanese.\n"
             "- Return compact JSON only. Do not add Markdown or commentary.\n"
         )
@@ -1731,6 +1779,7 @@ def schema_instruction(manager_name: str) -> str:
             "- core/spots/districts/landmarks などは settlement_structure の中にだけ入れてください。トップレベルに core/spots だけを返す形式は禁止です。\n"
             "- residents と adventurers に該当者がいない場合も [] を返してください。facilities も不明なら [] を返してください。\n"
             "- プロンプトに required_shop_facilities がある場合、facilities には各 type と一致する店を必ず1件ずつ含めてください。各店は固有名、説明文、npc_name, npc_role, npc_gender, npc_age, npc_look, npc_personality を持つ必要があります。\n"
+            "- npc_look と npc_personality は施設ではなく担当NPC本人の外見・人物像です。施設説明文をそのまま入れないでください。\n"
             "- 門、入口、出入口、中央広場、広場はゲーム側の固定移動ノードなので、facilities や settlement_structure の spots/shops/districts/landmarks/places/buildings に含めないでください。\n"
             "- 井戸は固定配置ではありません。必要な場合だけ、通常の施設/spot として固有の名称と説明を付けて含めてください。井戸を外部リンク、隣接ロケーションの入口、ワールドマップ経路の端点にしないでください。\n"
             "- 次の外枠を崩さず、値だけを拠点に合わせて埋めてください。\n"
@@ -1738,7 +1787,7 @@ def schema_instruction(manager_name: str) -> str:
             '  "settlement_structure_description": "拠点構造の文章",\n'
             '  "atmosphere": "拠点の雰囲気",\n'
             '  "settlement_structure": {"core": "中心施設", "spots": ["施設や生活区"]},\n'
-            '  "facilities": [{"name": "施設名", "type": "guild", "description": "説明", "npc_name": "担当者名", "npc_role": "役割"}],\n'
+            '  "facilities": [{"name": "施設名", "type": "guild", "description": "施設説明", "npc_name": "担当者名", "npc_role": "役割", "npc_gender": "female", "npc_age": "adult", "npc_look": "担当者本人の外見", "npc_personality": "担当者本人の人物像"}],\n'
             '  "residents": [],\n'
             '  "adventurers": []\n'
             "}\n"

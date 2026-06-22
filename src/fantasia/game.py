@@ -888,6 +888,16 @@ class GameEngine:
         self._set_current_subnode(settlement_location, "gate")
         if player_character:
             self._install_player_character(player_character)
+        self._emit_world_generation_progress(progress_callback, "final_boss", "Generating final dungeon boss", 96, 100)
+        final_boss_event = self._ensure_final_destination_boss(world, premise_text)
+        if final_boss_event:
+            world.history.append(
+                {
+                    "manager": "world_generation_final_dungeon_boss",
+                    "location": final_boss_event.get("location"),
+                    "boss": final_boss_event,
+                }
+            )
         if save_game:
             self.save_game()
         self._emit_world_generation_progress(progress_callback, "completed", "ワールド生成完了", 100, 100)
@@ -987,11 +997,11 @@ class GameEngine:
             ("single", "road", "crossroad", "route", "未命名の分かれ道02"),
             ("settlement", "settlement", "village", "settlement", "未命名の村03"),
             ("single", "road", "road", "route", "未命名の街道04"),
-            ("single", "wilderness", "plain", "route", "未命名の野05"),
+            ("single", "plain", "plain", "route", "未命名の平原05"),
             ("settlement", "settlement", "town", "settlement", "未命名の街06"),
             ("single", "road", "road", "route", "未命名の街道07"),
             ("single", "landmark", "landmark", "route", "未命名の目印08"),
-            ("single", "landmark", "final_destination", "final_destination", "未命名の最終地点09"),
+            ("dungeon", "dungeon", "final_destination", "final_destination", "未命名の最終ダンジョン09"),
         ]
         coords = [(index, 0) for index in range(len(route_slots))]
         max_distance = len(route_slots) - 1
@@ -1056,7 +1066,12 @@ class GameEngine:
             location.flags["discovered"] = index == 0
             if category == "settlement":
                 location.flags["settlement"] = True
-            self._ensure_location_subnode_graph(world, location.name)
+            if category == "dungeon":
+                location.flags["dungeon"] = True
+                location.flags["dangerous"] = True
+                self._install_local_dungeon_subnode_graph(location, rng)
+            else:
+                self._ensure_location_subnode_graph(world, location.name)
             if role == "final_destination":
                 location.flags["final_destination"] = True
             self._set_location_graph_node(world, location.name, kind=kind, danger=danger, location=location)
@@ -1155,13 +1170,13 @@ class GameEngine:
         return set(candidates[:desired])
 
     def _local_world_node_category(self, distance: int, rng: random.Random) -> tuple[str, str, str]:
-        single_subtypes = ("road", "crossroad", "coast", "river", "plain", "landmark", "wilderness")
+        single_subtypes = ("road", "crossroad", "coast", "river", "plain", "landmark")
         dungeon_subtypes = ("forest", "mountain", "ruin", "cave", "mine")
         dungeon_chance = 0.18 if distance <= 1 else 0.28 if distance == 2 else 0.42
         if rng.random() < dungeon_chance:
             return "dungeon", "dungeon", rng.choice(dungeon_subtypes)
         subtype = rng.choice(single_subtypes)
-        kind = subtype if subtype in {"road", "crossroad", "coast", "river", "plain"} else "wilderness" if subtype == "wilderness" else "landmark"
+        kind = subtype if subtype in {"road", "crossroad", "coast", "river", "plain"} else "landmark"
         return "single", kind, subtype
 
     def _local_world_placeholder_name(self, category: str, subtype: str, index: int) -> str:
@@ -1518,7 +1533,15 @@ class GameEngine:
         response = self._chat_json(
             "local_world_settlement_describer",
             messages,
-            max_tokens=max(650, min(1300, 300 + len(specs) * 220)),
+            max_tokens=max(
+                900,
+                min(
+                    2400,
+                    360
+                    + len(specs) * 230
+                    + sum(len(_as_list(slot.get("required_shop_facilities"))) for slot in prompt.get("slots", [])) * 120,
+                ),
+            ),
             world_name=world.world_name,
             player_name=player_name,
         )
@@ -1873,22 +1896,25 @@ class GameEngine:
             name = str(spec.get("name") or "")
             node = nodes.get(name, {}) if isinstance(nodes, dict) else {}
             neighbors = self._world_neighbors_no_ensure(world, name)
-            slots.append(
-                {
-                    "slot_id": spec.get("slot_id"),
-                    "placeholder_name": name,
-                    "category": spec.get("category"),
-                    "kind": spec.get("kind"),
-                    "subtype": spec.get("subtype"),
-                    "role": spec.get("role"),
-                    "danger": spec.get("danger"),
-                    "grid": [spec.get("grid_x"), spec.get("grid_y")],
-                    "grid_distance": spec.get("grid_distance"),
-                    "neighbor_placeholders": neighbors,
-                    "node": {key: node.get(key) for key in ("kind", "danger", "grid_x", "grid_y", "grid_distance") if isinstance(node, dict)},
-                    "final_destination_concept": str(theme.get("final_destination_concept") or "") if str(spec.get("role") or "") == "final_destination" else "",
-                }
-            )
+            slot = {
+                "slot_id": spec.get("slot_id"),
+                "placeholder_name": name,
+                "category": spec.get("category"),
+                "kind": spec.get("kind"),
+                "subtype": spec.get("subtype"),
+                "role": spec.get("role"),
+                "danger": spec.get("danger"),
+                "grid": [spec.get("grid_x"), spec.get("grid_y")],
+                "grid_distance": spec.get("grid_distance"),
+                "neighbor_placeholders": neighbors,
+                "node": {key: node.get(key) for key in ("kind", "danger", "grid_x", "grid_y", "grid_distance") if isinstance(node, dict)},
+                "final_destination_concept": str(theme.get("final_destination_concept") or "") if str(spec.get("role") or "") == "final_destination" else "",
+            }
+            if mode == "settlement" and str(spec.get("role") or "") != "starting_settlement":
+                required_shop_facilities = self._settlement_required_shop_slots(world, name)
+                spec["required_shop_facilities"] = required_shop_facilities
+                slot["required_shop_facilities"] = required_shop_facilities
+            slots.append(slot)
         rules = [
             "Return one item per supplied slot_id.",
             "Do not change category, danger, coordinates, or connections.",
@@ -1898,7 +1924,12 @@ class GameEngine:
             "Use danger and grid distance to make farther locations feel more threatening.",
         ]
         if mode == "single":
-            rules.append("For single-subnode locations, invent a concrete road, coast, riverbank, landmark, plain, or wilderness identity and a real setting description.")
+            rules.append("For single-subnode locations, invent a concrete road, coast, riverbank, landmark, or plain identity and a real setting description.")
+        if mode == "settlement":
+            rules.append("For non-starting settlement slots with required_shop_facilities, include facilities matching every listed type.")
+            rules.append("Each facility must have name, type, description, npc_name, npc_role, npc_gender, npc_age, npc_look, and npc_personality.")
+            rules.append("npc_look and npc_personality describe the facility keeper, not the facility. Never copy the facility description into those fields.")
+            rules.append("Do not include gates, entrances, central plazas, or plazas as facilities.")
         if mode == "dungeon":
             rules.append("For final_destination slots, use final_destination_concept and the world premise to create a proper named endgame location.")
         return {
@@ -1972,8 +2003,65 @@ class GameEngine:
         area = str(item.get("area") or item.get("region") or "").strip()
         if area:
             location.area = area
+        if str(spec.get("category") or "") == "settlement":
+            self._apply_local_world_settlement_facilities(world, location.name, spec, item)
         location.extra["llm_location_description"] = _strip_response_metadata(item)
         self._set_location_graph_node(world, location.name, kind=str(spec.get("kind") or ""), danger=_safe_int(spec.get("danger"), 0), location=location)
+
+    def _apply_local_world_settlement_facilities(
+        self,
+        world: WorldData,
+        settlement_name: str,
+        spec: dict[str, Any],
+        item: dict[str, Any],
+    ) -> None:
+        if str(spec.get("role") or "") == "starting_settlement":
+            return
+        location = world.locations.get(settlement_name)
+        if not location:
+            return
+        required_shop_slots = [
+            dict(slot)
+            for slot in _as_list(item.get("required_shop_facilities") or spec.get("required_shop_facilities"))
+            if isinstance(slot, dict)
+        ]
+        if not required_shop_slots:
+            required_shop_slots = self._settlement_required_shop_slots(world, settlement_name)
+        facilities: list[dict[str, Any]] = []
+        for raw in _as_list(item.get("facilities") or item.get("shops")):
+            if isinstance(raw, dict):
+                name = _clean_settlement_generated_text(raw.get("name") or raw.get("facility_name") or raw.get("title") or "", settlement_name)
+                if not name or _is_reserved_settlement_facility_name(name):
+                    continue
+                description = _facility_description_from_payload(
+                    raw.get("description") or raw.get("overview") or raw.get("summary") or "",
+                    settlement_name,
+                    name,
+                )
+                facilities.append(
+                    {
+                        "name": name,
+                        "type": str(raw.get("type") or raw.get("facility_type") or _facility_type_from_name(name)).strip(),
+                        "description": description,
+                        "npc_name": _clean_settlement_generated_text(raw.get("npc_name") or raw.get("keeper") or raw.get("owner") or "", settlement_name),
+                        "npc_role": _clean_settlement_generated_text(raw.get("npc_role") or raw.get("role") or "", settlement_name),
+                        **_facility_keeper_fields(raw, settlement_name, name, description),
+                        "location_name": settlement_name,
+                        "sub_location": name,
+                        "source": str(raw.get("source") or "local_world_settlement_describer"),
+                    }
+                )
+            else:
+                name = _clean_settlement_generated_text(raw or "", settlement_name)
+                if name and not _is_reserved_settlement_facility_name(name):
+                    facilities.append(_facility_record(name, settlement_name))
+        self._append_missing_required_shop_facilities(settlement_name, facilities, required_shop_slots)
+        location.extra["required_shop_facilities"] = required_shop_slots
+        location.extra["facilities"] = facilities
+        location.extra["raw_local_world_settlement_facilities"] = _strip_response_metadata(item)
+        location.flags["settlement"] = True
+        location.extra["location_kind"] = "settlement"
+        self._ensure_settlement_facilities(location)
 
     def _apply_local_world_subnode_descriptions(
         self,
@@ -5381,16 +5469,18 @@ class GameEngine:
             name = _shop_facility_display_name(name, facility_type, settlement.name, len(normalized))
             if _is_reserved_settlement_facility_name(name):
                 continue
+            description = _facility_description_from_payload(
+                item.get("description") or item.get("overview") or "",
+                settlement.name,
+                name,
+            )
             record = {
                 "name": name,
                 "type": facility_type,
-                "description": _facility_description_from_payload(
-                    item.get("description") or item.get("overview") or "",
-                    settlement.name,
-                    name,
-                ),
+                "description": description,
                 "npc_name": _clean_settlement_generated_text(item.get("npc_name") or item.get("keeper") or item.get("owner") or "", settlement.name),
                 "npc_role": _clean_settlement_generated_text(item.get("npc_role") or item.get("role") or "", settlement.name),
+                **_facility_keeper_fields(item, settlement.name, name, description),
                 "location_name": settlement.name,
                 "sub_location": name,
                 "source": str(item.get("source") or "settlement"),
@@ -5959,6 +6049,97 @@ class GameEngine:
                     }
                 )
 
+    def _world_generation_dungeon_boss_response(
+        self,
+        world: WorldData,
+        location: LocationData,
+        premise: str,
+    ) -> dict[str, Any]:
+        if self.llm is None:
+            return {}
+        graph = self._ensure_location_subnode_graph(world, location.name)
+        nodes = graph.get("nodes", {}) if isinstance(graph, dict) else {}
+        subnodes = [
+            {
+                "id": str(node_id),
+                "name": str(node.get("name") or ""),
+                "kind": str(node.get("kind") or ""),
+                "description": _short_text(str(node.get("description") or ""), 180),
+            }
+            for node_id, node in nodes.items()
+            if isinstance(node, dict)
+        ]
+        raw_theme = world.extra.get("raw_create_world_theme") if isinstance(world.extra, dict) else {}
+        danger = max(5, _safe_int(location.extra.get("danger_level", location.extra.get("danger")), 0))
+        npc_template_payload = json.dumps(
+            {
+                "enemy_templates": npc_template_prompt_summaries(
+                    ENEMY_NPC_TEMPLATE_CATEGORIES,
+                    danger_level=danger,
+                    used_ids=used_npc_template_ids(world),
+                    limit=12,
+                )
+            },
+            ensure_ascii=False,
+        )
+        prompt = {
+            "world": _world_ai_context(world, include_characters=False, include_monsters=False, include_quests=True, location_limit=10),
+            "premise": _short_text(premise, 2000),
+            "final_destination_concept": str((raw_theme or {}).get("final_destination_concept") or ""),
+            "final_dungeon": {
+                "name": location.name,
+                "description": _short_text(location.description, 900),
+                "danger_level": danger,
+                "subnodes": subnodes,
+                "boss_subnode_id": DUNGEON_DEEPEST_SUBNODE_ID,
+            },
+            "requirements": {
+                "return_key": "boss_npc",
+                "language": "Japanese",
+                "hostile": True,
+                "boss_should_reflect": ["world premise", "final_destination_concept", "final dungeon name", "final dungeon description"],
+                "required_boss_fields": [
+                    "name",
+                    "role",
+                    "description",
+                    "gender",
+                    "age",
+                    "look",
+                    "personality",
+                    "image_generation_prompt",
+                    "hostile",
+                    "npc_template_id",
+                ],
+            },
+        }
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Generate exactly one final dungeon boss for Fantasia world generation. "
+                    "Return compact JSON only with a boss_npc object. "
+                    "The boss must fit the world setting and the final destination concept. "
+                    "Do not create locations, quests, rewards, or map changes."
+                ),
+            },
+            {"role": "user", "content": _ai_json(prompt)},
+            {
+                "role": "system",
+                "content": (
+                    f"NPC template candidates: {npc_template_payload}\n"
+                    "Prefer a matching enemy template when possible and include npc_template_id. "
+                    "If no template matches, still generate a complete boss_npc."
+                ),
+            },
+        ]
+        return self._chat_json(
+            "world_generation_dungeon_boss",
+            messages,
+            max_tokens=900,
+            world_name=world.world_name,
+            player_name=self.state.player_name,
+        )
+
     def _ensure_world_generation_dungeon_boss(
         self,
         world: WorldData,
@@ -5974,15 +6155,23 @@ class GameEngine:
         response = dict(raw_payload) if isinstance(raw_payload, dict) else {}
         response.setdefault("narration", location.description)
         response.setdefault("location", location.name)
-        premise_context = premise if _world_generation_premise_refers_to_location(premise, location.name) else ""
-        if not _generated_dungeon_boss_payload(response) and not _generated_dungeon_boss_required(premise_context, response, location):
+        is_final_destination = self._local_world_node_is_final_destination(location)
+        premise_context = premise if is_final_destination or _world_generation_premise_refers_to_location(premise, location.name) else ""
+        boss_required = is_final_destination or _generated_dungeon_boss_required(premise_context, response, location)
+        boss_payload = _generated_dungeon_boss_payload(response)
+        if not boss_payload and boss_required:
+            boss_response = self._world_generation_dungeon_boss_response(world, location, premise_context or premise)
+            if boss_response:
+                response["world_generation_boss_response"] = _strip_response_metadata(boss_response)
+                boss_payload = _generated_dungeon_boss_payload(boss_response)
+        if not boss_payload and not boss_required:
             return None
         graph = self._ensure_location_subnode_graph(world, location.name)
         nodes = graph.get("nodes", {}) if isinstance(graph, dict) else {}
         target_subnode = DUNGEON_DEEPEST_SUBNODE_ID if DUNGEON_DEEPEST_SUBNODE_ID in nodes else self._default_subnode_for_location(location)
         if not target_subnode:
             return None
-        boss_payload = _generated_dungeon_boss_payload(response) or _fallback_generated_dungeon_boss_payload(location, premise_context, response)
+        boss_payload = boss_payload or _fallback_generated_dungeon_boss_payload(location, premise_context, response)
         danger = max(1, _safe_int(location.extra.get("danger_level", location.extra.get("danger")), 0))
         boss_payload = self._template_augmented_npc_raw(
             boss_payload,
@@ -6039,6 +6228,32 @@ class GameEngine:
             }
         )
         return {"type": "character", "name": character.name, "role": "boss", "location": location.name, "subnode": target_subnode}
+
+    def _ensure_final_destination_boss(self, world: WorldData, premise: str) -> dict[str, str] | None:
+        location_name = ""
+        for spec in self._route_skeleton_specs(world):
+            if str(spec.get("role") or "") == "final_destination":
+                location_name = str(spec.get("name") or "").strip()
+                break
+        if not location_name:
+            for name, location in world.locations.items():
+                if self._local_world_node_is_final_destination(location):
+                    location_name = name
+                    break
+        if not location_name:
+            return None
+        location = world.locations.get(location_name)
+        if not location:
+            return None
+        location.extra["location_kind"] = "dungeon"
+        location.extra["boss_required"] = True
+        location.extra["final_destination"] = True
+        location.flags["dungeon"] = True
+        location.flags["dangerous"] = True
+        location.flags["final_destination"] = True
+        if SUBNODE_GRAPH_KEY not in location.extra:
+            self._install_local_dungeon_subnode_graph(location, random.Random(f"final-dungeon:{world.world_name}:{location.name}"))
+        return self._ensure_world_generation_dungeon_boss(world, location.name, premise)
 
     def _generate_world_location_batches(
         self,
@@ -10291,6 +10506,7 @@ class GameEngine:
                     "in required_shop_facilities. Use each listed type exactly. Generate an original in-world "
                     "shop name, description, npc_name, npc_role, npc_gender, npc_age, npc_look, and "
                     "npc_personality for each shop. These shops are already inside the settlement; do not "
+                    "copy the shop/facility description into npc_look or npc_personality; those fields must describe the keeper as a person. "
                     "turn them into world-map locations, entrances, gates, plazas, or route nodes. Do not "
                     "use only generic labels such as blacksmith, apothecary, general store, shop, or market "
                     "as the visible name."
@@ -10322,7 +10538,9 @@ class GameEngine:
                     "NPC completeness rule: every person-like object in facilities, residents, and adventurers must "
                     "include age, gender, look, and personality. For facilities, put the facility keeper fields on the "
                     "facility object as npc_gender, npc_age, npc_look, and npc_personality. For residents/adventurers, "
-                    "use gender, age, look, and personality. gender must be female, male, none, or a matching localized "
+                    "use gender, age, look, and personality. Facility descriptions describe the building or shop; "
+                    "npc_look and npc_personality must describe the person working there and must not repeat the facility description. "
+                    "gender must be female, male, none, or a matching localized "
                     "label. age should be a visible age range such as early 20s, late 30s, elderly, unknown, or adult. "
                     "look must describe visible appearance, clothes, body type/species traits, and atmosphere enough "
                     "for character image generation. For monsters or non-humans, use gender=none and a life-stage age "
@@ -10485,7 +10703,8 @@ class GameEngine:
                     f"existing_facilities: {facilities_payload}\n"
                     f"requested_facility: {requested_facility}\n"
                     f"player_action: {action}\n"
-                    "Judge whether this facility can be added. If allowed, include facility{name,type,description} and npc{name,role,personality,look}. "
+                    "Judge whether this facility can be added. If allowed, include facility{name,type,description} and npc{name,role,gender,age,personality,look}. "
+                    "npc.look and npc.personality must describe the person working there, not the facility or shop description. "
                     "Prefer ordinary settlement facilities such as guilds, blacksmiths, black markets, apothecaries, food stores, material stores, general stores, magic stores, inns, temples, clinics, libraries, stables, and markets when plausible. "
                     "Shop facilities must have a proper unique shop name instead of only a generic type name. "
                     "Do not create the settlement entrance, gate, central plaza, or plaza as facilities; those are fixed movement nodes."
@@ -10508,18 +10727,20 @@ class GameEngine:
         original_name = name
         facility_index = len(_as_list(settlement.extra.get("facilities")))
         name = _shop_facility_display_name(name, facility_type, settlement.name, facility_index)
+        description = _clean_settlement_generated_text(
+            raw.get("description") or raw.get("overview") or response.get("narration") or "",
+            settlement.name,
+        )
         return {
             "name": name,
             "type": facility_type,
-            "description": _clean_settlement_generated_text(
-                raw.get("description") or raw.get("overview") or response.get("narration") or "",
-                settlement.name,
-            ),
+            "description": description,
             "npc_name": _clean_settlement_generated_text(npc.get("name") or raw.get("npc_name") or "", settlement.name),
             "npc_role": _clean_settlement_generated_text(
                 npc.get("role") or raw.get("npc_role") or _default_facility_role(facility_type),
                 settlement.name,
             ),
+            **_facility_keeper_fields({**raw, "npc": npc}, settlement.name, name, description),
             "location_name": settlement.name,
             "sub_location": name,
             "source": "facility_request_evaluator",
@@ -10555,17 +10776,19 @@ class GameEngine:
                     continue
                 if _is_reserved_settlement_facility_name(name):
                     continue
+                description = _facility_description_from_payload(
+                    raw.get("description") or raw.get("overview") or "",
+                    settlement_name,
+                    name,
+                )
                 facilities.append(
                     {
                         "name": name,
                         "type": str(raw.get("type") or raw.get("facility_type") or _facility_type_from_name(name)).strip(),
-                        "description": _facility_description_from_payload(
-                            raw.get("description") or raw.get("overview") or "",
-                            settlement_name,
-                            name,
-                        ),
+                        "description": description,
                         "npc_name": _clean_settlement_generated_text(raw.get("npc_name") or raw.get("keeper") or raw.get("owner") or "", settlement_name),
                         "npc_role": _clean_settlement_generated_text(raw.get("npc_role") or raw.get("role") or "", settlement_name),
+                        **_facility_keeper_fields(raw, settlement_name, name, description),
                         "location_name": settlement_name,
                         "sub_location": name,
                         "source": str(raw.get("source") or "create_settlement_detail"),
@@ -21066,6 +21289,47 @@ def _facility_record(name: str, settlement_name: str, facility_type: str = "") -
     }
 
 
+def _facility_keeper_fields(
+    raw: dict[str, Any],
+    settlement_name: str,
+    facility_name: str,
+    facility_description: str = "",
+) -> dict[str, str]:
+    npc = raw.get("npc") if isinstance(raw.get("npc"), dict) else {}
+    result = {
+        "npc_gender": str(raw.get("npc_gender") or npc.get("gender") or raw.get("gender") or "").strip(),
+        "npc_age": str(raw.get("npc_age") or npc.get("age") or raw.get("age") or "").strip(),
+        "npc_look": str(
+            raw.get("npc_look")
+            or raw.get("npc_appearance")
+            or npc.get("look")
+            or npc.get("appearance")
+            or ""
+        ).strip(),
+        "npc_personality": str(
+            raw.get("npc_personality")
+            or npc.get("personality")
+            or ""
+        ).strip(),
+    }
+    for key in ("npc_look", "npc_personality"):
+        value = _clean_settlement_generated_text(result.get(key) or "", settlement_name)
+        if _same_generated_facility_and_keeper_text(value, facility_description, facility_name):
+            value = ""
+        result[key] = value
+    return result
+
+
+def _same_generated_facility_and_keeper_text(value: str, facility_description: str, facility_name: str) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    description = str(facility_description or "").strip()
+    if description and text == description:
+        return True
+    return bool(facility_name and text == str(facility_name).strip())
+
+
 def _facility_exists(facilities: list[dict[str, Any]], name: str) -> bool:
     return any(
         _facility_record_matches_requested(item, name) if isinstance(item, dict) else False
@@ -21159,6 +21423,47 @@ def _default_facility_npc_name(facility_name: str, facility_type: str) -> str:
     role = _default_facility_role(facility_type)
     clean = str(facility_name or "").strip() or "施設"
     return f"{clean}の{role}"
+
+
+def _default_facility_npc_look(facility_name: str, facility_type: str, role: str = "") -> str:
+    facility = str(facility_name or "").strip()
+    role_text = str(role or _default_facility_role(facility_type)).strip()
+    templates = {
+        "guild": "整えた受付服と書類鞄を身につけ、旅人の出入りを落ち着いて見渡している人物。",
+        "blacksmith": "煤のついた作業着と厚い革手袋を身につけ、鍛冶場の熱に慣れた力強い職人。",
+        "black_market": "暗色の外套で顔を半ば隠し、値踏みするような鋭い視線を持つ取引人。",
+        "apothecary": "薬草の香りが染みた前掛けをつけ、小瓶と調合道具を手元に並べている薬師。",
+        "food_store": "清潔な前掛けと袖まくりの服装で、食材の鮮度を確かめている店主。",
+        "material_store": "丈夫な作業服に道具袋を下げ、素材の傷や質を見抜く目を持つ商人。",
+        "general_store": "棚札と帳簿を手に、旅人向けの品を手早く並べ替えている店主。",
+        "magic_store": "古い刺繍入りのローブをまとい、巻物や触媒を慎重に扱う魔術商。",
+        "town_hall": "整った事務服を着て、印章と書類を抱えながら来訪者に対応する職員。",
+        "shop": "店の雰囲気に合った実用的な服装で、品物と客の様子をよく見ている店主。",
+        "market": "活気ある市場向けの身軽な服装で、品物を示しながら客を呼び込む商人。",
+    }
+    base = templates.get(str(facility_type or "").strip().lower(), "施設の仕事に合った身なりで、来訪者に対応している人物。")
+    if facility and role_text:
+        return f"{facility}で働く{role_text}。{base}"
+    if facility:
+        return f"{facility}で働いている。{base}"
+    return base
+
+
+def _default_facility_npc_personality(facility_name: str, facility_type: str, role: str = "") -> str:
+    templates = {
+        "guild": "情報整理に長け、冒険者には事務的だが面倒見よく接する。",
+        "blacksmith": "頑固で職人気質だが、装備を預ける相手には誠実に向き合う。",
+        "black_market": "用心深く疑り深いが、価値を認めた相手とは取引を惜しまない。",
+        "apothecary": "観察力があり、怪我や体調の変化にすぐ気づく慎重な性格。",
+        "food_store": "世話好きで話しやすく、旅人の空腹や疲れにも目ざとい。",
+        "material_store": "実利的で目利きに自信があり、素材の扱いには厳しい。",
+        "general_store": "客の要望を聞き分けるのが早く、必要な品を現実的に勧める。",
+        "magic_store": "知識欲が強く、珍しい品や術式の話になると饒舌になる。",
+        "town_hall": "規則を重んじるが、困っている住民や旅人には手順を丁寧に説明する。",
+        "shop": "商売熱心で、客の財布と必要品の両方を見ながら勧め方を変える。",
+        "market": "明るく押しが強いが、常連には気前よく接する。",
+    }
+    return templates.get(str(facility_type or "").strip().lower(), "仕事には真面目で、施設を訪れる相手をよく観察して対応する。")
 
 
 def _facility_request_from_action(action: str, facilities: list[dict[str, Any]]) -> str:

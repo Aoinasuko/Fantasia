@@ -1073,6 +1073,10 @@ def ensure_facility_npc(engine: GameEngine, settlement: LocationData, facility: 
     npc_payload = facility.get("npc") if isinstance(facility.get("npc"), dict) else {}
     npc_gender = str(facility.get("npc_gender") or npc_payload.get("gender") or "").strip()
     npc_age = str(facility.get("npc_age") or npc_payload.get("age") or "").strip()
+    facility_name = str(facility.get("name") or "").strip()
+    facility_type = str(facility.get("type") or gh._facility_type_from_name(facility_name))
+    facility_description = str(facility.get("description") or "").strip()
+    npc_role = str(facility.get("npc_role") or gh._default_facility_role(facility_type))
     npc_look = str(
         facility.get("npc_look")
         or facility.get("npc_appearance")
@@ -1081,6 +1085,21 @@ def ensure_facility_npc(engine: GameEngine, settlement: LocationData, facility: 
         or ""
     ).strip()
     npc_personality = str(facility.get("npc_personality") or npc_payload.get("personality") or "").strip()
+    if npc_look == facility_description:
+        npc_look = ""
+    if npc_personality == facility_description:
+        npc_personality = ""
+    if not npc_look:
+        npc_look = gh._default_facility_npc_look(facility_name, facility_type, npc_role)
+        facility["npc_look"] = npc_look
+    if not npc_personality:
+        npc_personality = gh._default_facility_npc_personality(facility_name, facility_type, npc_role)
+        facility["npc_personality"] = npc_personality
+    npc_description = str(npc_payload.get("description") or facility.get("npc_description") or "").strip()
+    if npc_description == facility_description:
+        npc_description = ""
+    if not npc_description:
+        npc_description = f"{facility_name}で働く{npc_role}。"
     if _world_has_dead_npc_identity(engine.state.world_data, name=npc_name):
         return None
     character = engine.state.world_data.character(npc_name)
@@ -1090,15 +1109,15 @@ def ensure_facility_npc(engine: GameEngine, settlement: LocationData, facility: 
             engine,
             {
                 "name": npc_name,
-                "role": str(facility.get("npc_role") or gh._default_facility_role(str(facility.get("type") or ""))),
+                "role": npc_role,
                 "category": "facility_npc",
                 "gender": npc_gender,
                 "age": npc_age,
-                "description": str(facility.get("description") or ""),
+                "description": npc_description,
                 "personality": npc_personality,
                 "look": npc_look,
-                "facility": str(facility.get("name") or ""),
-                "facility_type": str(facility.get("type") or gh._facility_type_from_name(str(facility.get("name") or ""))),
+                "facility": facility_name,
+                "facility_type": facility_type,
             },
             categories=FRIENDLY_NPC_TEMPLATE_CATEGORIES,
             danger_level=danger_level,
@@ -1110,10 +1129,10 @@ def ensure_facility_npc(engine: GameEngine, settlement: LocationData, facility: 
         character.category = "facility_npc"
         facility["npc_name"] = character.name
         character.flags["source"] = "facility"
-        character.flags["facility_name"] = str(facility.get("name") or "")
-        character.flags["facility_type"] = str(facility.get("type") or gh._facility_type_from_name(str(facility.get("name") or "")))
-        character.extra["facility"] = str(facility.get("name") or "")
-        character.extra["facility_type"] = str(facility.get("type") or gh._facility_type_from_name(str(facility.get("name") or "")))
+        character.flags["facility_name"] = facility_name
+        character.flags["facility_type"] = facility_type
+        character.extra["facility"] = facility_name
+        character.extra["facility_type"] = facility_type
         character.extra["parent_settlement"] = settlement.name
         finalize_generated_npc(
             engine,
@@ -1124,10 +1143,10 @@ def ensure_facility_npc(engine: GameEngine, settlement: LocationData, facility: 
         )
         engine.state.world_data.add_character(character)
     else:
-        character.flags["facility_name"] = str(facility.get("name") or character.flags.get("facility_name") or "")
-        character.flags["facility_type"] = str(facility.get("type") or character.flags.get("facility_type") or gh._facility_type_from_name(str(facility.get("name") or "")))
-        character.extra["facility"] = str(facility.get("name") or character.extra.get("facility") or "")
-        character.extra["facility_type"] = str(facility.get("type") or character.extra.get("facility_type") or gh._facility_type_from_name(str(facility.get("name") or "")))
+        character.flags["facility_name"] = facility_name or str(character.flags.get("facility_name") or "")
+        character.flags["facility_type"] = facility_type or str(character.flags.get("facility_type") or "")
+        character.extra["facility"] = facility_name or str(character.extra.get("facility") or "")
+        character.extra["facility_type"] = facility_type or str(character.extra.get("facility_type") or "")
         character.extra["parent_settlement"] = settlement.name
         if npc_gender and not character.gender:
             character.gender = npc_gender
