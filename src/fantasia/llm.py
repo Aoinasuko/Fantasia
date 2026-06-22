@@ -579,7 +579,7 @@ class FixtureLlmBackend(BaseLlmBackend):
                 "age": "adult",
                 "look": "moss-covered dark fur, long fangs, low predatory stance",
                 "personality": "territorial, aggressive toward intruders",
-                "traits": [{"name": "不意打ち", "description": "初めて足を踏み入れた相手へ素早く襲いかかる。"}],
+                "traits": [{"name": "不意打ち", "desc": "初めて足を踏み入れた相手へ素早く襲いかかる。"}],
                 "image_generation_prompt": ["fantasy RPG monster", "moss wolf", "dangerous dungeon"],
                 "npc_template_id": "wolf",
                 "hostile": True,
@@ -829,9 +829,9 @@ class FixtureLlmBackend(BaseLlmBackend):
                     else f"直近の文脈から戦闘相手として推定された{target}。"
                 ),
                 "traits": (
-                    [{"name": "絡みつく触手", "description": "多数の触手で相手の動きを封じる。"}]
+                    [{"name": "絡みつく触手", "desc": "多数の触手で相手の動きを封じる。"}]
                     if is_tentacle
-                    else [{"name": "警戒", "description": "不用意に近づいた相手へ反応する。"}]
+                    else [{"name": "警戒", "desc": "不用意に近づいた相手へ反応する。"}]
                 ),
                 "image_generation_prompt": (
                     ["tentacle monster", "slimy tendrils", "fantasy RPG monster"]
@@ -950,16 +950,7 @@ class FixtureLlmBackend(BaseLlmBackend):
                     "detailed outfit",
                 ],
                 "negative_prompt": "low quality, blurry, text, watermark, extra fingers",
-                "traits": [
-                    {
-                        "name": "Watchful",
-                        "description": "Notices danger before most people do.",
-                        "severity": 2,
-                        "power": 2,
-                        "strength_level": 2,
-                        "effect": "Provides hints before risky travel or negotiation.",
-                    }
-                ],
+                "traits": [{"name": "Watchful", "desc": "Notices danger before most people do."}],
                 "skills": [
                     {
                         "name": "Lantern Signal",
@@ -1006,18 +997,7 @@ class FixtureLlmBackend(BaseLlmBackend):
         elif manager_name == "create_trait":
             content = {
                 "traits": [
-                    {
-                        "name": "慎重",
-                        "description": "相手が降伏や交渉を選んだ場合、すぐ攻撃せず状況を見る。",
-                        "severity": "medium",
-                        "effect": "敵対/会話/戦闘のNPC判断で攻撃以外の選択が起きやすい。",
-                    },
-                    {
-                        "name": "噂に敏い",
-                        "description": "宿場や旅人の噂から次の手がかりを拾える。",
-                        "severity": "medium",
-                        "effect": "探索前の会話でヒントを出せる。",
-                    },
+                    {"name": "慎重", "desc": "相手が降伏や交渉を選んだ場合、すぐ攻撃せず状況を見る。"},
                 ]
             }
         elif manager_name == "create_skill":

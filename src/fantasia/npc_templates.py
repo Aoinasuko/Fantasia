@@ -93,6 +93,18 @@ def _normalise_named_entries(value: Any) -> list[dict[str, Any]]:
     return result
 
 
+def _trait_entries(value: Any) -> list[dict[str, str]]:
+    result: list[dict[str, str]] = []
+    for item in _as_list(value):
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        result.append({"name": name, "desc": str(item.get("desc") or "").strip()})
+    return result
+
+
 def _normalise_attacks(value: Any) -> list[dict[str, Any]]:
     attacks: list[dict[str, Any]] = []
     for item in _as_list(value):
@@ -153,7 +165,7 @@ def _normalise_npc_template(raw: Any, source_path: Path) -> dict[str, Any] | Non
         "resistance": _normalise_resistance(raw.get("resistance")),
         "attacks": _normalise_attacks(raw.get("attacks")),
         "skills": _normalise_named_entries(raw.get("skills")) if skills_defined else None,
-        "traits": _normalise_named_entries(raw.get("traits")) if traits_defined else None,
+        "traits": _trait_entries(raw.get("traits")) if traits_defined else None,
         "skills_defined": skills_defined,
         "traits_defined": traits_defined,
         "source_path": str(source_path),

@@ -911,7 +911,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "age": "adult",
             "look": "moss-covered hide, long fangs, low predatory stance",
             "personality": "territorial, aggressive toward intruders",
-            "traits": [{"name": "苔に紛れる", "description": "暗い森で姿を隠しやすい。"}],
+            "traits": [{"name": "苔に紛れる", "desc": "暗い森で姿を隠しやすい。"}],
             "image_generation_prompt": ["fantasy RPG monster", "moss beast", "dark forest"],
             "npc_template_id": "enemy_common_beast",
             "hostile": True,
@@ -1016,7 +1016,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
                             "type": ["heal_single"],
                         }
                     ],
-                    "traits": [{"name": "慎重", "description": "危険な相手には距離を取る。", "power": 1, "strength_level": 1}],
+                    "traits": [{"name": "慎重", "desc": "危険な相手には距離を取る。"}],
                 }
             ],
         },
@@ -1156,7 +1156,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "age": "adult",
             "look": "dark wet tendrils, many flexible limbs, non-human silhouette",
             "personality": "predatory, cautious, reacts to weak prey",
-            "traits": [{"name": "絡みつく触手", "description": "多数の触手で相手の動きを封じる。"}],
+            "traits": [{"name": "絡みつく触手", "desc": "多数の触手で相手の動きを封じる。"}],
             "image_generation_prompt": ["tentacle monster", "slimy tendrils", "fantasy RPG monster"],
             "confidence": 90,
             "reason": "プレイヤー行動と直近ログの両方で触手が戦闘対象として示されているため。",
@@ -1331,16 +1331,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "ability": {"name": "Old Road Memory", "description": "Remembers safe routes and hidden dangers."},
             "look": "A practical innkeeper with a navy apron, lantern charm, and weathered travel boots.",
             "image_generation_prompt": ["fantasy innkeeper woman", "navy apron", "lantern charm", "anime illustration"],
-            "traits": [
-                {
-                    "name": "Watchful Host",
-                    "description": "Quickly notices danger near guests.",
-                    "severity": 2,
-                    "power": 2,
-                    "strength_level": 2,
-                    "effect": "Better at warning allies before ambushes.",
-                }
-            ],
+            "traits": [{"name": "Watchful Host", "desc": "Quickly notices danger near guests."}],
             "skills": [
                 {
                     "name": "Lantern Signal",
@@ -1382,22 +1373,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
         ),
         example={
             "traits": [
-                {
-                    "name": "慎重",
-                    "description": "危険な依頼を安易に勧めない。",
-                    "severity": 2,
-                    "power": 2,
-                    "strength_level": 2,
-                    "effect": "降伏や交渉を選んだ相手にはまず事情を聞く。",
-                },
-                {
-                    "name": "古道の知識",
-                    "description": "雨夜の古道にまつわる噂を知っている。",
-                    "severity": 3,
-                    "power": 3,
-                    "strength_level": 3,
-                    "effect": "探索や会話で赤い印の情報を出せる。",
-                },
+                {"name": "慎重", "desc": "危険な依頼を安易に勧めない。"},
             ]
         },
     ),
@@ -1716,6 +1692,7 @@ def schema_instruction(manager_name: str) -> str:
             "- If enemy_templates are supplied, choose the best matching template and include its id as npc_template_id.\n"
             "- The monster is for an immediate first-visit random encounter, so avoid neutral townspeople, merchants, or quest NPCs.\n"
             "- Include name, description, gender, age, look, personality, image_generation_prompt, hostile=true, and reason.\n"
+            "- If traits are included, every trait must contain only name and desc.\n"
         )
     if manager_name == "create_settlement_detail":
         instruction += (
@@ -1923,12 +1900,7 @@ def _canonicalize_manager_response(manager_name: str, value: Any) -> Any:
             item_keys=("name", "desc", "usesp", "power", "ability", "element", "type"),
         )
     if manager_name == "create_trait":
-        return _wrap_collection_response(
-            value,
-            "traits",
-            aliases=("trait", "generated_trait", "trait_list"),
-            item_keys=("name", "description", "severity", "effect"),
-        )
+        return _repair_create_trait_response(value)
     if manager_name == "craft_item_generator":
         return _wrap_item_response(
             value,
@@ -2222,6 +2194,32 @@ def _wrap_collection_response(
         item = {key: item_value for key, item_value in response.items() if not str(key).startswith("_")}
         response = {key: item_value for key, item_value in response.items() if str(key).startswith("_")}
         response[collection_key] = [item]
+    return response
+
+
+def _repair_create_trait_response(value: Any) -> Any:
+    response = _wrap_collection_response(
+        value,
+        "traits",
+        aliases=("trait", "generated_trait", "trait_list"),
+        item_keys=("name", "desc"),
+    )
+    if not isinstance(response, dict):
+        return response
+    traits = response.get("traits")
+    if isinstance(traits, dict):
+        traits = [traits]
+    if not isinstance(traits, list):
+        return response
+    cleaned: list[dict[str, str]] = []
+    for raw in traits:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "").strip()
+        if not name:
+            continue
+        cleaned.append({"name": name, "desc": str(raw.get("desc") or "").strip()})
+    response["traits"] = cleaned
     return response
 
 

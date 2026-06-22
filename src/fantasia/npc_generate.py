@@ -79,8 +79,8 @@ def _normalise_skill(value: Any) -> dict[str, Any]:
     return _game_helpers()._normalise_skill(value)
 
 
-def _normalise_trait(value: Any) -> dict[str, Any]:
-    return _game_helpers()._normalise_trait(value)
+def _trait_entry(value: Any) -> dict[str, Any]:
+    return _game_helpers()._trait_entry(value)
 
 
 def _normalise_actor_power_loadout(character: Character) -> None:
@@ -453,7 +453,7 @@ def _npc_from_raw(item: Any, index: int) -> Character:
         if data.get("skills"):
             character.skills = [skill for skill in (_normalise_skill(item) for item in _as_list(data.get("skills"))) if skill.get("name")]
         if data.get("traits"):
-            character.traits = [trait for trait in (_normalise_trait(item) for item in _as_list(data.get("traits"))) if trait.get("name")]
+            character.traits = [trait for trait in (_trait_entry(item) for item in _as_list(data.get("traits"))) if trait.get("name")]
         _normalise_actor_power_loadout(character)
         if data.get("aliases"):
             character.extra["aliases"] = _as_str_list(data.get("aliases"))
@@ -502,7 +502,7 @@ def _enemy_npc_from_raw(item: Any, index: int) -> Character:
         if data.get("skills"):
             character.skills = [skill for skill in (_normalise_skill(item) for item in _as_list(data.get("skills"))) if skill.get("name")]
         if data.get("traits"):
-            character.traits = [trait for trait in (_normalise_trait(item) for item in _as_list(data.get("traits"))) if trait.get("name")]
+            character.traits = [trait for trait in (_trait_entry(item) for item in _as_list(data.get("traits"))) if trait.get("name")]
         character.flags["enemy_npc"] = True
         character.flags["hostile"] = _as_bool(data.get("hostile", True))
         character.extra["aliases"] = _dedupe_strs([name, category, "敵", "魔物", *[str(value) for value in _as_list(data.get("aliases"))]])
@@ -1271,7 +1271,8 @@ def quest_objective_npc_design(
                 "Always include gender and age. Use gender=none and age=adult/ancient/unknown for non-human entities "
                 "when a human age or binary gender is not meaningful. "
                 "If npc_template is supplied, keep the same creature/person type and use it as the base; fill only "
-                "missing flavor such as a concrete name variant, look details, personality details, skills, or traits."
+                "missing flavor such as a concrete name variant, look details, personality details, skills, or traits. "
+                "When traits are returned, each trait must contain only name and desc."
             ),
         },
         {
@@ -1363,7 +1364,7 @@ def create_quest_objective_npc(
         if key in CHARACTER_DEFAULT_ATTRIBUTES
     }
     skills = [skill for skill in (_normalise_skill(item) for item in _as_list(design.get("skills"))) if skill.get("name")]
-    traits = [trait for trait in (_normalise_trait(item) for item in _as_list(design.get("traits"))) if trait.get("name")]
+    traits = [trait for trait in (_trait_entry(item) for item in _as_list(design.get("traits"))) if trait.get("name")]
     attacks = [dict(item) for item in _as_list(design.get("attacks")) if isinstance(item, dict)]
     resistance = [dict(item) for item in _as_list(design.get("resistance")) if isinstance(item, dict)]
     npc_template_payload = design.get("npc_template_payload") if isinstance(design.get("npc_template_payload"), dict) else {}
@@ -1534,7 +1535,7 @@ def npc_detail_generater(
     world_payload = gh._ai_json(engine._focused_world_ai_context(include_recent_log=False))
     character_payload = gh._ai_json(gh._character_ai_context(character))
     facilitator_payload = json.dumps(gh._strip_response_metadata(facilitator_response), ensure_ascii=False)
-    power_instruction = gh._skill_trait_power_instruction(character)
+    power_instruction = gh._skill_power_instruction(character)
     messages = [
         {
             "role": "system",
@@ -1545,6 +1546,7 @@ def npc_detail_generater(
                 "必ずname, talk_style, archetype, skillsを持つJSONだけを返してください。"
                 "skillsは必ず name, desc, usesp(1-12), power(1-5), ability, element, type を持つ新形式にしてください。"
                 "typeは heal_single, damage_hp_single, effect_enemy_single 等の戦闘効果ID配列です。"
+                "traitsを返す場合は name と desc だけにしてください。"
             ),
         },
         {
@@ -1670,7 +1672,7 @@ def apply_npc_detail(engine: GameEngine, character: Character, response: dict[st
         character.skills = gh._limit_power_entries_for_actor(
             character,
             merged_skills,
-            used_power=gh._entry_power_total(character.traits),
+            used_power=0,
         )
     engine._apply_response_status_effects(response, "npc_detail_generater", default_target=character.name, context_character=character)
     character.extra["raw_npc_detail_generater"] = gh._strip_response_metadata(response)

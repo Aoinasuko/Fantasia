@@ -288,8 +288,8 @@ PLAYER_HOME_BUILD_PROGRESS_STEP = 25
 PLAYER_HOME_REST_HOURS = 8
 PLAYER_HOME_TOWN_HALL_PLANS = {500: 3, 1000: 5, 10000: 7}
 PLAYER_HOME_CHOICES = ("休息する", "クラフトをする", "家の保存箱を開く", "外に出る")
-SKILL_TRAIT_POWER_MIN = 1
-SKILL_TRAIT_POWER_MAX = 5
+SKILL_POWER_MIN = 1
+SKILL_POWER_MAX = 5
 NPC_DEFAULT_POWER_BUDGET = npc_generate.NPC_DEFAULT_POWER_BUDGET
 PLAYER_UNLIMITED_POWER_BUDGET = 999
 CHARACTER_DEFAULT_ATTRIBUTES = npc_generate.CHARACTER_DEFAULT_ATTRIBUTES
@@ -2146,14 +2146,10 @@ class GameEngine:
         seed_name: str = "",
         seed_description: str = "",
     ) -> list[dict[str, Any]]:
-        response = self._create_trait(
-            character.name or self.state.player_name,
-            self.state.world_data,
-            character,
-            seed_name=seed_name,
-            seed_description=seed_description,
-        )
-        self._apply_character_traits(character, response)
+        if str(seed_name or "").strip():
+            character.traits = [_trait_entry({"name": seed_name, "desc": seed_description})]
+        else:
+            character.traits = [trait for trait in (_trait_entry(item) for item in _as_list(character.traits)) if trait.get("name")]
         return character.traits
 
     def generate_character_setup_skills(
@@ -10814,7 +10810,7 @@ class GameEngine:
             _world_ai_context(world, include_characters=False, include_monsters=False, include_quests=True)
         )
         character_payload = _ai_json(_character_ai_context(character))
-        power_instruction = _skill_trait_power_instruction(character)
+        power_instruction = _skill_power_instruction(character)
         element_options = ", ".join(f"{value}({tr_enum('element', value, 'ja', fallback=value)})" for value in ELEMENT_IDS)
         messages = [
             {
@@ -10839,7 +10835,7 @@ class GameEngine:
                     f"Available element ids: {element_options}\n"
                     "Return fields: name, gender, age, role, category, backstory, personality, ability, "
                     "look, image_generation_prompt, traits, skills. "
-                    "Each trait should include name, description, severity, power, strength_level, and effect. "
+                    "Each trait must include only name and desc. "
                     "Each skill should include name, desc, usesp, power, ability, element, and type. "
                     "usesp is 1-12, power is 1-5, ability is one of str/dex/con/int/wis/cha/magic/will, "
                     "and type is an array of combat effect IDs such as damage_hp_single, heal_single, or effect_self."
@@ -10953,8 +10949,8 @@ class GameEngine:
                 include_quests=False,
             )
         )
-        character_payload = _ai_json(_character_ai_context(character))
-        power_instruction = _skill_trait_power_instruction(character)
+        character_payload = _ai_json(_character_ai_context(character, include_traits=False, include_skills=False))
+        existing_traits_payload = _ai_json(_character_entry_duplicate_guard(character.traits, "traits"))
         seed_instruction = _character_entry_seed_instruction(seed_name, seed_description)
         messages = [
             {
@@ -10962,8 +10958,10 @@ class GameEngine:
                 "content": (
                     "あなたはAI駆動RPGのキャラクター特徴作成担当です。"
                     "Fantasiaのcreate_trait相当として、traits を持つJSONだけを返してください。"
-                    "traits は性格、特徴、重症度、行動への影響を含むオブジェクト配列にしてください。"
-                    "各体質/特徴には power と strength_level を1から5の整数で必ず付けてください。"
+                    "traits は必ず新規1件だけを持つ配列にしてください。"
+                    "各 trait は name と desc だけを持つオブジェクトにしてください。"
+                    "他のキーは禁止です。"
+                    "既存特質と同じ名前、説明文を返してはいけません。"
                 ),
             },
             {
@@ -10973,16 +10971,16 @@ class GameEngine:
                     f"世界データ: {world_payload}\n"
                     f"キャラクター名: {character.name}\n"
                     f"キャラクターデータ: {character_payload}\n"
-                    f"{power_instruction}\n"
+                    f"既存の特質一覧（重複禁止。コピーや言い換え禁止）: {existing_traits_payload}\n"
                     f"{seed_instruction}\n"
-                    "このキャラクターの性格/特徴/重症度/行動影響を生成してください。"
+                    "既存とは別の新しい性格/特徴を1件だけ生成してください。"
                 ),
             },
         ]
         return self._chat_json(
             "create_trait",
             messages,
-            max_tokens=650,
+            max_tokens=350,
             world_name=world.world_name,
             player_name=player_name,
         )
@@ -11005,8 +11003,10 @@ class GameEngine:
                 include_quests=False,
             )
         )
-        character_payload = _ai_json(_character_ai_context(character))
-        power_instruction = _skill_trait_power_instruction(character)
+        character_payload = _ai_json(_character_ai_context(character, include_traits=False, include_skills=False))
+        existing_skills_payload = _ai_json(_character_entry_duplicate_guard(character.skills, "skills"))
+        existing_traits_payload = _ai_json(_character_entry_duplicate_guard(character.traits, "traits"))
+        power_instruction = _skill_power_instruction(character)
         element_id = _normalise_element_id(desired_element, fallback="fire" if desired_element else "physical")
         element_label = tr_enum("element", element_id, "ja", fallback=element_id)
         element_options = ", ".join(f"{value}({tr_enum('element', value, 'ja', fallback=value)})" for value in ELEMENT_IDS)
@@ -11017,6 +11017,7 @@ class GameEngine:
                 "content": (
                     "あなたはAI駆動RPGのキャラクタースキル作成担当です。"
                     "Fantasiaのcreate_skill相当として、skills を持つJSONだけを返してください。"
+                    "skills は必ず新規1件だけを持つ配列にしてください。"
                     "skills は name, desc, usesp, power, ability, element, type だけを持つオブジェクト配列にしてください。"
                     "usespは1から12、powerは1から5の整数です。"
                     "abilityはstr/dex/con/int/wis/cha/magic/willのいずれかです。"
@@ -11025,6 +11026,7 @@ class GameEngine:
                     "absorption_single, absorption_party, effect_enemy_single, effect_enemy_party, effect_self, effect_ally_single, effect_ally_party の配列です。"
                     "複数回攻撃や複数効果のスキルでは、同じtypeを必要回数だけ重複して配列に入れてください。"
                     "例: 3回攻撃なら type=[\"damage_hp_single\",\"damage_hp_single\",\"damage_hp_single\"]。"
+                    "既存スキルと同じ名前、説明文、効果文を返してはいけません。"
                 ),
             },
             {
@@ -11034,12 +11036,14 @@ class GameEngine:
                     f"世界データ: {world_payload}\n"
                     f"キャラクター名: {character.name}\n"
                     f"キャラクターデータ: {character_payload}\n"
+                    f"既存のスキル一覧（重複禁止。コピーや言い換え禁止）: {existing_skills_payload}\n"
+                    f"既存の特質一覧（参考。スキル本文へコピー禁止）: {existing_traits_payload}\n"
                     f"{power_instruction}\n"
                     f"利用可能な属性ID: {element_options}\n"
                     f"今回生成するスキルの属性ID: {element_id}（{element_label}）\n"
                     f"{seed_instruction}\n"
                     "スキル名や説明に「3連」「三連」「3回」「複数回」などが含まれる場合、その回数分だけ damage_hp_single 等を重複させてください。\n"
-                    "このキャラクターのスキルを新形式で生成してください。"
+                    "既存とは別の新しいスキルを新形式で1件だけ生成してください。"
                 ),
             },
         ]
@@ -11080,9 +11084,8 @@ class GameEngine:
         character.extra["raw_create_look"] = _strip_response_metadata(response)
 
     def _apply_character_traits(self, character: Character, response: dict[str, Any]) -> None:
-        traits = [_normalise_trait(item) for item in _as_list(response.get("traits"))]
+        traits = [_trait_entry(item) for item in _as_list(response.get("traits"))]
         traits = [trait for trait in traits if trait.get("name")]
-        traits = _limit_power_entries_for_actor(character, traits, used_power=0)
         if traits:
             character.traits = traits
         character.extra["raw_create_trait"] = _strip_response_metadata(response)
@@ -11090,7 +11093,7 @@ class GameEngine:
     def _apply_character_skills(self, character: Character, response: dict[str, Any]) -> None:
         skills = [_normalise_skill(item) for item in _as_list(response.get("skills"))]
         skills = [skill for skill in skills if skill.get("name")]
-        skills = _limit_power_entries_for_actor(character, skills, used_power=_entry_power_total(character.traits))
+        skills = _limit_power_entries_for_actor(character, skills, used_power=0)
         if skills:
             character.skills = skills
         character.extra["raw_create_skill"] = _strip_response_metadata(response)
@@ -13163,12 +13166,12 @@ class GameEngine:
             personality = "Acts according to its instincts, territory, and the current situation."
         traits = resolved.get("traits")
         normalised_traits = [
-            trait for trait in (_normalise_trait(item) for item in _as_list(traits)) if trait.get("name")
+            trait for trait in (_trait_entry(item) for item in _as_list(traits)) if trait.get("name")
         ]
         if not normalised_traits:
             normalised_traits = [
-                {"name": "慎重", "effect": "相手が降伏した場合は即座に殺さず、武装解除を優先する。"},
-                {"name": "縄張り意識", "effect": "侵入者を殺すより追い払うことを優先する。"},
+                {"name": "慎重", "desc": "相手が降伏した場合は即座に殺さず、武装解除を優先する。"},
+                {"name": "縄張り意識", "desc": "侵入者を殺すより追い払うことを優先する。"},
             ]
         prompt_parts = _as_str_list(resolved.get("image_generation_prompt") or resolved.get("visual_prompt"))
         if not prompt_parts:
@@ -18224,8 +18227,8 @@ class GameEngine:
             backstory="霧と雨音の中から現れる、硝子森に棲む影のような魔物。",
             look="霧と雨音の中から現れる、硝子森に棲む影のような魔物。",
             traits=[
-                {"name": "慎重", "effect": "相手の動きを見てから行動する。"},
-                {"name": "霧まとい", "effect": "距離を取り、姿をぼかす。"},
+                {"name": "慎重", "desc": "相手の動きを見てから行動する。"},
+                {"name": "霧まとい", "desc": "距離を取り、姿をぼかす。"},
             ],
             flags={"source": "image_pipeline_fallback", "enemy_npc": True, "hostile": True},
         )
@@ -18595,7 +18598,7 @@ def _character_visual_feature_parts(character: Character) -> list[str]:
         character.personality,
         character.backstory,
     ]
-    parts.extend(_dict_list_visual_parts(character.traits, ("name", "description", "effect", "severity", "visual", "appearance")))
+    parts.extend(_dict_list_visual_parts(character.traits, ("name", "desc", "visual", "appearance")))
     parts.extend(_dict_list_visual_parts(character.skills, ("name", "desc", "effect", "element", "type", "visual_effect")))
     parts.extend(_dict_list_visual_parts(character.status_effects, ("name", "description", "llm_effect", "severity", "visual")))
     parts.extend(_ability_visual_parts(character.extra))
@@ -18634,7 +18637,7 @@ def _monster_visual_feature_parts(monster: Character) -> list[str]:
         monster.backstory,
         monster.look,
     ]
-    parts.extend(_dict_list_visual_parts(monster.traits, ("name", "description", "effect", "severity", "visual", "appearance")))
+    parts.extend(_dict_list_visual_parts(monster.traits, ("name", "desc", "visual", "appearance")))
     parts.extend(_dict_list_visual_parts(monster.skills, ("name", "desc", "effect", "element", "type", "visual_effect")))
     return _dedupe_strs(parts)[:28]
 
@@ -19096,35 +19099,57 @@ def _character_entry_seed_instruction(seed_name: str = "", seed_description: str
     return "ユーザー指定を優先して反映してください。\n" + "\n".join(lines)
 
 
+def _character_entry_duplicate_guard(entries: Any, kind: str) -> list[dict[str, str]]:
+    result: list[dict[str, str]] = []
+    for raw in _as_list(entries):
+        if not isinstance(raw, dict):
+            continue
+        if kind == "skills":
+            name = str(raw.get("name") or raw.get("skill") or raw.get("title") or "").strip()
+        else:
+            name = str(raw.get("name") or "").strip()
+        description = str(
+            raw.get("desc")
+            if kind == "skills"
+            else raw.get("desc") or ""
+        ).strip()
+        if not name and not description:
+            continue
+        item: dict[str, str] = {}
+        if name:
+            item["name"] = _short_text(name, 80)
+        if description:
+            item["description"] = _short_text(description, 160)
+        result.append(item)
+    return result[:12]
+
+
 def _normalise_skill(value: Any) -> dict[str, Any]:
     return normalise_combat_skill(value)
 
 
-def _normalise_trait(value: Any) -> dict[str, Any]:
-    trait = _as_named_dict(value, "Trait")
-    name = str(trait.get("name") or trait.get("trait") or trait.get("title") or "").strip()
+def _trait_entry(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    trait = value
+    name = str(trait.get("name") or "").strip()
     if not name:
         return {}
-    trait["name"] = name
-    power = _entry_power(trait, fallback=1)
-    trait["power"] = power
-    trait["strength_level"] = power
-    trait["severity"] = power
-    return trait
+    return {"name": name, "desc": str(trait.get("desc") or "").strip()}
 
 
 def _entry_power(value: Any, fallback: int = 1) -> int:
     if isinstance(value, dict):
-        for key in ("power", "strength_level", "strength", "power_level", "severity", "level", "rank"):
+        for key in ("power",):
             if value.get(key) not in (None, ""):
                 return _entry_power(value.get(key), fallback=fallback)
-        return max(SKILL_TRAIT_POWER_MIN, min(SKILL_TRAIT_POWER_MAX, int(fallback or 1)))
+        return max(SKILL_POWER_MIN, min(SKILL_POWER_MAX, int(fallback or 1)))
     text = str(value or "").strip().lower()
     if not text:
-        return max(SKILL_TRAIT_POWER_MIN, min(SKILL_TRAIT_POWER_MAX, int(fallback or 1)))
+        return max(SKILL_POWER_MIN, min(SKILL_POWER_MAX, int(fallback or 1)))
     number = _safe_int(text, 0)
     if number:
-        return max(SKILL_TRAIT_POWER_MIN, min(SKILL_TRAIT_POWER_MAX, number))
+        return max(SKILL_POWER_MIN, min(SKILL_POWER_MAX, number))
     mapping = {
         "very low": 1,
         "low": 1,
@@ -19149,7 +19174,7 @@ def _entry_power(value: Any, fallback: int = 1) -> int:
         return 3
     if any(word in text for word in ("強", "高", "大", "奥義", "必殺", "伝説")):
         return 5
-    return max(SKILL_TRAIT_POWER_MIN, min(SKILL_TRAIT_POWER_MAX, int(fallback or 1)))
+    return max(SKILL_POWER_MIN, min(SKILL_POWER_MAX, int(fallback or 1)))
 
 
 def _skill_power_from_text(skill: dict[str, Any]) -> int:
@@ -19188,7 +19213,7 @@ def _actor_power_budget(actor: Character) -> int:
     for source in (getattr(actor, "extra", {}), getattr(actor, "flags", {})):
         if not isinstance(source, dict):
             continue
-        for key in ("skill_trait_power_budget", "power_budget", "ability_power_budget"):
+        for key in ("skill_power_budget", "power_budget", "ability_power_budget"):
             if source.get(key) not in (None, ""):
                 return max(1, _safe_int(source.get(key), NPC_DEFAULT_POWER_BUDGET))
         for key in ("danger_level", "threat_level", "challenge_level", "level", "rank"):
@@ -19241,16 +19266,15 @@ def _limit_power_entries_for_actor(
 
 
 def _normalise_actor_power_loadout(actor: Character) -> None:
-    traits = [_normalise_trait(item) for item in _as_list(getattr(actor, "traits", []))]
+    traits = [_trait_entry(item) for item in _as_list(getattr(actor, "traits", []))]
     traits = [trait for trait in traits if trait.get("name")]
-    traits = _limit_power_entries_for_actor(actor, traits, used_power=0)
     actor.traits = traits
     skills = [_normalise_skill(item) for item in _as_list(getattr(actor, "skills", []))]
     skills = [skill for skill in skills if skill.get("name")]
-    actor.skills = _limit_power_entries_for_actor(actor, skills, used_power=_entry_power_total(traits))
+    actor.skills = _limit_power_entries_for_actor(actor, skills, used_power=0)
 
 
-def _skill_trait_power_instruction(character: Character) -> str:
+def _skill_power_instruction(character: Character) -> str:
     scale = (
         "強力度の目安: 1=あまり強力ではない、"
         "3=使い方次第で強力、"
@@ -19258,14 +19282,14 @@ def _skill_trait_power_instruction(character: Character) -> str:
     )
     if _is_player_power_actor(character):
         return (
-            f"{scale} スキルや体質はBPを消費しません。"
-            "プレイヤーが自由に作れる要素なので、各項目に power を1〜5で付けてください。"
+            f"{scale} スキルはBPを消費しません。"
+            "プレイヤーが自由に作れる要素なので、各スキルに power を1〜5で付けてください。"
         )
     budget = _actor_power_budget(character)
-    used = _entry_power_total(character.traits) + _entry_power_total(character.skills)
+    used = _entry_power_total(character.skills)
     remaining = max(0, budget - used)
     return (
-        f"{scale} このNPC/敵のスキルと体質の強力度合計上限は {budget} です。"
+        f"{scale} このNPC/敵のスキル強力度合計上限は {budget} です。"
         f"既存分は {used}、追加可能な残りは {remaining} です。"
         "序盤や一般人は低く、終盤・精鋭・ボス級ほど高くしてください。"
     )
@@ -21997,7 +22021,13 @@ def _character_reference_guidance(character: Character) -> dict[str, str]:
     }
 
 
-def _character_ai_context(character: Character, *, details: bool = True) -> dict[str, Any]:
+def _character_ai_context(
+    character: Character,
+    *,
+    details: bool = True,
+    include_traits: bool = True,
+    include_skills: bool = True,
+) -> dict[str, Any]:
     data: dict[str, Any] = {
         "uuid": character.uuid,
         "name": character.name,
@@ -22039,8 +22069,8 @@ def _character_ai_context(character: Character, *, details: bool = True) -> dict
             if character.extra.get(source_key) not in (None, ""):
                 data[target_key] = character.extra.get(source_key)
     if not _is_player_power_actor(character):
-        data["skill_trait_power_budget"] = _actor_power_budget(character)
-        data["skill_trait_power_used"] = _entry_power_total(character.traits) + _entry_power_total(character.skills)
+        data["skill_power_budget"] = _actor_power_budget(character)
+        data["skill_power_used"] = _entry_power_total(character.skills)
     if character.image_generation_prompt:
         data["image_generation_prompt"] = [str(item) for item in character.image_generation_prompt[:12]]
     combat_attacks = character.extra.get("combat_attacks") if isinstance(character.extra, dict) else None
@@ -22049,8 +22079,10 @@ def _character_ai_context(character: Character, *, details: bool = True) -> dict
     if combat_attacks:
         data["combat_attacks"] = _compact_value(combat_attacks, max_chars=500)
     if details:
-        data["traits"] = _compact_value(character.traits, max_chars=900)
-        data["skills"] = _compact_value(character.skills, max_chars=1000)
+        if include_traits:
+            data["traits"] = _compact_value(character.traits, max_chars=900)
+        if include_skills:
+            data["skills"] = _compact_value(character.skills, max_chars=1000)
         data["status_effects"] = _compact_value(character.status_effects, max_chars=500)
         data["inventory"] = _compact_value(character.inventory, max_chars=500)
         ability = character.extra.get("ability") if isinstance(character.extra, dict) else None

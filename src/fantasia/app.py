@@ -664,7 +664,7 @@ class FantasiaApp(tk.Tk):
         self.character_backstory_text.insert("1.0", "ある辺境の村で育った駆け出しの冒険者。")
         self.character_look_text.insert("1.0", "short hair, clear eyes, leather armor, practical travel cloak")
         self.character_personality_text.insert("1.0", "慎重だが、困っている人を見捨てられない。")
-        self.character_traits_text.insert("1.0", "冷静 | 危機でも判断力を失いにくい | 2\n旅慣れ | 野外行動に慣れている | 1")
+        self.character_traits_text.insert("1.0", "冷静 | 危機でも判断力を失いにくい\n旅慣れ | 野外行動に慣れている")
         self.character_skills_text.insert("1.0", "一閃 | physical | 武器で素早く斬り込む基本技 | 5 | 2 | str | damage_hp_single\n応急処置 | light | 簡単な治療で体勢を立て直す | 3 | 1 | wis | heal_single")
 
         actions = tk.Frame(panel, bg="#111722")
@@ -1608,8 +1608,8 @@ class FantasiaApp(tk.Tk):
         self._set_character_entries(
             "traits",
             _parse_character_traits(
-                "冷静 | 危機でも判断力を失いにくい | 1\n"
-                "旅慣れ | 野外行動に慣れている | 1"
+                "冷静 | 危機でも判断力を失いにくい\n"
+                "旅慣れ | 野外行動に慣れている"
             ),
         )
         self.character_world_summary_text = tk.Text(screen, height=1)
@@ -2183,8 +2183,8 @@ class FantasiaApp(tk.Tk):
             self._set_character_entries(
                 "traits",
                 _parse_character_traits(
-                    "冷静 | 危機でも判断力を失いにくい | 1\n"
-                    "旅慣れ | 野外行動に慣れている | 1"
+                    "冷静 | 危機でも判断力を失いにくい\n"
+                    "旅慣れ | 野外行動に慣れている"
                 ),
             )
         self._refresh_character_setup_points()
@@ -2302,7 +2302,8 @@ class FantasiaApp(tk.Tk):
         actions = tk.Frame(dialog, bg=APP_DEEP_BG)
         actions.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 14))
         actions.columnconfigure(0, weight=1)
-        self._instant_button(actions, _ui_text(self.config_data, "common_generate"), lambda: self._generate_character_setup_entries(kind, editor)).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        if kind == "skills":
+            self._instant_button(actions, _ui_text(self.config_data, "common_generate"), lambda: self._generate_character_setup_entries(kind, editor)).grid(row=0, column=0, sticky="w", padx=(0, 8))
         self._instant_button(actions, _ui_text(self.config_data, "character_apply"), lambda: self._apply_character_list_editor(kind, editor, dialog)).grid(row=0, column=1, sticky="e", padx=(8, 0))
         self._instant_button(actions, _ui_text(self.config_data, "character_close"), dialog.destroy).grid(row=0, column=2, sticky="e", padx=(8, 0))
 
@@ -2414,7 +2415,7 @@ class FantasiaApp(tk.Tk):
             return "fire"
 
         def generate() -> None:
-            if self.engine.state.world_data.world_name == "unknown":
+            if is_skill and self.engine.state.world_data.world_name == "unknown":
                 self._show_error(ValueError(_ui_text(self.config_data, "character_need_world_details")))
                 return
             character = self._character_from_setup()
@@ -2422,34 +2423,52 @@ class FantasiaApp(tk.Tk):
             seed_description = description_text.get("1.0", "end").strip()
             element_id = selected_element_id()
 
+            if not is_skill:
+                normalized_trait = _character_trait_entries([{"name": seed_name, "desc": seed_description}])
+                if not normalized_trait:
+                    self._show_error(ValueError(_ui_text(self.config_data, "character_entry_empty_result")))
+                    return
+                entry = normalized_trait[0]
+                self._replace_character_entry_at(kind, entry_index, entry)
+                if result_text.winfo_exists():
+                    result_text.configure(state="normal")
+                    result_text.delete("1.0", "end")
+                    result_text.insert("1.0", _character_entry_generated_summary(entry, kind, self.config_data))
+                    result_text.configure(state="disabled")
+                if generate_btn.winfo_exists():
+                    generate_btn.configure(text=_ui_text(self.config_data, "character_close"), command=dialog.destroy)
+                self._render_character_preview()
+                kind_label = _ui_text(self.config_data, "character_traits").rstrip(":：")
+                self._append_log("\n" + _ui_text(self.config_data, "log_character_generated").format(kind=kind_label) + "\n")
+                return
+
             def task():
-                if is_skill:
-                    return self.engine.generate_character_setup_skills(
-                        character,
-                        desired_element=element_id,
-                        seed_name=seed_name,
-                        seed_description=seed_description,
-                    )
-                return self.engine.generate_character_setup_traits(
+                return self.engine.generate_character_setup_skills(
                     character,
+                    desired_element=element_id,
                     seed_name=seed_name,
                     seed_description=seed_description,
                 )
 
             def done(entries) -> None:
-                normalized = _normalise_character_skills(entries) if is_skill else _normalise_character_traits(entries)
+                normalized = _normalise_character_skills(entries) if is_skill else _character_trait_entries(entries)
                 if not normalized:
                     raise ValueError(_ui_text(self.config_data, "character_entry_empty_result"))
-                entry = dict(normalized[0])
-                if seed_name:
-                    entry["name"] = seed_name
-                if seed_description:
-                    entry["desc" if is_skill else "description"] = seed_description
-                if is_skill:
+                candidates: list[dict[str, object]] = []
+                for candidate in normalized:
+                    entry = dict(candidate)
+                    if seed_name:
+                        entry["name"] = seed_name
+                    if seed_description:
+                        entry["desc" if is_skill else "description"] = seed_description
                     entry["element"] = element_id
-                    entry = _normalise_character_skills([entry])[0]
-                else:
-                    entry = _normalise_character_traits([entry])[0]
+                    normalized_entry = _normalise_character_skills([entry])
+                    if normalized_entry:
+                        candidates.append(normalized_entry[0])
+                existing_entries = self.character_skill_entries
+                entry = _select_generated_character_entry(candidates, existing_entries, kind, entry_index)
+                if not entry:
+                    raise ValueError(_ui_text(self.config_data, "character_entry_empty_result"))
                 self._replace_character_entry_at(kind, entry_index, entry)
                 if result_text.winfo_exists():
                     result_text.configure(state="normal")
@@ -2465,24 +2484,35 @@ class FantasiaApp(tk.Tk):
             kind_label = _ui_text(self.config_data, "character_skills" if is_skill else "character_traits").rstrip(":：")
             self._run_task(_ui_text(self.config_data, "character_generating_entries").format(kind=kind_label), task, done)
 
-        generate_btn = self._instant_button(action_frame, _ui_text(self.config_data, "common_generate"), generate)
+        generate_btn = self._instant_button(
+            action_frame,
+            _ui_text(self.config_data, "common_generate" if is_skill else "character_apply"),
+            generate,
+        )
         generate_btn.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
         name_entry.focus_set()
 
     def _generate_character_setup_entries(self, kind: str, target_text: tk.Text | None = None) -> None:
+        if kind != "skills":
+            entries = _character_trait_entries(self.character_trait_entries)
+            text = _format_character_traits(entries)
+            if target_text is not None and target_text.winfo_exists():
+                target_text.delete("1.0", "end")
+                target_text.insert("1.0", text)
+            else:
+                self._set_character_entries(kind, entries)
+            return
         if self.engine.state.world_data.world_name == "unknown":
             self._show_error(ValueError(_ui_text(self.config_data, "character_need_world_details")))
             return
         character = self._character_from_setup()
 
         def task():
-            if kind == "skills":
-                return self.engine.generate_character_setup_skills(character)
-            return self.engine.generate_character_setup_traits(character)
+            return self.engine.generate_character_setup_skills(character)
 
         def done(entries) -> None:
-            normalized = _normalise_character_skills(entries) if kind == "skills" else _normalise_character_traits(entries)
-            text = _format_character_skills(normalized) if kind == "skills" else _format_character_traits(normalized)
+            normalized = _normalise_character_skills(entries)
+            text = _format_character_skills(normalized)
             if target_text is not None and target_text.winfo_exists():
                 target_text.delete("1.0", "end")
                 target_text.insert("1.0", text)
@@ -2498,7 +2528,7 @@ class FantasiaApp(tk.Tk):
         self._set_character_entries(kind, entries)
 
     def _set_character_entries(self, kind: str, entries: list[dict[str, object]]) -> None:
-        entries = _normalise_character_skills(entries) if kind == "skills" else _normalise_character_traits(entries)
+        entries = _normalise_character_skills(entries) if kind == "skills" else _character_trait_entries(entries)
         if kind == "skills":
             self.character_skill_entries = entries
         else:
@@ -5298,7 +5328,7 @@ class FantasiaApp(tk.Tk):
             fallback_traits = _parse_character_traits(self.character_traits_text.get("1.0", "end"))
         if hasattr(self, "character_skills_text") and self.character_skills_text.winfo_exists():
             fallback_skills = _parse_character_skills(self.character_skills_text.get("1.0", "end"))
-        character.traits = _normalise_character_traits(self.character_trait_entries or fallback_traits)
+        character.traits = _character_trait_entries(self.character_trait_entries or fallback_traits)
         character.skills = _normalise_character_skills(self.character_skill_entries or fallback_skills)
         character.extra["ability"] = {"attributes": attributes}
         character.extra["attributes"] = attributes
@@ -6699,7 +6729,7 @@ def run_save_smoke_test() -> None:
                     backstory="A smoke-test adventurer.",
                     look="short hair, leather armor, travel cloak",
                     personality="calm and curious",
-                    traits=[{"name": "冷静", "description": "危機でも判断力を保つ", "severity": 2}],
+                    traits=[{"name": "冷静", "desc": "危機でも判断力を保つ"}],
                     skills=[{"name": "一閃", "desc": "素早い攻撃", "usesp": 5, "power": 2, "ability": "str", "element": "physical", "type": [{"type": "damage_hp_single"}]}],
                     extra={"ability": {"attributes": {"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10}}},
                 )
@@ -6864,15 +6894,10 @@ def _parse_character_traits(text: str) -> list[dict[str, object]]:
             continue
         trait = {
             "name": parts[0],
-            "description": parts[1] if len(parts) > 1 else "",
+            "desc": parts[1] if len(parts) > 1 else "",
         }
-        if len(parts) > 2:
-            power = _entry_power(parts[2])
-            trait["power"] = power
-            trait["strength_level"] = power
-            trait["severity"] = power
         traits.append(trait)
-    return _normalise_character_traits(traits)
+    return _character_trait_entries(traits)
 
 
 def _parse_character_skills(text: str) -> list[dict[str, object]]:
@@ -6897,13 +6922,12 @@ def _parse_character_skills(text: str) -> list[dict[str, object]]:
 
 def _format_character_traits(traits: list[dict[str, object]]) -> str:
     lines: list[str] = []
-    for trait in _normalise_character_traits(traits):
-        name = str(trait.get("name") or trait.get("trait") or "").strip()
+    for trait in _character_trait_entries(traits):
+        name = str(trait.get("name") or "").strip()
         if not name:
             continue
-        description = str(trait.get("description") or trait.get("effect") or "").strip()
-        power = _entry_power(trait)
-        lines.append(f"{name} | {description} | {power}".rstrip(" |"))
+        desc = str(trait.get("desc") or "").strip()
+        lines.append(f"{name} | {desc}".rstrip(" |"))
     return "\n".join(lines)
 
 
@@ -6929,6 +6953,48 @@ def _format_character_entry_names(entries: list[dict[str, object]]) -> str:
         for entry in entries
         if str(entry.get("name") or entry.get("skill") or entry.get("trait") or "").strip()
     )
+
+
+def _character_entry_description(entry: dict[str, object], kind: str) -> str:
+    if kind == "skills":
+        return str(entry.get("desc") or entry.get("description") or entry.get("effect") or "").strip()
+    return str(entry.get("desc") or "").strip()
+
+
+def _character_entry_fingerprint(value: object) -> str:
+    return "".join(str(value or "").casefold().split())
+
+
+def _character_entry_is_duplicate(
+    entry: dict[str, object],
+    existing_entries: list[dict[str, object]],
+    kind: str,
+    replace_index: int | None,
+) -> bool:
+    name_key = _character_entry_fingerprint(entry.get("name") or entry.get("skill") or entry.get("trait"))
+    description_key = _character_entry_fingerprint(_character_entry_description(entry, kind))
+    for index, existing in enumerate(existing_entries):
+        if replace_index is not None and index == replace_index:
+            continue
+        existing_name_key = _character_entry_fingerprint(existing.get("name") or existing.get("skill") or existing.get("trait"))
+        if name_key and existing_name_key and name_key == existing_name_key:
+            return True
+        existing_description_key = _character_entry_fingerprint(_character_entry_description(existing, kind))
+        if description_key and existing_description_key and description_key == existing_description_key:
+            return True
+    return False
+
+
+def _select_generated_character_entry(
+    entries: list[dict[str, object]],
+    existing_entries: list[dict[str, object]],
+    kind: str,
+    replace_index: int | None,
+) -> dict[str, object]:
+    for entry in entries:
+        if not _character_entry_is_duplicate(entry, existing_entries, kind, replace_index):
+            return entry
+    return {}
 
 
 def _normalise_element_id(value: object, fallback: str = "physical") -> str:
@@ -6984,21 +7050,15 @@ def _normalise_element_id(value: object, fallback: str = "physical") -> str:
     return fallback
 
 
-def _normalise_character_traits(traits: list[dict[str, object]]) -> list[dict[str, object]]:
+def _character_trait_entries(traits: list[dict[str, object]]) -> list[dict[str, object]]:
     result: list[dict[str, object]] = []
     for raw in traits:
         if not isinstance(raw, dict):
-            raw = {"name": str(raw)}
-        name = str(raw.get("name") or raw.get("trait") or raw.get("title") or "").strip()
+            continue
+        name = str(raw.get("name") or "").strip()
         if not name:
             continue
-        trait = dict(raw)
-        power = _entry_power(trait)
-        trait["name"] = name
-        trait["power"] = power
-        trait["strength_level"] = power
-        trait["severity"] = power
-        result.append(trait)
+        result.append({"name": name, "desc": str(raw.get("desc") or "").strip()})
     return result
 
 
@@ -7109,9 +7169,9 @@ def _normalise_character_skills(skills: list[dict[str, object]]) -> list[dict[st
 
 
 def _character_entry_generated_summary(entry: dict[str, object], kind: str, config_data) -> str:
-    power = _entry_power(entry)
     lines: list[str] = []
     if kind == "skills":
+        power = _entry_power(entry)
         sp_cost = entry.get("usesp", "")
         element_id = _normalise_element_id(entry.get("element"))
         lines.append(f"{_ui_text(config_data, 'character_entry_sp_cost')}:{sp_cost}")
@@ -7123,14 +7183,8 @@ def _character_entry_generated_summary(entry: dict[str, object], kind: str, conf
         effect_labels = _skill_effect_label_summary(entry.get("type"), config_data)
         if effect_labels:
             lines.append(f"{_ui_text(config_data, 'character_entry_generated_effect')}:{effect_labels}")
-    else:
-        lines.append(f"{_ui_text(config_data, 'character_entry_power')}:{power}")
     effects = entry.get("type")
-    effect = str(
-        entry.get("effect")
-        or entry.get("desc")
-        or ""
-    ).strip()
+    effect = _character_entry_description(entry, kind)
     if effect:
         lines.append(f"{_ui_text(config_data, 'character_entry_description')}:{effect}")
     return "\n".join(lines)
@@ -7138,7 +7192,7 @@ def _character_entry_generated_summary(entry: dict[str, object], kind: str, conf
 
 def _entry_power(value: object, fallback: int = 1) -> int:
     if isinstance(value, dict):
-        for key in ("power", "strength_level", "strength", "power_level", "severity", "level", "rank"):
+        for key in ("power",):
             if value.get(key) not in (None, ""):
                 return _entry_power(value.get(key), fallback=fallback)
         return max(1, min(5, fallback))
@@ -7177,9 +7231,10 @@ def _entry_power(value: object, fallback: int = 1) -> int:
 
 def _character_entry_tooltip_text(entry: dict[str, object], kind: str, config_data) -> str:
     name = str(entry.get("name") or entry.get("skill") or entry.get("trait") or "").strip()
-    power = _entry_power(entry)
-    lines = [name, f"{_ui_text(config_data, 'character_entry_power')}: {power}/5"]
+    lines = [name]
     if kind == "skills":
+        power = _entry_power(entry)
+        lines.append(f"{_ui_text(config_data, 'character_entry_power')}: {power}/5")
         sp_cost = entry.get("usesp", "")
         element_id = _normalise_element_id(entry.get("element"))
         if sp_cost not in (None, ""):
@@ -7189,7 +7244,7 @@ def _character_entry_tooltip_text(entry: dict[str, object], kind: str, config_da
                 f"{_ui_text(config_data, 'character_entry_element')}: "
                 f"{tr_enum('element', element_id, getattr(config_data, 'language', 'ja'), fallback=element_id)}"
             )
-    description = str(entry.get("desc") or entry.get("effect") or "").strip()
+    description = _character_entry_description(entry, kind)
     if description:
         lines.extend(["", description])
     effects = entry.get("type")
@@ -7423,7 +7478,7 @@ def _format_named_description_section(title: str, value: object) -> list[str]:
     return _format_display_entry_section(
         title,
         value,
-        description_keys=("description", "effect_text", "display_effect", "effect", "summary", "usefulness", "text", "note", "details"),
+        description_keys=("desc", "description", "effect_text", "display_effect", "effect", "summary", "usefulness", "text", "note", "details"),
     )
 
 
@@ -7779,7 +7834,7 @@ UI_TEXT["en"].update(
         "character_skill_settings": "Skill Settings",
         "character_trait_settings": "Trait Settings",
         "character_skill_hint": "name | category | description | SP cost | power 1-5",
-        "character_trait_hint": "name | description | power 1-5",
+        "character_trait_hint": "name | description",
         "character_entry_name_skill": "Skill Name",
         "character_entry_name_trait": "Trait Name",
         "character_entry_description": "Description",
@@ -8031,7 +8086,7 @@ UI_TEXT["ja"].update(
         "character_skill_settings": "スキル設定",
         "character_trait_settings": "特質設定",
         "character_skill_hint": "名前 | 種別 | 説明 | SP消費 | 強力度1-5",
-        "character_trait_hint": "名前 | 説明 | 強力度1-5",
+        "character_trait_hint": "名前 | 説明",
         "character_entry_name_skill": "スキル名",
         "character_entry_name_trait": "体質名",
         "character_entry_description": "説明",
