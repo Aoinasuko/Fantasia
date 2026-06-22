@@ -18,11 +18,8 @@ from .npc_templates import (
     npc_template_to_character_payload,
     used_npc_template_ids,
 )
-from .quests import (
-    INTERNAL_QUEST_TOKEN_LABELS,
-    _quest_ai_context,
-    _quest_destination_source_text,
-)
+from .quest_context import _quest_ai_context
+from .quest_rules import INTERNAL_QUEST_TOKEN_LABELS, _quest_destination_source_text
 from .world_generation import _clamp_world_danger
 from .world_model import LocationData, QuestData, WorldData
 

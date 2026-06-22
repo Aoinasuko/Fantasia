@@ -1737,6 +1737,7 @@ def schema_instruction(manager_name: str) -> str:
             "- Each quest object must include quest_type, one of rescue, retrieve, defeat, delivery, investigate, or procure.\n"
             "- Defeating, hunting, clearing, or driving away monsters/enemies that block a road or place is always quest_type=\"defeat\".\n"
             "- Only requests to obtain a suitable item from somewhere are quest_type=\"procure\".\n"
+            "- Do not include reward, reward_gold, reward_exp, item rewards, or payment fields. Quest rewards are decided by local game rules.\n"
             "- Include destination_hint with location_kind, anchor_kind, objective_subnode_name, and objective_description whenever possible.\n"
         )
     if manager_name == "create_initial_character_profile":
@@ -1983,7 +1984,7 @@ def _canonicalize_manager_response(manager_name: str, value: Any) -> Any:
         return _wrap_collection_response(
             value,
             "quests",
-            item_keys=("name", "overview", "quest_type", "neighboring_settlement", "choices", "reward", "status", "objective"),
+            item_keys=("name", "overview", "quest_type", "neighboring_settlement", "choices", "status", "objective"),
         )
     if manager_name == "create_skill":
         return _wrap_collection_response(

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable
 
-from .quests import QUEST_REPORT_CHOICE_LABEL
+from .quest_rules import QUEST_REPORT_CHOICE_LABEL
 
 
 class PlayerInputType(str, Enum):

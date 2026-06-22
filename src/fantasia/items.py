@@ -490,6 +490,12 @@ def generate_vendor_items(owner_name: str, context: str = "", count: int | None 
     ]
 
 
+def generate_reward_item(category: str, context: str = "", danger_level: int = 0, seed: str = "") -> dict[str, Any]:
+    category_id = normalise_category(category)
+    rng = _rng("quest_reward", category_id, context, str(danger_level), seed)
+    return _random_item([(category_id, 1)], rng, source="quest_reward", context=context, danger_level=danger_level)
+
+
 def make_item(
     category: str,
     *,
