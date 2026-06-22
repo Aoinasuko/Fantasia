@@ -27,7 +27,6 @@ from .game import (
     DEFAULT_GUILD_NAME,
     DEFAULT_WORLD_CRIME_RISK,
     DEFAULT_WORLD_ENEMY_STRENGTH,
-    DEFAULT_WORLD_LOCATION_COUNT,
     INITIAL_WORLD_TIME_HOURS,
     PLAYER_INVENTORY_MAX_SLOTS,
     GameEngine,
@@ -388,7 +387,6 @@ class FantasiaApp(tk.Tk):
         self.character_gold_var = tk.StringVar(value="100")
         self.character_ability_points_var = tk.StringVar(value=f"BP:{CHARACTER_BONUS_POINTS}")
         self.premise_var = tk.StringVar(value="Misty frontier, old magic, exploration")
-        self.world_location_count_var = tk.StringVar(value=_world_location_count_label(DEFAULT_WORLD_LOCATION_COUNT, language))
         self.world_crime_risk_var = tk.StringVar(value=_world_crime_risk_label(DEFAULT_WORLD_CRIME_RISK, language))
         self.world_enemy_strength_var = tk.StringVar(value=_world_enemy_strength_label(DEFAULT_WORLD_ENEMY_STRENGTH, language))
         self.world_generation_progress_var = tk.DoubleVar(value=0)
@@ -539,32 +537,24 @@ class FantasiaApp(tk.Tk):
         self.premise_text.insert("1.0", self.premise_var.get())
         self.premise_text.bind("<KeyRelease>", lambda _event: self.premise_var.set(self.premise_text.get("1.0", "end").strip()))
 
-        tk.Label(panel, text=_ui_text(self.config_data, "world_location_count"), bg="#111722", fg="#b8c0d5").grid(row=6, column=0, sticky="w", pady=(14, 4))
-        ttk.Combobox(
-            panel,
-            textvariable=self.world_location_count_var,
-            values=_world_location_count_options(self.config_data.language),
-            state="readonly",
-        ).grid(row=7, column=0, sticky="ew")
-
-        tk.Label(panel, text=_ui_text(self.config_data, "world_crime_risk"), bg="#111722", fg="#b8c0d5").grid(row=8, column=0, sticky="w", pady=(14, 4))
+        tk.Label(panel, text=_ui_text(self.config_data, "world_crime_risk"), bg="#111722", fg="#b8c0d5").grid(row=6, column=0, sticky="w", pady=(14, 4))
         ttk.Combobox(
             panel,
             textvariable=self.world_crime_risk_var,
             values=_world_crime_risk_options(self.config_data.language),
             state="readonly",
-        ).grid(row=9, column=0, sticky="ew")
+        ).grid(row=7, column=0, sticky="ew")
 
-        tk.Label(panel, text=_ui_text(self.config_data, "world_enemy_strength"), bg="#111722", fg="#b8c0d5").grid(row=10, column=0, sticky="w", pady=(14, 4))
+        tk.Label(panel, text=_ui_text(self.config_data, "world_enemy_strength"), bg="#111722", fg="#b8c0d5").grid(row=8, column=0, sticky="w", pady=(14, 4))
         ttk.Combobox(
             panel,
             textvariable=self.world_enemy_strength_var,
             values=_world_enemy_strength_options(self.config_data.language),
             state="readonly",
-        ).grid(row=11, column=0, sticky="ew")
+        ).grid(row=9, column=0, sticky="ew")
 
         actions = tk.Frame(panel, bg="#111722")
-        actions.grid(row=12, column=0, sticky="ew", pady=(18, 0))
+        actions.grid(row=10, column=0, sticky="ew", pady=(18, 0))
         actions.columnconfigure(0, weight=1)
         self._screen_button(actions, _ui_text(self.config_data, "common_back"), lambda: self._show_screen("title"), 0, column=0, sticky="w")
         tk.Label(actions, textvariable=self.task_status_var, bg="#111722", fg="#b8c0d5").grid(row=0, column=1, sticky="e", padx=(0, 10))
@@ -576,7 +566,7 @@ class FantasiaApp(tk.Tk):
             maximum=100,
             variable=self.world_generation_progress_var,
         )
-        self.world_generation_progress.grid(row=13, column=0, sticky="ew", pady=(10, 0))
+        self.world_generation_progress.grid(row=11, column=0, sticky="ew", pady=(10, 0))
 
     def _build_character_setup_screen(self) -> None:
         screen = self._create_screen("character_setup")
@@ -5242,7 +5232,6 @@ class FantasiaApp(tk.Tk):
             lambda: self.engine.create_world(
                 self.world_name_var.get(),
                 self.premise_var.get(),
-                location_count=_world_location_count_from_label(self.world_location_count_var.get()),
                 crime_risk=_world_crime_risk_from_label(self.world_crime_risk_var.get()),
                 enemy_strength=_world_enemy_strength_from_label(self.world_enemy_strength_var.get()),
                 save_game=False,
@@ -7930,7 +7919,6 @@ UI_TEXT["en"].update(
         "world_generation_subtitle": "Create a new world through the AI managers.",
         "world_name": "World Name",
         "world_premise": "Premise",
-        "world_location_count": "Initial Locations",
         "world_crime_risk": "Crime Risk in Towns",
         "world_enemy_strength": "Enemy Strength in Battle",
         "world_generate": "Generate World",
@@ -8183,7 +8171,6 @@ UI_TEXT["ja"].update(
         "world_generation_subtitle": "AIマネージャで新しい世界を作ります。",
         "world_name": "世界名",
         "world_premise": "前提",
-        "world_location_count": "初期ロケーション数",
         "world_crime_risk": "街中での犯罪行為のリスク",
         "world_enemy_strength": "戦闘時の敵の強さ",
         "world_generate": "ワールド生成",
@@ -8765,7 +8752,6 @@ UI_TEXT["ja"].update(
         "world_create_tutorial_body": (
             "世界名: セーブやワールド選択に表示される名前です。\n\n"
             "前提: 世界観、重要なルール、遊びたい冒険の方向性を書きます。\n\n"
-            "初期ロケーション数: 最初に生成するワールドマップの場所数です。多いほど生成に時間がかかります。\n\n"
             "街中での犯罪行為のリスク: 街が犯罪行為にどれくらい厳しく反応するかを決めます。\n\n"
             "戦闘時の敵の強さ: 戦闘難易度を調整します。\n\n"
             "準備ができたらワールド生成を押してください。生成が終わるとキャラクター作成へ進みます。"
@@ -8889,26 +8875,6 @@ def _image_generation_enabled_config(config_data) -> bool:
     if isinstance(value, str):
         return value.strip().lower() not in {"0", "false", "off", "no", "disabled"}
     return bool(value)
-
-
-def _world_location_count_label(count: int, language: str = "ja") -> str:
-    value = int(count or DEFAULT_WORLD_LOCATION_COUNT)
-    english = {30: "Small (30)", 60: "Normal (60)", 90: "Many (90)"}
-    japanese = {30: "少ない（30個）", 60: "普通（60個）", 90: "多め（90個）"}
-    table = english if str(language).lower().startswith("en") else japanese
-    return table.get(value, table[DEFAULT_WORLD_LOCATION_COUNT])
-
-
-def _world_location_count_options(language: str = "ja") -> tuple[str, ...]:
-    return tuple(_world_location_count_label(value, language) for value in (30, 60, 90))
-
-
-def _world_location_count_from_label(label: str) -> int:
-    text = str(label or "").strip()
-    for value in (30, 60, 90):
-        if str(value) in text:
-            return value
-    return DEFAULT_WORLD_LOCATION_COUNT
 
 
 def _world_crime_risk_label(value: str, language: str = "ja") -> str:

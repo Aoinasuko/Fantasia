@@ -492,7 +492,6 @@ class GameEngine:
         premise: str,
         player_character: Character | None = None,
         save_game: bool = True,
-        location_count: int = DEFAULT_WORLD_LOCATION_COUNT,
         crime_risk: str = DEFAULT_WORLD_CRIME_RISK,
         enemy_strength: str = DEFAULT_WORLD_ENEMY_STRENGTH,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
