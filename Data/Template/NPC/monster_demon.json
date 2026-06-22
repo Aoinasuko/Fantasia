@@ -1,0 +1,457 @@
+[
+  {
+    "id": "lesser_demon",
+    "name": "レッサーデーモン",
+    "role": "魔界の尖兵",
+    "look": "小さな角と黒い翼を持つ悪魔。",
+    "personality": "弱い相手を見つけると嘲笑しながら襲う。",
+    "image_prompt": [
+      "lesser demon",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 7,
+    "def": 4,
+    "attributes": {
+      "str": 7,
+      "dex": 6,
+      "con": 6,
+      "int": 6,
+      "wis": 5,
+      "cha": 6
+    },
+    "attacks": [
+      {
+        "name": "爪で裂く",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "dark",
+        "amount": 0.2
+      }
+    ]
+  },
+  {
+    "id": "horned_demon",
+    "name": "ホーンドデーモン",
+    "role": "力任せの悪魔",
+    "look": "太い角と赤黒い肌を持つ悪魔。",
+    "personality": "力で相手をねじ伏せることを好む。",
+    "image_prompt": [
+      "horned demon",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 9,
+    "def": 5,
+    "attributes": {
+      "str": 10,
+      "dex": 5,
+      "con": 8,
+      "int": 5,
+      "wis": 5,
+      "cha": 6
+    },
+    "attacks": [
+      {
+        "name": "角で突き上げる",
+        "type": "physical"
+      }
+    ]
+  },
+  {
+    "id": "flame_demon",
+    "name": "フレイムデーモン",
+    "role": "火を操る悪魔",
+    "look": "体の周囲に小さな炎をまとった悪魔。",
+    "personality": "燃え広がる炎で相手を怯ませる。",
+    "image_prompt": [
+      "flame demon",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 8,
+    "def": 4,
+    "attributes": {
+      "str": 7,
+      "dex": 6,
+      "con": 6,
+      "int": 6,
+      "wis": 5,
+      "cha": 6
+    },
+    "attacks": [
+      {
+        "name": "爪で裂く",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "fire",
+        "amount": 0.3
+      }
+    ],
+    "skills": [
+      {
+        "name": "フレイムクロウ",
+        "desc": "魔力の炎を爪にまとわせ、敵単体に火属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "int",
+        "element": "fire",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ice_demon",
+    "name": "アイスデーモン",
+    "role": "冷気を操る悪魔",
+    "look": "青白い肌と凍った角を持つ悪魔。",
+    "personality": "冷たい息で動きを鈍らせてから攻める。",
+    "image_prompt": [
+      "ice demon",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 7,
+    "def": 5,
+    "attributes": {
+      "str": 6,
+      "dex": 6,
+      "con": 7,
+      "int": 7,
+      "wis": 6,
+      "cha": 6
+    },
+    "attacks": [
+      {
+        "name": "爪で裂く",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "ice",
+        "amount": 0.3
+      }
+    ],
+    "skills": [
+      {
+        "name": "アイスブレス",
+        "desc": "凍える息を吐き、敵単体に氷属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "int",
+        "element": "ice",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "shadow_demon",
+    "name": "シャドウデーモン",
+    "role": "影に潜む悪魔",
+    "look": "輪郭が揺らぐ黒い影の悪魔。",
+    "personality": "暗がりから現れて不意に攻撃する。",
+    "image_prompt": [
+      "shadow demon",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 7,
+    "def": 3,
+    "attributes": {
+      "str": 5,
+      "dex": 10,
+      "con": 5,
+      "int": 7,
+      "wis": 6,
+      "cha": 6
+    },
+    "attacks": [
+      {
+        "name": "爪で裂く",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "dark",
+        "amount": 0.3
+      }
+    ],
+    "skills": [
+      {
+        "name": "シャドウブレード",
+        "desc": "影を刃の形に変え、敵単体に闇属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "int",
+        "element": "dark",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "familiar_imp",
+    "name": "インプ",
+    "role": "小柄な悪魔",
+    "look": "小さな翼と尻尾を持つインプ。",
+    "personality": "悪戯好きで、相手を挑発しながら飛び回る。",
+    "image_prompt": [
+      "imp familiar",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 2,
+    "attributes": {
+      "str": 4,
+      "dex": 9,
+      "con": 4,
+      "int": 6,
+      "wis": 5,
+      "cha": 7
+    },
+    "attacks": [
+      {
+        "name": "小さな爪で引っかく",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "dark",
+        "amount": 0.2
+      }
+    ]
+  },
+  {
+    "id": "succubus",
+    "name": "サキュバス",
+    "role": "誘惑する悪魔",
+    "look": "妖しい翼と尾を持つ女性型の悪魔。",
+    "personality": "甘い言葉で油断させ、魔力で奪い取る。",
+    "image_prompt": [
+      "succubus demon",
+      "fantasy RPG monster"
+    ],
+    "gender": "female",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 6,
+    "def": 3,
+    "attributes": {
+      "str": 5,
+      "dex": 8,
+      "con": 5,
+      "int": 8,
+      "wis": 6,
+      "cha": 10
+    },
+    "attacks": [
+      {
+        "name": "爪で引っかく",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "dark",
+        "amount": 0.3
+      }
+    ],
+    "skills": [
+      {
+        "name": "チャームドレイン",
+        "desc": "魅惑の魔力で敵単体に闇属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "cha",
+        "element": "dark",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "incubus",
+    "name": "インキュバス",
+    "role": "誘惑する悪魔",
+    "look": "整った姿と黒い翼を持つ男性型の悪魔。",
+    "personality": "相手の心を揺さぶり、隙を作って襲う。",
+    "image_prompt": [
+      "incubus demon",
+      "fantasy RPG monster"
+    ],
+    "gender": "male",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 6,
+    "def": 3,
+    "attributes": {
+      "str": 6,
+      "dex": 8,
+      "con": 5,
+      "int": 8,
+      "wis": 6,
+      "cha": 10
+    },
+    "attacks": [
+      {
+        "name": "爪で引っかく",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "dark",
+        "amount": 0.3
+      }
+    ],
+    "skills": [
+      {
+        "name": "ドリームドレイン",
+        "desc": "夢魔の魔力で敵単体に闇属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "cha",
+        "element": "dark",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "lilim",
+    "name": "リリム",
+    "role": "若い夢魔",
+    "look": "小さな翼と角を持つ若い夢魔。",
+    "personality": "好奇心が強く、相手の反応を楽しむ。",
+    "image_prompt": [
+      "lilim demon",
+      "fantasy RPG monster"
+    ],
+    "gender": "female",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 2,
+    "attributes": {
+      "str": 4,
+      "dex": 9,
+      "con": 4,
+      "int": 7,
+      "wis": 5,
+      "cha": 9
+    },
+    "attacks": [
+      {
+        "name": "小さな爪で引っかく",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "dark",
+        "amount": 0.2
+      }
+    ],
+    "skills": [
+      {
+        "name": "リリムボルト",
+        "desc": "小悪魔の魔弾を放ち、敵単体に闇属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "cha",
+        "element": "dark",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "nightmare_demon",
+    "name": "ナイトメアデーモン",
+    "role": "悪夢を運ぶ悪魔",
+    "look": "黒い霧をまとった悪夢の悪魔。",
+    "personality": "恐怖を煽り、心が乱れた相手に迫る。",
+    "image_prompt": [
+      "nightmare demon",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 7,
+    "def": 4,
+    "attributes": {
+      "str": 5,
+      "dex": 7,
+      "con": 6,
+      "int": 8,
+      "wis": 7,
+      "cha": 8
+    },
+    "attacks": [
+      {
+        "name": "爪で裂く",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "dark",
+        "amount": 0.4
+      }
+    ],
+    "skills": [
+      {
+        "name": "ナイトメアウェーブ",
+        "desc": "悪夢の波動を放ち、敵単体に闇属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "wis",
+        "element": "dark",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  }
+]

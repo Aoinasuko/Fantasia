@@ -5,7 +5,10 @@
     "role": "空飛ぶ魔物",
     "look": "大きなコウモリ。",
     "personality": "血を求め、人を襲う。",
-    "image_prompt": ["bat monster", "fantasy RPG monster"],
+    "image_prompt": [
+      "bat monster",
+      "fantasy RPG monster"
+    ],
     "gender": "none",
     "age": "adult",
     "category": "enemy_common",
@@ -13,7 +16,7 @@
     "atk": 4,
     "def": 2,
     "attributes": {
-      "str": 6, 
+      "str": 6,
       "dex": 8,
       "con": 4,
       "int": 6,
@@ -21,13 +24,30 @@
       "cha": 6
     },
     "attacks": [
-      {"name": "牙で噛んで攻撃", "type": "physical"}
+      {
+        "name": "牙で噛んで攻撃",
+        "type": "physical"
+      }
     ],
     "skills": [
-      {"name": "吸血", "desc": "相手の血を吸い取り、ダメージを与えると同時に自身を回復する。", "usesp": 3, "power": 1, "ability": "str", "element": "physical", "type": ["absorption_single"]}
+      {
+        "name": "吸血",
+        "desc": "相手の血を吸い取り、ダメージを与えると同時に自身を回復する。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "str",
+        "element": "physical",
+        "type": [
+          "absorption_single"
+        ]
+      }
     ],
     "traits": [
-      {"name": "飛行", "description": "空を飛んでおり、近接攻撃が届きにくい。", "power": 2}
+      {
+        "name": "飛行",
+        "description": "空を飛んでおり、近接攻撃が届きにくい。",
+        "power": 2
+      }
     ]
   },
   {
@@ -36,7 +56,10 @@
     "role": "空飛ぶ魔物",
     "look": "大きなハエ。",
     "personality": "あまり何も考えておらず、本能で動く。",
-    "image_prompt": ["bug fly", "fantasy RPG monster"],
+    "image_prompt": [
+      "bug fly",
+      "fantasy RPG monster"
+    ],
     "gender": "none",
     "age": "adult",
     "category": "enemy_common",
@@ -44,7 +67,7 @@
     "atk": 6,
     "def": 2,
     "attributes": {
-      "str": 6, 
+      "str": 6,
       "dex": 8,
       "con": 6,
       "int": 6,
@@ -52,10 +75,17 @@
       "cha": 6
     },
     "attacks": [
-      {"name": "牙で噛んで攻撃", "type": "physical"}
+      {
+        "name": "牙で噛んで攻撃",
+        "type": "physical"
+      }
     ],
     "traits": [
-      {"name": "飛行", "description": "空を飛んでおり、近接攻撃が届きにくい。", "power": 2}
+      {
+        "name": "飛行",
+        "description": "空を飛んでおり、近接攻撃が届きにくい。",
+        "power": 2
+      }
     ]
   },
   {
@@ -64,7 +94,10 @@
     "role": "肉食動物",
     "look": "四足歩行の狼。",
     "personality": "縄張り意識が強く、縄張りに入ったものを警戒する。",
-    "image_prompt": ["wolf", "fantasy RPG monster"],
+    "image_prompt": [
+      "wolf",
+      "fantasy RPG monster"
+    ],
     "gender": "none",
     "age": "adult",
     "category": "enemy_common",
@@ -72,7 +105,7 @@
     "atk": 8,
     "def": 2,
     "attributes": {
-      "str": 8, 
+      "str": 8,
       "dex": 8,
       "con": 6,
       "int": 6,
@@ -80,7 +113,424 @@
       "cha": 6
     },
     "attacks": [
-      {"name": "牙で噛んで攻撃", "type": "physical"}
+      {
+        "name": "牙で噛んで攻撃",
+        "type": "physical"
+      }
+    ]
+  },
+  {
+    "id": "forest_wolf",
+    "name": "フォレストウルフ",
+    "role": "森に棲む肉食獣",
+    "look": "しなやかな体と濃い毛並みを持つ狼。",
+    "personality": "群れで獲物を追い詰める慎重な獣。",
+    "image_prompt": [
+      "forest wolf",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 7,
+    "def": 3,
+    "attributes": {
+      "str": 8,
+      "dex": 8,
+      "con": 6,
+      "int": 4,
+      "wis": 6,
+      "cha": 4
+    },
+    "attacks": [
+      {
+        "name": "牙で噛みつく",
+        "type": "physical"
+      }
+    ],
+    "traits": [
+      {
+        "name": "群れの狩り",
+        "description": "仲間と連携して獲物を追い込む。",
+        "power": 1
+      }
+    ]
+  },
+  {
+    "id": "wildcat",
+    "name": "ワイルドキャット",
+    "role": "素早い肉食獣",
+    "look": "鋭い爪と長い尾を持つ野生の猫。",
+    "personality": "不用意に近づく相手へ素早く飛びかかる。",
+    "image_prompt": [
+      "wild cat",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 3,
+    "attributes": {
+      "str": 5,
+      "dex": 10,
+      "con": 5,
+      "int": 5,
+      "wis": 7,
+      "cha": 5
+    },
+    "attacks": [
+      {
+        "name": "爪で切り裂く",
+        "type": "physical"
+      }
+    ]
+  },
+  {
+    "id": "giant_rat",
+    "name": "ジャイアントラット",
+    "role": "群れる害獣",
+    "look": "人の膝ほどもある大きな鼠。",
+    "personality": "食べ物と暗がりを求めてしつこくまとわりつく。",
+    "image_prompt": [
+      "giant rat",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 4,
+    "def": 2,
+    "attributes": {
+      "str": 5,
+      "dex": 8,
+      "con": 5,
+      "int": 3,
+      "wis": 5,
+      "cha": 3
+    },
+    "attacks": [
+      {
+        "name": "前歯で噛みつく",
+        "type": "physical"
+      }
+    ]
+  },
+  {
+    "id": "giant_spider",
+    "name": "ジャイアントスパイダー",
+    "role": "糸を使う蟲",
+    "look": "太い脚と毒牙を持つ大きな蜘蛛。",
+    "personality": "巣に入った獲物を逃さず絡め取る。",
+    "image_prompt": [
+      "giant spider",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 6,
+    "def": 3,
+    "attributes": {
+      "str": 6,
+      "dex": 7,
+      "con": 6,
+      "int": 3,
+      "wis": 6,
+      "cha": 3
+    },
+    "attacks": [
+      {
+        "name": "牙で噛みつく",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "poison",
+        "amount": 0.2
+      }
+    ],
+    "skills": [
+      {
+        "name": "ポイズンバイト",
+        "desc": "毒を含む牙で噛みつき、敵単体に毒属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "dex",
+        "element": "poison",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "venom_moth",
+    "name": "ヴェノムモス",
+    "role": "毒粉をまく蟲",
+    "look": "薄い羽に毒の鱗粉をまとった大きな蛾。",
+    "personality": "光に集まり、羽ばたきで毒粉を散らす。",
+    "image_prompt": [
+      "venom moth",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 4,
+    "def": 2,
+    "attributes": {
+      "str": 3,
+      "dex": 9,
+      "con": 4,
+      "int": 3,
+      "wis": 6,
+      "cha": 5
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "poison",
+        "amount": 0.3
+      }
+    ],
+    "skills": [
+      {
+        "name": "ポイズンパウダー",
+        "desc": "毒の鱗粉を散らし、敵単体に毒属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "dex",
+        "element": "poison",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "horned_rabbit",
+    "name": "ホーンラビット",
+    "role": "角を持つ小獣",
+    "look": "額に短い角を生やした素早い兎。",
+    "personality": "臆病だが追い詰められると角で突進する。",
+    "image_prompt": [
+      "horned rabbit",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 2,
+    "attributes": {
+      "str": 5,
+      "dex": 9,
+      "con": 4,
+      "int": 3,
+      "wis": 6,
+      "cha": 5
+    },
+    "attacks": [
+      {
+        "name": "角で突く",
+        "type": "physical"
+      }
+    ]
+  },
+  {
+    "id": "cave_snake",
+    "name": "ケイブスネーク",
+    "role": "暗所に潜む爬虫類",
+    "look": "岩陰に紛れる暗い鱗の蛇。",
+    "personality": "足音を感じ取ると静かに近づいて噛みつく。",
+    "image_prompt": [
+      "cave snake",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 2,
+    "attributes": {
+      "str": 4,
+      "dex": 8,
+      "con": 5,
+      "int": 3,
+      "wis": 7,
+      "cha": 3
+    },
+    "attacks": [
+      {
+        "name": "牙で噛みつく",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "poison",
+        "amount": 0.2
+      }
+    ],
+    "skills": [
+      {
+        "name": "ポイズンファング",
+        "desc": "毒牙で素早く噛みつき、敵単体に毒属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "dex",
+        "element": "poison",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "iron_beetle",
+    "name": "アイアンビートル",
+    "role": "硬い甲殻の蟲",
+    "look": "鉄のように鈍く光る甲殻を持つ甲虫。",
+    "personality": "鈍重だが外殻で攻撃を受け止める。",
+    "image_prompt": [
+      "iron beetle",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 7,
+    "attributes": {
+      "str": 6,
+      "dex": 4,
+      "con": 9,
+      "int": 2,
+      "wis": 5,
+      "cha": 3
+    },
+    "attacks": [
+      {
+        "name": "硬い角で突く",
+        "type": "physical"
+      }
+    ],
+    "traits": [
+      {
+        "name": "硬い甲殻",
+        "description": "厚い甲殻で傷を受けにくい。",
+        "power": 1
+      }
+    ]
+  },
+  {
+    "id": "black_crow",
+    "name": "ブラッククロウ",
+    "role": "不吉な鳥",
+    "look": "黒い羽と鋭いくちばしを持つ鴉。",
+    "personality": "獲物の隙を見て目や手元を狙う。",
+    "image_prompt": [
+      "black crow",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 4,
+    "def": 2,
+    "attributes": {
+      "str": 3,
+      "dex": 10,
+      "con": 4,
+      "int": 5,
+      "wis": 7,
+      "cha": 4
+    },
+    "attacks": [
+      {
+        "name": "くちばしで突く",
+        "type": "physical"
+      }
+    ],
+    "traits": [
+      {
+        "name": "飛行",
+        "description": "空を飛んで攻撃を避けやすい。",
+        "power": 1
+      }
+    ]
+  },
+  {
+    "id": "killer_bee_swarm",
+    "name": "キラービースウォーム",
+    "role": "群れで襲う蟲",
+    "look": "無数の大蜂が一塊になって飛び回る。",
+    "personality": "巣を脅かす相手を集団で刺し続ける。",
+    "image_prompt": [
+      "killer bee swarm",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 6,
+    "def": 3,
+    "attributes": {
+      "str": 4,
+      "dex": 9,
+      "con": 5,
+      "int": 2,
+      "wis": 5,
+      "cha": 3
+    },
+    "attacks": [
+      {
+        "name": "群れで体当たりする",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "poison",
+        "amount": 0.2
+      }
+    ],
+    "traits": [
+      {
+        "name": "群体",
+        "description": "小さな個体の群れで一体の敵として襲う。",
+        "power": 1
+      }
+    ],
+    "skills": [
+      {
+        "name": "ポイズンニードル",
+        "desc": "毒針で刺し、敵単体に毒属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "dex",
+        "element": "poison",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
     ]
   }
 ]

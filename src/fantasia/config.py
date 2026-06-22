@@ -96,6 +96,10 @@ class AppConfig:
     def allow_any_action_concept(self) -> bool:
         return bool(self.ui_setting.get("allow_any_action_concept", False))
 
+    @property
+    def reveal_world_map_on_generation(self) -> bool:
+        return bool(self.ui_setting.get("reveal_world_map_on_generation", False))
+
 
 def load_config(path: Path = CONFIG_PATH) -> AppConfig:
     with path.open("r", encoding="utf-8") as handle:

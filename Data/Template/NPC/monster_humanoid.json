@@ -5,7 +5,12 @@
     "role": "野蛮な蛮族",
     "look": "緑色の肌、とんがりとした耳、短剣を持っている。",
     "personality": "人間を襲い、物資を奪いたいと考えている。",
-    "image_prompt": ["green skin", "goblin", "holding dagger", "fantasy RPG monster"],
+    "image_prompt": [
+      "green skin",
+      "goblin",
+      "holding dagger",
+      "fantasy RPG monster"
+    ],
     "gender": "male",
     "age": "adult",
     "category": "enemy_common",
@@ -13,7 +18,7 @@
     "atk": 6,
     "def": 3,
     "attributes": {
-      "str": 8, 
+      "str": 8,
       "dex": 6,
       "con": 6,
       "int": 6,
@@ -21,13 +26,31 @@
       "cha": 6
     },
     "attacks": [
-      {"name": "持っている短剣で攻撃", "type": "physical"}
+      {
+        "name": "持っている短剣で攻撃",
+        "type": "physical"
+      }
     ],
     "skills": [
-      {"name": "連続攻撃", "desc": "短剣で連続して攻撃する。", "usesp": 3, "power": 2, "ability": "dex", "element": "physical", "type": ["damage_hp_single", "damage_hp_single"]}
+      {
+        "name": "連続攻撃",
+        "desc": "短剣で連続して攻撃する。",
+        "usesp": 3,
+        "power": 2,
+        "ability": "dex",
+        "element": "physical",
+        "type": [
+          "damage_hp_single",
+          "damage_hp_single"
+        ]
+      }
     ],
     "traits": [
-      {"name": "弱気", "description": "自身が劣勢になると、戦意を失い相手に助けを求める。", "power": 2}
+      {
+        "name": "弱気",
+        "description": "自身が劣勢になると、戦意を失い相手に助けを求める。",
+        "power": 2
+      }
     ]
   },
   {
@@ -36,7 +59,12 @@
     "role": "野蛮な蛮族",
     "look": "緑色の肌、とんがりとした耳、弓を持っている。",
     "personality": "人間を襲い、物資を奪いたいと考えている。",
-    "image_prompt": ["green skin", "goblin", "holding bow", "fantasy RPG monster"],
+    "image_prompt": [
+      "green skin",
+      "goblin",
+      "holding bow",
+      "fantasy RPG monster"
+    ],
     "gender": "male",
     "age": "adult",
     "category": "enemy_common",
@@ -44,7 +72,7 @@
     "atk": 6,
     "def": 3,
     "attributes": {
-      "str": 6, 
+      "str": 6,
       "dex": 8,
       "con": 6,
       "int": 6,
@@ -52,13 +80,429 @@
       "cha": 6
     },
     "attacks": [
-      {"name": "持っている弓で矢を撃って攻撃", "type": "physical"}
+      {
+        "name": "持っている弓で矢を撃って攻撃",
+        "type": "physical"
+      }
     ],
     "skills": [
-      {"name": "毒の矢", "desc": "毒の矢を放ち、傷と毒で相手を弱らせる。", "usesp": 3, "power": 2, "ability": "dex", "element": "poison", "type": [{"type": "damage_hp_single"}, {"type": "effect_enemy_single", "buff_type": "decrease_hp", "amount": 1, "duration": 1, "name": "毒"}]}
+      {
+        "name": "毒の矢",
+        "desc": "毒の矢を放ち、傷と毒で相手を弱らせる。",
+        "usesp": 3,
+        "power": 2,
+        "ability": "dex",
+        "element": "poison",
+        "type": [
+          {
+            "type": "damage_hp_single"
+          },
+          {
+            "type": "effect_enemy_single",
+            "buff_type": "decrease_hp",
+            "amount": 1,
+            "duration": 1,
+            "name": "毒"
+          }
+        ]
+      }
     ],
     "traits": [
-      {"name": "弱気", "description": "自身が劣勢になると、戦意を失い相手に助けを求める。", "power": 2}
+      {
+        "name": "弱気",
+        "description": "自身が劣勢になると、戦意を失い相手に助けを求める。",
+        "power": 2
+      }
+    ]
+  },
+  {
+    "id": "thief",
+    "role": "盗賊",
+    "look": "バンダナを被っており、短剣を持っている。",
+    "personality": "物資を奪おうと考えている。",
+    "gender": "male",
+    "age_min": 20,
+    "age_max": 40,
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 8,
+    "def": 4,
+    "attributes": {
+      "str": 8,
+      "dex": 8,
+      "con": 6,
+      "int": 6,
+      "wis": 6,
+      "cha": 6
+    },
+    "attacks": [
+      {
+        "name": "持っている短剣で攻撃",
+        "type": "physical"
+      }
+    ],
+    "skills": [
+      {
+        "name": "連続攻撃",
+        "desc": "短剣で連続して攻撃する。",
+        "usesp": 3,
+        "power": 2,
+        "ability": "dex",
+        "element": "physical",
+        "type": [
+          "damage_hp_single",
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "goblin_scout",
+    "name": "ゴブリンスカウト",
+    "role": "小柄な蛮族",
+    "look": "緑色の肌と短い槍を持つゴブリン。",
+    "personality": "臆病だが数で勝てる相手には強気に出る。",
+    "image_prompt": [
+      "goblin scout",
+      "fantasy RPG monster"
+    ],
+    "gender": "male",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 6,
+    "def": 3,
+    "attributes": {
+      "str": 6,
+      "dex": 8,
+      "con": 6,
+      "int": 5,
+      "wis": 5,
+      "cha": 4
+    },
+    "attacks": [
+      {
+        "name": "短槍で突く",
+        "type": "physical"
+      }
+    ]
+  },
+  {
+    "id": "hobgoblin",
+    "name": "ホブゴブリン",
+    "role": "大柄な蛮族",
+    "look": "ゴブリンより大きく、粗末な鎧を着ている。",
+    "personality": "部下を従え、正面から力で押してくる。",
+    "image_prompt": [
+      "hobgoblin",
+      "fantasy RPG monster"
+    ],
+    "gender": "male",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 8,
+    "def": 5,
+    "attributes": {
+      "str": 9,
+      "dex": 5,
+      "con": 8,
+      "int": 5,
+      "wis": 5,
+      "cha": 5
+    },
+    "attacks": [
+      {
+        "name": "棍棒で殴る",
+        "type": "physical"
+      }
+    ]
+  },
+  {
+    "id": "kobold",
+    "name": "コボルト",
+    "role": "犬面の小鬼",
+    "look": "犬のような顔と小柄な体を持つ亜人。",
+    "personality": "罠や奇襲を好み、危なくなると逃げ腰になる。",
+    "image_prompt": [
+      "kobold",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 3,
+    "attributes": {
+      "str": 5,
+      "dex": 8,
+      "con": 5,
+      "int": 5,
+      "wis": 6,
+      "cha": 4
+    },
+    "attacks": [
+      {
+        "name": "短剣で斬る",
+        "type": "physical"
+      }
+    ]
+  },
+  {
+    "id": "orc",
+    "name": "オーク",
+    "role": "力の強い蛮族",
+    "look": "牙のある顔と分厚い体を持つ亜人。",
+    "personality": "力を誇示し、目の前の敵を叩き潰そうとする。",
+    "image_prompt": [
+      "orc",
+      "fantasy RPG monster"
+    ],
+    "gender": "male",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 9,
+    "def": 5,
+    "attributes": {
+      "str": 10,
+      "dex": 4,
+      "con": 9,
+      "int": 4,
+      "wis": 5,
+      "cha": 4
+    },
+    "attacks": [
+      {
+        "name": "斧で叩き斬る",
+        "type": "physical"
+      }
+    ]
+  },
+  {
+    "id": "human_thief",
+    "name": "ヒューマンシーフ",
+    "role": "人間の盗賊",
+    "look": "軽装で短剣を隠し持つ人間。",
+    "personality": "隙を見て物資を奪い、危険なら逃げる。",
+    "image_prompt": [
+      "human thief",
+      "fantasy RPG enemy"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 6,
+    "def": 3,
+    "attributes": {
+      "str": 5,
+      "dex": 9,
+      "con": 5,
+      "int": 6,
+      "wis": 6,
+      "cha": 5
+    },
+    "attacks": [
+      {
+        "name": "拳で殴る",
+        "type": "physical"
+      }
+    ],
+    "skills": [
+      {
+        "name": "スニークスタブ",
+        "desc": "素早く短剣で刺し、敵単体に物理ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "dex",
+        "element": "physical",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "human_bandit",
+    "name": "ヒューマンバンディット",
+    "role": "人間の山賊",
+    "look": "粗野な装備と山刀を持つ人間。",
+    "personality": "旅人を脅して荷物を奪おうとする。",
+    "image_prompt": [
+      "human bandit",
+      "fantasy RPG enemy"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 7,
+    "def": 4,
+    "attributes": {
+      "str": 7,
+      "dex": 6,
+      "con": 7,
+      "int": 5,
+      "wis": 5,
+      "cha": 5
+    },
+    "attacks": [
+      {
+        "name": "山刀で叩き斬る",
+        "type": "physical"
+      }
+    ]
+  },
+  {
+    "id": "skeleton_soldier",
+    "name": "スケルトンソルジャー",
+    "role": "動く骸骨",
+    "look": "錆びた剣を持つ骸骨の兵士。",
+    "personality": "生前の命令に従うように無言で襲ってくる。",
+    "image_prompt": [
+      "skeleton soldier",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 6,
+    "def": 4,
+    "attributes": {
+      "str": 6,
+      "dex": 5,
+      "con": 6,
+      "int": 3,
+      "wis": 4,
+      "cha": 2
+    },
+    "attacks": [
+      {
+        "name": "錆びた剣で斬る",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "poison",
+        "amount": 0.5
+      }
+    ]
+  },
+  {
+    "id": "lizardman",
+    "name": "リザードマン",
+    "role": "蜥蜴の亜人",
+    "look": "鱗の体と槍を持つ蜥蜴人。",
+    "personality": "縄張りを荒らす相手に冷静に槍を向ける。",
+    "image_prompt": [
+      "lizardman",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 7,
+    "def": 5,
+    "attributes": {
+      "str": 7,
+      "dex": 6,
+      "con": 8,
+      "int": 5,
+      "wis": 6,
+      "cha": 4
+    },
+    "attacks": [
+      {
+        "name": "槍で突く",
+        "type": "physical"
+      }
+    ]
+  },
+  {
+    "id": "young_troll",
+    "name": "ヤングトロル",
+    "role": "再生力を持つ巨人",
+    "look": "大きな腕と厚い皮膚を持つ若いトロル。",
+    "personality": "鈍いがしぶとく、傷を恐れず近づいてくる。",
+    "image_prompt": [
+      "young troll",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 10,
+    "def": 6,
+    "attributes": {
+      "str": 11,
+      "dex": 3,
+      "con": 10,
+      "int": 3,
+      "wis": 4,
+      "cha": 3
+    },
+    "attacks": [
+      {
+        "name": "太い腕で殴る",
+        "type": "physical"
+      }
+    ],
+    "traits": [
+      {
+        "name": "しぶとい体",
+        "description": "分厚い体で倒れにくい。",
+        "power": 1
+      }
+    ]
+  },
+  {
+    "id": "human_archer",
+    "name": "ヒューマンアーチャー",
+    "role": "人間の射手",
+    "look": "革鎧と弓を持つ人間の戦闘員。",
+    "personality": "距離を取りながら矢で牽制する。",
+    "image_prompt": [
+      "human archer",
+      "fantasy RPG enemy"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 6,
+    "def": 3,
+    "attributes": {
+      "str": 5,
+      "dex": 9,
+      "con": 5,
+      "int": 5,
+      "wis": 6,
+      "cha": 5
+    },
+    "attacks": [
+      {
+        "name": "短剣で斬る",
+        "type": "physical"
+      }
+    ],
+    "skills": [
+      {
+        "name": "アローショット",
+        "desc": "弓で狙い撃ち、敵単体に物理ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "dex",
+        "element": "physical",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
     ]
   }
 ]

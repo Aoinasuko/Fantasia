@@ -253,6 +253,7 @@ class FantasiaApp(tk.Tk):
             self.save_store,
             PromptTemplateStore(resolve_prompt_template_dir(self.config_data.prompt_template_path)),
             allow_any_action_concept=self.config_data.allow_any_action_concept,
+            reveal_world_map_on_generation=self.config_data.reveal_world_map_on_generation,
         )
         self.preview_image: ImageTk.PhotoImage | None = None
         self.stage_source_image: Image.Image | None = None
@@ -369,6 +370,7 @@ class FantasiaApp(tk.Tk):
         self.ui_generate_images_var = tk.BooleanVar(value=_image_generation_enabled_config(self.config_data))
         self.ui_show_button_help_var = tk.BooleanVar(value=bool(self.config_data.ui_setting.get("show_game_button_help", True)))
         self.debug_allow_any_action_var = tk.BooleanVar(value=self.config_data.allow_any_action_concept)
+        self.debug_reveal_world_map_on_generation_var = tk.BooleanVar(value=self.config_data.reveal_world_map_on_generation)
         self.world_name_var = tk.StringVar(value="Misty Frontier")
         self.player_var = tk.StringVar(value="Nana")
         self.character_gender_var = tk.StringVar(value="female")
@@ -1214,7 +1216,7 @@ class FantasiaApp(tk.Tk):
         frame = self._settings_category_frame("debug")
         frame.columnconfigure(0, weight=1)
         frame.columnconfigure(1, weight=0)
-        frame.rowconfigure(6, weight=1)
+        frame.rowconfigure(8, weight=1)
         tk.Label(frame, text=_ui_text(self.config_data, "settings_debug_title"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(4)).grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
         self.device_info_text = tk.Text(
@@ -1255,8 +1257,27 @@ class FantasiaApp(tk.Tk):
             font=self.ui_fonts.normal(-4),
         ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(2, 12))
 
+        tk.Label(
+            frame,
+            text=_ui_text(self.config_data, "settings_reveal_world_map_on_generation"),
+            bg=APP_PANEL_BG,
+            fg="#f2f2f2",
+            anchor="w",
+            font=self.ui_fonts.bold(-2),
+        ).grid(row=4, column=0, sticky="w", padx=(0, 8), pady=(2, 0))
+        self._settings_checkbutton(frame, self.debug_reveal_world_map_on_generation_var).grid(row=4, column=1, sticky="w", pady=(2, 0))
+        tk.Label(
+            frame,
+            text=_ui_text(self.config_data, "settings_reveal_world_map_on_generation_hint"),
+            bg=APP_PANEL_BG,
+            fg="#b8c0d5",
+            anchor="w",
+            justify="left",
+            font=self.ui_fonts.normal(-4),
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(2, 12))
+
         actions = tk.Frame(frame, bg=APP_PANEL_BG)
-        actions.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 0))
+        actions.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(0, 0))
         actions.columnconfigure(1, weight=1)
         self._grid_settings_button(actions, _ui_text(self.config_data, "settings_check_generation_logs"), self._open_generation_logs_screen, row=0, column=0, sticky="w", ipadx=52, ipady=8)
 
@@ -4562,6 +4583,7 @@ class FantasiaApp(tk.Tk):
 
     def _load_debug_settings_vars(self) -> None:
         self.debug_allow_any_action_var.set(self.config_data.allow_any_action_concept)
+        self.debug_reveal_world_map_on_generation_var.set(self.config_data.reveal_world_map_on_generation)
 
     def _apply_llm_backend_setting(self) -> None:
         backend = _llm_backend_from_label(self.llm_backend_label_var.get(), self.config_data.language)
@@ -4685,6 +4707,7 @@ class FantasiaApp(tk.Tk):
             self.save_store,
             PromptTemplateStore(resolve_prompt_template_dir(self.config_data.prompt_template_path)),
             allow_any_action_concept=self.config_data.allow_any_action_concept,
+            reveal_world_map_on_generation=self.config_data.reveal_world_map_on_generation,
         )
         self.engine.state = old_state
 
@@ -4987,10 +5010,12 @@ class FantasiaApp(tk.Tk):
         raw = json.loads(json.dumps(self.config_data.raw, ensure_ascii=False))
         ui_setting = raw.setdefault("ui_setting", {})
         ui_setting["allow_any_action_concept"] = bool(self.debug_allow_any_action_var.get())
+        ui_setting["reveal_world_map_on_generation"] = bool(self.debug_reveal_world_map_on_generation_var.get())
         try:
             CONFIG_PATH.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             self.config_data = load_config()
             self.engine.allow_any_action_concept = self.config_data.allow_any_action_concept
+            self.engine.reveal_world_map_on_generation = self.config_data.reveal_world_map_on_generation
         except Exception as exc:
             self._show_error(exc)
             return
@@ -6639,6 +6664,7 @@ def run_smoke_test() -> None:
         SaveStore(),
         PromptTemplateStore(resolve_prompt_template_dir(config_data.prompt_template_path)),
         allow_any_action_concept=config_data.allow_any_action_concept,
+        reveal_world_map_on_generation=config_data.reveal_world_map_on_generation,
     )
     try:
         print(engine.create_world("SmokeTest", "静かな森と古い遺跡"))
@@ -6658,6 +6684,7 @@ def run_save_smoke_test() -> None:
         SaveStore(),
         PromptTemplateStore(resolve_prompt_template_dir(config_data.prompt_template_path)),
         allow_any_action_concept=config_data.allow_any_action_concept,
+        reveal_world_map_on_generation=config_data.reveal_world_map_on_generation,
     )
     try:
         print(engine.create_world("SaveSmokeWorld", "霧深い辺境と古い魔法", save_game=False))
@@ -8404,6 +8431,19 @@ UI_TEXT["ja"].update(
         "settings_allow_any_action_concept": "あらゆる行動・概念を実現可能にする",
         "settings_allow_any_action_concept_hint": "デバッグ用。この設定をONにすると、世界観や状況に合わない行動を弾く事前ガードを無効化します。",
         "log_settings_debug": "[設定] デバッグ設定を更新しました。",
+    }
+)
+
+UI_TEXT["en"].update(
+    {
+        "settings_reveal_world_map_on_generation": "Reveal Full World Map On Generation",
+        "settings_reveal_world_map_on_generation_hint": "Debug only. Newly generated worlds show every world-map node immediately.",
+    }
+)
+UI_TEXT["ja"].update(
+    {
+        "settings_reveal_world_map_on_generation": "生成時にすべてのワールドマップを表示する",
+        "settings_reveal_world_map_on_generation_hint": "デバッグ用。新規ワールド生成完了時、全ロケーションを世界地図に表示します。",
     }
 )
 

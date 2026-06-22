@@ -5,7 +5,10 @@
     "role": "粘液生物",
     "look": "緑色の粘液のような見た目。",
     "personality": "生物を捕えようとし、なかなか離さない。",
-    "image_prompt": ["green slime monster", "fantasy RPG monster"],
+    "image_prompt": [
+      "green slime monster",
+      "fantasy RPG monster"
+    ],
     "gender": "none",
     "age": "adult",
     "category": "enemy_common",
@@ -13,7 +16,7 @@
     "atk": 4,
     "def": 2,
     "attributes": {
-      "str": 6, 
+      "str": 6,
       "dex": 4,
       "con": 8,
       "int": 6,
@@ -21,14 +24,533 @@
       "cha": 6
     },
     "resistance": [
-      {"type": "physical", "amount": 0.5}
+      {
+        "type": "physical",
+        "amount": 0.5
+      }
     ],
     "attacks": [
-      {"name": "粘液で打撃攻撃", "type": "physical"},
-      {"name": "粘液に包んで浸食攻撃", "type": "poison"}
+      {
+        "name": "粘液で打撃攻撃",
+        "type": "physical"
+      },
+      {
+        "name": "粘液に包んで浸食攻撃",
+        "type": "poison"
+      }
     ],
     "skills": [
-      {"name": "吸収", "desc": "相手の栄養分を吸い取り、ダメージを与えると同時に自身を回復する。", "usesp": 3, "power": 1, "ability": "str", "element": "poison", "type": ["absorption_single"]}
+      {
+        "name": "吸収",
+        "desc": "相手の栄養分を吸い取り、ダメージを与えると同時に自身を回復する。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "str",
+        "element": "poison",
+        "type": [
+          "absorption_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "red_slime",
+    "name": "レッドスライム",
+    "role": "赤い粘液の魔物",
+    "look": "赤く透き通った丸いスライム。",
+    "personality": "跳ねながら近づき、熱を帯びた体でぶつかる。",
+    "image_prompt": [
+      "red slime",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 4,
+    "def": 2,
+    "attributes": {
+      "str": 3,
+      "dex": 4,
+      "con": 6,
+      "int": 2,
+      "wis": 3,
+      "cha": 2
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "fire",
+        "amount": 0.2
+      }
+    ],
+    "skills": [
+      {
+        "name": "ヒートタッチ",
+        "desc": "熱を帯びた粘液で触れ、敵単体に火属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "con",
+        "element": "fire",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "blue_slime",
+    "name": "ブルースライム",
+    "role": "青い粘液の魔物",
+    "look": "水のように青い体をしたスライム。",
+    "personality": "柔らかく形を変えながら水気を浴びせる。",
+    "image_prompt": [
+      "blue slime",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 4,
+    "def": 3,
+    "attributes": {
+      "str": 3,
+      "dex": 4,
+      "con": 7,
+      "int": 2,
+      "wis": 3,
+      "cha": 2
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "water",
+        "amount": 0.2
+      }
+    ],
+    "skills": [
+      {
+        "name": "ウォータースプラッシュ",
+        "desc": "水の粘液を弾けさせ、敵単体に水属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "con",
+        "element": "water",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "yellow_slime",
+    "name": "イエロースライム",
+    "role": "黄色い粘液の魔物",
+    "look": "黄色く弾む小さなスライム。",
+    "personality": "静電気をため込み、触れた相手をしびれさせる。",
+    "image_prompt": [
+      "yellow slime",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 4,
+    "def": 2,
+    "attributes": {
+      "str": 3,
+      "dex": 5,
+      "con": 5,
+      "int": 2,
+      "wis": 3,
+      "cha": 2
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "lightning",
+        "amount": 0.2
+      }
+    ],
+    "skills": [
+      {
+        "name": "ショックタッチ",
+        "desc": "帯電した粘液で触れ、敵単体に雷属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "con",
+        "element": "lightning",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "poison_slime",
+    "name": "ポイズンスライム",
+    "role": "毒を含む粘液の魔物",
+    "look": "紫色の毒液を含んだスライム。",
+    "personality": "毒の粘液を撒き散らして近づく者を弱らせる。",
+    "image_prompt": [
+      "poison slime",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 3,
+    "attributes": {
+      "str": 3,
+      "dex": 4,
+      "con": 7,
+      "int": 2,
+      "wis": 3,
+      "cha": 2
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "poison",
+        "amount": 0.5
+      }
+    ],
+    "skills": [
+      {
+        "name": "ポイズンリキッド",
+        "desc": "毒の粘液を浴びせ、敵単体に毒属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "con",
+        "element": "poison",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "acid_slime",
+    "name": "アシッドスライム",
+    "role": "酸を含む粘液の魔物",
+    "look": "泡立つ酸性の粘液でできたスライム。",
+    "personality": "触れた装備や皮膚をじわじわ溶かす。",
+    "image_prompt": [
+      "acid slime",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 3,
+    "attributes": {
+      "str": 3,
+      "dex": 4,
+      "con": 7,
+      "int": 2,
+      "wis": 3,
+      "cha": 2
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "poison",
+        "amount": 0.3
+      }
+    ],
+    "skills": [
+      {
+        "name": "アシッドリキッド",
+        "desc": "酸性の粘液を飛ばし、敵単体に毒属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "con",
+        "element": "poison",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ice_slime",
+    "name": "アイススライム",
+    "role": "冷たい粘液の魔物",
+    "look": "半透明の氷を含んだスライム。",
+    "personality": "冷たい体でぶつかり、相手の熱を奪う。",
+    "image_prompt": [
+      "ice slime",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 4,
+    "def": 4,
+    "attributes": {
+      "str": 3,
+      "dex": 3,
+      "con": 8,
+      "int": 2,
+      "wis": 3,
+      "cha": 2
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "ice",
+        "amount": 0.4
+      }
+    ],
+    "skills": [
+      {
+        "name": "フロストタッチ",
+        "desc": "冷たい粘液で触れ、敵単体に氷属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "con",
+        "element": "ice",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "fire_slime",
+    "name": "ファイアスライム",
+    "role": "燃える粘液の魔物",
+    "look": "小さな炎を体内に灯したスライム。",
+    "personality": "火の粉を散らしながら弾んでくる。",
+    "image_prompt": [
+      "fire slime",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 2,
+    "attributes": {
+      "str": 3,
+      "dex": 5,
+      "con": 6,
+      "int": 2,
+      "wis": 3,
+      "cha": 2
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "fire",
+        "amount": 0.4
+      }
+    ],
+    "skills": [
+      {
+        "name": "フレイムスパーク",
+        "desc": "体内の火を弾けさせ、敵単体に火属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "con",
+        "element": "fire",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "mud_slime",
+    "name": "マッドスライム",
+    "role": "泥の粘液の魔物",
+    "look": "泥と水が混ざった重いスライム。",
+    "personality": "足元にまとわりつき、動きを鈍らせる。",
+    "image_prompt": [
+      "mud slime",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 4,
+    "def": 5,
+    "attributes": {
+      "str": 4,
+      "dex": 2,
+      "con": 8,
+      "int": 2,
+      "wis": 3,
+      "cha": 2
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "earth",
+        "amount": 0.3
+      }
+    ],
+    "skills": [
+      {
+        "name": "マッドスプラッシュ",
+        "desc": "泥の粘液を浴びせ、敵単体に地属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "con",
+        "element": "earth",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rock_slime",
+    "name": "ロックスライム",
+    "role": "小石を含む粘液の魔物",
+    "look": "体内に小石を取り込んだ硬めのスライム。",
+    "personality": "重い体で跳ね、硬い部分をぶつける。",
+    "image_prompt": [
+      "rock slime",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 6,
+    "attributes": {
+      "str": 5,
+      "dex": 2,
+      "con": 9,
+      "int": 2,
+      "wis": 3,
+      "cha": 2
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "earth",
+        "amount": 0.4
+      }
+    ],
+    "skills": [
+      {
+        "name": "ストーンバンプ",
+        "desc": "小石を含む体で跳ね、敵単体に地属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "con",
+        "element": "earth",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "shadow_slime",
+    "name": "シャドウスライム",
+    "role": "影の粘液の魔物",
+    "look": "黒い影のように床へ広がるスライム。",
+    "personality": "暗がりに溶け込み、不意に跳ね上がって襲う。",
+    "image_prompt": [
+      "shadow slime",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 3,
+    "attributes": {
+      "str": 3,
+      "dex": 7,
+      "con": 5,
+      "int": 3,
+      "wis": 4,
+      "cha": 2
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "dark",
+        "amount": 0.3
+      }
+    ],
+    "skills": [
+      {
+        "name": "シャドウタッチ",
+        "desc": "影の粘液で触れ、敵単体に闇属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "con",
+        "element": "dark",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
     ]
   }
 ]

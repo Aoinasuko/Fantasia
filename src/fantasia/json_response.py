@@ -637,6 +637,17 @@ SCHEMAS: dict[str, ManagerSchema] = {
                     "npc_age": "late 20s",
                     "npc_look": "short brown hair, practical guild uniform, calm eyes",
                     "npc_personality": "calm, organized, helpful to adventurers",
+                },
+                {
+                    "name": "灯火鉄工房",
+                    "type": "blacksmith",
+                    "description": "旅人の武具を修理する炉と作業台が並ぶ鍛冶屋。",
+                    "npc_name": "ガルド",
+                    "npc_role": "鍛冶職人",
+                    "npc_gender": "male",
+                    "npc_age": "middle-aged",
+                    "npc_look": "soot-stained apron, strong arms, iron-gray beard",
+                    "npc_personality": "blunt, reliable, proud of sturdy work",
                 }
             ],
             "residents": [
@@ -869,6 +880,42 @@ SCHEMAS: dict[str, ManagerSchema] = {
                 "choices": ["地下門へ入る", "宿へ戻って助けを呼ぶ"],
             },
             "choices": ["地下門へ近づく", "声に返事をする", "宿へ戻る"],
+        },
+    ),
+    "danger_subnode_monster_generator": ManagerSchema(
+        manager_name="danger_subnode_monster_generator",
+        fields=(
+            FieldRule("name", (str,), aliases=("monster_name", "enemy_name", "target_name")),
+            FieldRule("role", (str,), required=False, non_empty=False),
+            FieldRule("category", (str,), required=False, non_empty=False),
+            FieldRule("description", (str,), required=False, non_empty=False),
+            FieldRule("gender", (str,), required=False, non_empty=False),
+            FieldRule("age", (str,), required=False, non_empty=False),
+            FieldRule("look", (str,), required=False, non_empty=False, aliases=("appearance",)),
+            FieldRule("personality", (str,), required=False, non_empty=False),
+            FieldRule("traits", (list,), required=False, non_empty=False, string_items=False),
+            FieldRule("skills", (list,), required=False, non_empty=False, string_items=False),
+            FieldRule("image_generation_prompt", (list, str), required=False, non_empty=False),
+            FieldRule("npc_template_id", (str,), required=False, non_empty=False),
+            FieldRule("aliases", (list,), required=False, non_empty=False),
+            FieldRule("hostile", (bool,), required=False, non_empty=False),
+            FieldRule("narration", (str,), required=False, non_empty=False),
+            FieldRule("reason", (str,), required=False, non_empty=False),
+        ),
+        example={
+            "name": "苔牙の獣",
+            "role": "森の徘徊魔物",
+            "category": "wild_encounter",
+            "description": "湿った森の奥を縄張りにする、苔むした牙を持つ獣型の魔物。",
+            "gender": "none",
+            "age": "adult",
+            "look": "moss-covered hide, long fangs, low predatory stance",
+            "personality": "territorial, aggressive toward intruders",
+            "traits": [{"name": "苔に紛れる", "description": "暗い森で姿を隠しやすい。"}],
+            "image_generation_prompt": ["fantasy RPG monster", "moss beast", "dark forest"],
+            "npc_template_id": "enemy_common_beast",
+            "hostile": True,
+            "reason": "森の危険サブノードとテンプレート候補に合うため。",
         },
     ),
     "master_ai_facilitator": ManagerSchema(
@@ -1662,12 +1709,21 @@ def schema_instruction(manager_name: str) -> str:
             "- furniture_level_gain is 0 to 3. Use 1 for basic material, 2 for good material, 3 for excellent/rare workshop material. Never exceed 3.\n"
             "- Return JSON only.\n"
         )
+    if manager_name == "danger_subnode_monster_generator":
+        instruction += (
+            "\ndanger_subnode_monster_generator rules:\n"
+            "- Generate exactly one hostile monster suited to the supplied world, location, subnode, and danger_level.\n"
+            "- If enemy_templates are supplied, choose the best matching template and include its id as npc_template_id.\n"
+            "- The monster is for an immediate first-visit random encounter, so avoid neutral townspeople, merchants, or quest NPCs.\n"
+            "- Include name, description, gender, age, look, personality, image_generation_prompt, hostile=true, and reason.\n"
+        )
     if manager_name == "create_settlement_detail":
         instruction += (
             "\ncreate_settlement_detail専用ルール:\n"
             "- トップレベルには必ず settlement_structure_description, atmosphere, settlement_structure, facilities, residents, adventurers を置いてください。\n"
             "- core/spots/districts/landmarks などは settlement_structure の中にだけ入れてください。トップレベルに core/spots だけを返す形式は禁止です。\n"
             "- residents と adventurers に該当者がいない場合も [] を返してください。facilities も不明なら [] を返してください。\n"
+            "- プロンプトに required_shop_facilities がある場合、facilities には各 type と一致する店を必ず1件ずつ含めてください。各店は固有名、説明文、npc_name, npc_role, npc_gender, npc_age, npc_look, npc_personality を持つ必要があります。\n"
             "- 門、入口、出入口、中央広場、広場はゲーム側の固定移動ノードなので、facilities や settlement_structure の spots/shops/districts/landmarks/places/buildings に含めないでください。\n"
             "- 井戸は固定配置ではありません。必要な場合だけ、通常の施設/spot として固有の名称と説明を付けて含めてください。井戸を外部リンク、隣接ロケーションの入口、ワールドマップ経路の端点にしないでください。\n"
             "- 次の外枠を崩さず、値だけを拠点に合わせて埋めてください。\n"
@@ -1748,6 +1804,7 @@ def _manager_retry_guidance(manager_name: str, errors: list[str], previous_respo
             "- 前回の応答が core/spots だけの場合、それらはトップレベルではなく settlement_structure の中に入れてください。\n"
             "- トップレベルには必ず settlement_structure_description, atmosphere, settlement_structure, facilities, residents, adventurers を置いてください。\n"
             "- residents/adventurers/facilities が空でも、キー自体は必ず [] として返してください。\n"
+            "- required_shop_facilities が提示されている場合は、facilities に各 type と一致する店を必ず1件ずつ含め、固有名・説明文・店主情報を埋めてください。\n"
             "- 次の外枠を崩さず、値だけを拠点設定に合わせて埋めてください。\n"
             "{\n"
             '  "settlement_structure_description": "拠点構造の文章",\n'

@@ -1,0 +1,496 @@
+[
+  {
+    "id": "fire_spirit",
+    "name": "ファイアスピリット",
+    "role": "火の精霊",
+    "look": "揺れる炎の姿をした小さな精霊。",
+    "personality": "気まぐれに火花を散らして近づく者を焼く。",
+    "image_prompt": [
+      "fire spirit",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 6,
+    "def": 2,
+    "attributes": {
+      "str": 3,
+      "dex": 8,
+      "con": 4,
+      "int": 7,
+      "wis": 7,
+      "cha": 6
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "fire",
+        "amount": 0.5
+      }
+    ],
+    "skills": [
+      {
+        "name": "ファイアスパーク",
+        "desc": "火花を散らし、敵単体に火属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "int",
+        "element": "fire",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "water_spirit",
+    "name": "ウォータースピリット",
+    "role": "水の精霊",
+    "look": "透明な水が人型に揺らめく精霊。",
+    "personality": "流れるように動き、水の刃を放つ。",
+    "image_prompt": [
+      "water spirit",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 3,
+    "attributes": {
+      "str": 3,
+      "dex": 7,
+      "con": 5,
+      "int": 7,
+      "wis": 8,
+      "cha": 6
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "water",
+        "amount": 0.5
+      }
+    ],
+    "skills": [
+      {
+        "name": "ウォーターブレード",
+        "desc": "水の刃を放ち、敵単体に水属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "wis",
+        "element": "water",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "wind_spirit",
+    "name": "ウィンドスピリット",
+    "role": "風の精霊",
+    "look": "薄い輪郭だけが見える風の精霊。",
+    "personality": "姿を揺らしながら鋭い風を巻き起こす。",
+    "image_prompt": [
+      "wind spirit",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 2,
+    "attributes": {
+      "str": 2,
+      "dex": 10,
+      "con": 3,
+      "int": 7,
+      "wis": 8,
+      "cha": 6
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "wind",
+        "amount": 0.5
+      }
+    ],
+    "skills": [
+      {
+        "name": "ウィンドカッター",
+        "desc": "鋭い風を放ち、敵単体に風属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "dex",
+        "element": "wind",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "earth_spirit",
+    "name": "アーススピリット",
+    "role": "土の精霊",
+    "look": "土と小石が集まってできた精霊。",
+    "personality": "ゆっくりと近づき、石混じりの拳を振るう。",
+    "image_prompt": [
+      "earth spirit",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 6,
+    "def": 6,
+    "attributes": {
+      "str": 7,
+      "dex": 3,
+      "con": 9,
+      "int": 5,
+      "wis": 7,
+      "cha": 4
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "earth",
+        "amount": 0.5
+      }
+    ],
+    "skills": [
+      {
+        "name": "ストーンフィスト",
+        "desc": "石の拳を作り出し、敵単体に地属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "con",
+        "element": "earth",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "light_spirit",
+    "name": "ライトスピリット",
+    "role": "光の精霊",
+    "look": "淡い光を放つ小さな精霊。",
+    "personality": "眩い光で相手の集中を乱す。",
+    "image_prompt": [
+      "light spirit",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 3,
+    "attributes": {
+      "str": 2,
+      "dex": 8,
+      "con": 4,
+      "int": 8,
+      "wis": 8,
+      "cha": 8
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "light",
+        "amount": 0.5
+      }
+    ],
+    "skills": [
+      {
+        "name": "ライトアロー",
+        "desc": "光の矢を放ち、敵単体に光属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "wis",
+        "element": "light",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dark_spirit",
+    "name": "ダークスピリット",
+    "role": "闇の精霊",
+    "look": "黒い靄の中に目だけが浮かぶ精霊。",
+    "personality": "静かに忍び寄り、暗い魔力を流し込む。",
+    "image_prompt": [
+      "dark spirit",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 3,
+    "attributes": {
+      "str": 2,
+      "dex": 8,
+      "con": 4,
+      "int": 8,
+      "wis": 8,
+      "cha": 6
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "dark",
+        "amount": 0.5
+      }
+    ],
+    "skills": [
+      {
+        "name": "ダークアロー",
+        "desc": "闇の矢を放ち、敵単体に闇属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "wis",
+        "element": "dark",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "lightning_spirit",
+    "name": "サンダースピリット",
+    "role": "雷の精霊",
+    "look": "小さな稲妻が集まった精霊。",
+    "personality": "跳ねるように動き、放電で敵を撃つ。",
+    "image_prompt": [
+      "lightning spirit",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 6,
+    "def": 2,
+    "attributes": {
+      "str": 2,
+      "dex": 10,
+      "con": 3,
+      "int": 8,
+      "wis": 7,
+      "cha": 6
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "lightning",
+        "amount": 0.5
+      }
+    ],
+    "skills": [
+      {
+        "name": "サンダーボルト",
+        "desc": "雷を放ち、敵単体に雷属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "int",
+        "element": "lightning",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ice_spirit",
+    "name": "アイススピリット",
+    "role": "氷の精霊",
+    "look": "氷片をまとった青白い精霊。",
+    "personality": "冷たい空気をまとい、触れた相手を凍えさせる。",
+    "image_prompt": [
+      "ice spirit",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 4,
+    "attributes": {
+      "str": 3,
+      "dex": 7,
+      "con": 5,
+      "int": 8,
+      "wis": 8,
+      "cha": 6
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "ice",
+        "amount": 0.5
+      }
+    ],
+    "skills": [
+      {
+        "name": "アイスシャード",
+        "desc": "氷片を飛ばし、敵単体に氷属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "int",
+        "element": "ice",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "forest_fairy",
+    "name": "フォレストフェアリー",
+    "role": "森の妖精",
+    "look": "葉の衣をまとった小さな妖精。",
+    "personality": "森を荒らす者に小さな弓で抵抗する。",
+    "image_prompt": [
+      "forest fairy",
+      "fantasy RPG monster"
+    ],
+    "gender": "female",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 4,
+    "def": 2,
+    "attributes": {
+      "str": 3,
+      "dex": 9,
+      "con": 4,
+      "int": 7,
+      "wis": 8,
+      "cha": 8
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "skills": [
+      {
+        "name": "フェアリーアロー",
+        "desc": "小さな弓で矢を放ち、敵単体に物理ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "dex",
+        "element": "physical",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "flower_fairy",
+    "name": "フラワーフェアリー",
+    "role": "花の妖精",
+    "look": "花びらのような羽を持つ小さな妖精。",
+    "personality": "甘い香りで気を逸らし、魔力を放つ。",
+    "image_prompt": [
+      "flower fairy",
+      "fantasy RPG monster"
+    ],
+    "gender": "female",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 4,
+    "def": 2,
+    "attributes": {
+      "str": 2,
+      "dex": 8,
+      "con": 3,
+      "int": 7,
+      "wis": 8,
+      "cha": 9
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "poison",
+        "amount": 0.2
+      }
+    ],
+    "skills": [
+      {
+        "name": "ポレンミスト",
+        "desc": "花粉をまとった魔力で、敵単体に毒属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "cha",
+        "element": "poison",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  }
+]

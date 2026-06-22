@@ -155,7 +155,7 @@ class FixtureLlmBackend(BaseLlmBackend):
                     {
                         "slot_id": str(slot.get("slot_id") or f"loc_{index:03d}"),
                         "name": names[index % len(names)],
-                        "description": f"霧の辺境にある拠点。外へ続く入り口と旅人の噂がある。危険度 {slot.get('danger', 0)}。",
+                        "description": "霧の辺境にある拠点。外へ続く入り口と旅人の噂があり、夜には灯火が道標になる。",
                     }
                     for index, slot in enumerate(slots if isinstance(slots, list) else [])
                     if isinstance(slot, dict)
@@ -186,7 +186,7 @@ class FixtureLlmBackend(BaseLlmBackend):
                     {
                         "slot_id": str(slot.get("slot_id") or f"loc_{index:03d}"),
                         "name": f"{base}{index + 1}",
-                        "description": f"世界設定に沿って配置された単体ロケーション。危険度 {slot.get('danger', 0)}。",
+                        "description": "霧の流れと古い道標が残る、旅人が足を止める小さな場所。",
                     }
                 )
             content = {"summary": "Fixture single-node descriptions.", "locations": locations}
@@ -224,7 +224,7 @@ class FixtureLlmBackend(BaseLlmBackend):
                 "location": {
                     "slot_id": str(slot.get("slot_id") or "loc_000"),
                     "name": label_by_subtype.get(subtype, "霧奥の迷宮"),
-                    "description": f"複数の入口と内部通路を持つ探索地。危険度 {slot.get('danger', 0)}。",
+                    "description": "霧の奥に沈む探索地。複数の入口と曲がりくねった内部通路が、古い伝承の中心へ続いている。",
                     "subnodes": subnodes,
                 },
             }
@@ -355,6 +355,39 @@ class FixtureLlmBackend(BaseLlmBackend):
                         "description": "旅人の荷馬と古い馬具が並ぶ厩舎。",
                         "npc_name": "ヨハン",
                         "npc_role": "馬丁",
+                    },
+                    {
+                        "name": "雨打ちの鍛冶場",
+                        "type": "blacksmith",
+                        "description": "雨に濡れた街道装備を直すため、夜遅くまで炉の火が落ちない鍛冶屋。",
+                        "npc_name": "ガルド",
+                        "npc_role": "鍛冶職人",
+                        "npc_gender": "male",
+                        "npc_age": "middle-aged",
+                        "npc_look": "soot-stained leather apron, muscular arms, iron-gray beard",
+                        "npc_personality": "blunt, dependable, proud of sturdy work",
+                    },
+                    {
+                        "name": "白露の薬棚",
+                        "type": "apothecary",
+                        "description": "森で採れた薬草と旅人向けの傷薬を小瓶に分けて並べる薬屋。",
+                        "npc_name": "リゼ",
+                        "npc_role": "薬師",
+                        "npc_gender": "female",
+                        "npc_age": "early 30s",
+                        "npc_look": "green cloak, herb-stained gloves, careful measuring tools at her belt",
+                        "npc_personality": "observant, gentle, cautious about rare herbs",
+                    },
+                    {
+                        "name": "灯り箱の雑貨店",
+                        "type": "general_store",
+                        "description": "ランタン油、縄、保存食など旅の細かな必需品を木箱ごとに整えた雑貨店。",
+                        "npc_name": "ノラン",
+                        "npc_role": "雑貨店主",
+                        "npc_gender": "male",
+                        "npc_age": "late 40s",
+                        "npc_look": "round spectacles, patched vest, ink-stained fingers",
+                        "npc_personality": "talkative, practical, remembers every traveler's order",
                     },
                 ],
                 "residents": [
@@ -536,6 +569,22 @@ class FixtureLlmBackend(BaseLlmBackend):
                     "image_prompt": "fantasy rescued town girl, anxious expression",
                     "aliases": ["救出対象", "町娘"],
                 }
+        elif manager_name == "danger_subnode_monster_generator":
+            content = {
+                "name": "苔牙の狼",
+                "role": "危険地帯の徘徊魔物",
+                "category": "wild_encounter",
+                "description": "暗い森や洞窟の湿った気配に引き寄せられた、苔むした牙を持つ狼型の魔物。",
+                "gender": "none",
+                "age": "adult",
+                "look": "moss-covered dark fur, long fangs, low predatory stance",
+                "personality": "territorial, aggressive toward intruders",
+                "traits": [{"name": "不意打ち", "description": "初めて足を踏み入れた相手へ素早く襲いかかる。"}],
+                "image_generation_prompt": ["fantasy RPG monster", "moss wolf", "dangerous dungeon"],
+                "npc_template_id": "wolf",
+                "hostile": True,
+                "reason": "Fixture dangerous subnode monster.",
+            }
         elif manager_name == "quest_referee_with_free_action":
             action = _extract_action(user_text) or "手がかりを探す"
             quest_name = _extract_quest_name(user_text)

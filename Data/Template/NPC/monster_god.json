@@ -1,0 +1,40 @@
+[
+  {
+    "id": "god",
+    "role": "神",
+    "gender": "male",
+    "age_min": 100,
+    "age_max": 500,
+    "category": "npc_common",
+    "level": 0,
+    "atk": 100,
+    "def": 100,
+    "attributes": {
+      "str": 16, 
+      "dex": 16,
+      "con": 16,
+      "int": 16,
+      "wis": 16,
+      "cha": 16
+    }
+  },
+  {
+    "id": "goddess",
+    "role": "女神",
+    "gender": "female",
+    "age_min": 100,
+    "age_max": 500,
+    "category": "npc_common",
+    "level": 0,
+    "atk": 100,
+    "def": 100,
+    "attributes": {
+      "str": 16, 
+      "dex": 16,
+      "con": 16,
+      "int": 16,
+      "wis": 16,
+      "cha": 16
+    }
+  }
+]

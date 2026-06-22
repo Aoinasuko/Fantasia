@@ -5,7 +5,10 @@
     "role": "触手",
     "look": "ピンク色の触手。",
     "personality": "あまり何も考えておらず、本能で動く。",
-    "image_prompt": ["pink tentacle", "fantasy RPG monster"],
+    "image_prompt": [
+      "pink tentacle",
+      "fantasy RPG monster"
+    ],
     "gender": "none",
     "age": "adult",
     "category": "enemy_common",
@@ -13,7 +16,7 @@
     "atk": 6,
     "def": 3,
     "attributes": {
-      "str": 8, 
+      "str": 8,
       "dex": 6,
       "con": 6,
       "int": 6,
@@ -21,10 +24,438 @@
       "cha": 6
     },
     "attacks": [
-      {"name": "触手をたたきつけて攻撃", "type": "physical"}
+      {
+        "name": "触手をたたきつけて攻撃",
+        "type": "physical"
+      }
     ],
     "skills": [
-      {"name": "拘束", "desc": "触手を使い、相手の攻撃や逃走を封じる。", "usesp": 3, "power": 2, "ability": "str", "element": "physical", "type": [{"type": "effect_enemy_single", "buff_type": "restraint", "amount": 1, "duration": 1, "name": "触手拘束"}]}
+      {
+        "name": "拘束",
+        "desc": "触手を使い、相手の攻撃や逃走を封じる。",
+        "usesp": 3,
+        "power": 2,
+        "ability": "str",
+        "element": "physical",
+        "type": [
+          {
+            "type": "effect_enemy_single",
+            "buff_type": "restraint",
+            "amount": 1,
+            "duration": 1,
+            "name": "触手拘束"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "tentacle_mass",
+    "name": "テンタクルマス",
+    "role": "正体不明の触手",
+    "look": "無数の触手が絡み合った不定形の怪物。",
+    "personality": "近づくものを絡め取り、奥へ引きずり込もうとする。",
+    "image_prompt": [
+      "tentacle mass",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 7,
+    "def": 4,
+    "attributes": {
+      "str": 7,
+      "dex": 5,
+      "con": 8,
+      "int": 3,
+      "wis": 5,
+      "cha": 3
+    },
+    "attacks": [
+      {
+        "name": "触手で打つ",
+        "type": "physical"
+      }
+    ]
+  },
+  {
+    "id": "shadow_mass",
+    "name": "シャドウマス",
+    "role": "動く影",
+    "look": "床や壁から盛り上がる黒い影の塊。",
+    "personality": "音もなく広がり、触れた相手を冷たく包む。",
+    "image_prompt": [
+      "shadow mass",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 6,
+    "def": 3,
+    "attributes": {
+      "str": 4,
+      "dex": 8,
+      "con": 5,
+      "int": 5,
+      "wis": 6,
+      "cha": 4
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "dark",
+        "amount": 0.4
+      }
+    ],
+    "skills": [
+      {
+        "name": "シャドウグラスプ",
+        "desc": "影で絡め取り、敵単体に闇属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "int",
+        "element": "dark",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "devouring_mist",
+    "name": "デヴァウリングミスト",
+    "role": "飢えた霧",
+    "look": "薄灰色の霧が生き物のように漂っている。",
+    "personality": "呼吸や体温に反応してまとわりつく。",
+    "image_prompt": [
+      "devouring mist",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 4,
+    "attributes": {
+      "str": 2,
+      "dex": 7,
+      "con": 7,
+      "int": 4,
+      "wis": 6,
+      "cha": 3
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "physical",
+        "amount": 0.2
+      }
+    ],
+    "skills": [
+      {
+        "name": "ポイズンミスト",
+        "desc": "蝕む霧で包み、敵単体に毒属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "con",
+        "element": "poison",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "flesh_lump",
+    "name": "フレッシュランプ",
+    "role": "うごめく肉",
+    "look": "形の定まらない肉の塊が脈打っている。",
+    "personality": "鈍く這い寄り、重い体で押し潰す。",
+    "image_prompt": [
+      "flesh lump",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 8,
+    "def": 4,
+    "attributes": {
+      "str": 9,
+      "dex": 2,
+      "con": 10,
+      "int": 2,
+      "wis": 3,
+      "cha": 2
+    },
+    "attacks": [
+      {
+        "name": "肉塊で押し潰す",
+        "type": "physical"
+      }
+    ]
+  },
+  {
+    "id": "eyeball_orb",
+    "name": "アイボールオーブ",
+    "role": "浮遊する眼球",
+    "look": "大きな一つ目が球体のまま浮いている。",
+    "personality": "瞬きせず相手を見つめ、魔力を撃ち出す。",
+    "image_prompt": [
+      "floating eyeball orb",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 2,
+    "attributes": {
+      "str": 2,
+      "dex": 7,
+      "con": 3,
+      "int": 8,
+      "wis": 8,
+      "cha": 4
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "skills": [
+      {
+        "name": "ゲイズボルト",
+        "desc": "凝視から魔弾を放ち、敵単体に闇属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "int",
+        "element": "dark",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "floating_skull",
+    "name": "フローティングスカル",
+    "role": "宙に浮く頭骨",
+    "look": "青白い火を目に宿した頭骨。",
+    "personality": "不吉な音を立てながら噛みついてくる。",
+    "image_prompt": [
+      "floating skull",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 3,
+    "attributes": {
+      "str": 4,
+      "dex": 7,
+      "con": 4,
+      "int": 5,
+      "wis": 5,
+      "cha": 3
+    },
+    "attacks": [
+      {
+        "name": "骨の牙で噛む",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "poison",
+        "amount": 0.5
+      }
+    ]
+  },
+  {
+    "id": "parasite_spore",
+    "name": "パラサイトスポア",
+    "role": "漂う胞子",
+    "look": "淡く光る胞子の群れが空中を漂う。",
+    "personality": "生き物に取りつき、力を奪おうとする。",
+    "image_prompt": [
+      "parasite spore",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 4,
+    "def": 2,
+    "attributes": {
+      "str": 2,
+      "dex": 6,
+      "con": 4,
+      "int": 4,
+      "wis": 7,
+      "cha": 3
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "poison",
+        "amount": 0.4
+      }
+    ],
+    "skills": [
+      {
+        "name": "パラサイトクラウド",
+        "desc": "寄生胞子を浴びせ、敵単体に毒属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "wis",
+        "element": "poison",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "living_chain",
+    "name": "リビングチェイン",
+    "role": "意思を持つ鎖",
+    "look": "錆びた鎖が蛇のようにうねっている。",
+    "personality": "相手の手足に絡みつき、動きを封じようとする。",
+    "image_prompt": [
+      "living chain",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 6,
+    "def": 5,
+    "attributes": {
+      "str": 6,
+      "dex": 6,
+      "con": 7,
+      "int": 3,
+      "wis": 4,
+      "cha": 2
+    },
+    "attacks": [
+      {
+        "name": "鎖で打ち据える",
+        "type": "physical"
+      }
+    ]
+  },
+  {
+    "id": "mirror_wraith",
+    "name": "ミラーレイス",
+    "role": "鏡面に宿る怪異",
+    "look": "割れた鏡の中に薄い人影が揺れている。",
+    "personality": "相手の姿を映し、迷わせながら魔力を放つ。",
+    "image_prompt": [
+      "mirror wraith",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 5,
+    "def": 3,
+    "attributes": {
+      "str": 2,
+      "dex": 7,
+      "con": 4,
+      "int": 8,
+      "wis": 7,
+      "cha": 6
+    },
+    "attacks": [
+      {
+        "name": "体当たり",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "light",
+        "amount": 0.2
+      },
+      {
+        "type": "dark",
+        "amount": 0.2
+      }
+    ],
+    "skills": [
+      {
+        "name": "ミラーライト",
+        "desc": "鏡面から呪光を反射し、敵単体に光属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "int",
+        "element": "light",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "hollow_hand",
+    "name": "ホロウハンド",
+    "role": "這い寄る手",
+    "look": "指だけで床を這う不気味な手。",
+    "personality": "足元から忍び寄り、掴んで離さない。",
+    "image_prompt": [
+      "crawling hand",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 4,
+    "def": 3,
+    "attributes": {
+      "str": 4,
+      "dex": 8,
+      "con": 4,
+      "int": 2,
+      "wis": 4,
+      "cha": 2
+    },
+    "attacks": [
+      {
+        "name": "指で掴みかかる",
+        "type": "physical"
+      }
     ]
   }
 ]

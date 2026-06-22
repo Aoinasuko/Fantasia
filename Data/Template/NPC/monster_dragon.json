@@ -1,0 +1,478 @@
+[
+  {
+    "id": "fire_dragon",
+    "name": "ファイアドラゴン",
+    "role": "炎を吐く竜",
+    "look": "赤い鱗と熱を帯びた翼を持つ竜。",
+    "personality": "怒ると灼熱の息で周囲を焼き払う。",
+    "image_prompt": [
+      "fire dragon",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 10,
+    "def": 7,
+    "attributes": {
+      "str": 10,
+      "dex": 5,
+      "con": 9,
+      "int": 5,
+      "wis": 6,
+      "cha": 7
+    },
+    "attacks": [
+      {
+        "name": "爪で切り裂く",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "fire",
+        "amount": 0.4
+      }
+    ],
+    "skills": [
+      {
+        "name": "ファイアブレス",
+        "desc": "灼熱の息を吐き、敵単体に火属性ダメージを与える。",
+        "usesp": 3,
+        "power": 2,
+        "ability": "con",
+        "element": "fire",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ice_dragon",
+    "name": "アイスドラゴン",
+    "role": "冷気を吐く竜",
+    "look": "青白い鱗と凍った角を持つ竜。",
+    "personality": "冷たい息で獲物の動きを止める。",
+    "image_prompt": [
+      "ice dragon",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 9,
+    "def": 8,
+    "attributes": {
+      "str": 9,
+      "dex": 5,
+      "con": 10,
+      "int": 5,
+      "wis": 6,
+      "cha": 7
+    },
+    "attacks": [
+      {
+        "name": "爪で切り裂く",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "ice",
+        "amount": 0.4
+      }
+    ],
+    "skills": [
+      {
+        "name": "アイスブレス",
+        "desc": "凍える息を吐き、敵単体に氷属性ダメージを与える。",
+        "usesp": 3,
+        "power": 2,
+        "ability": "con",
+        "element": "ice",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "lightning_dragon",
+    "name": "ライトニングドラゴン",
+    "role": "雷をまとう竜",
+    "look": "黄色い鱗と放電する角を持つ竜。",
+    "personality": "素早い動きで雷をまとった爪を振るう。",
+    "image_prompt": [
+      "lightning dragon",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 9,
+    "def": 6,
+    "attributes": {
+      "str": 8,
+      "dex": 8,
+      "con": 8,
+      "int": 5,
+      "wis": 6,
+      "cha": 7
+    },
+    "attacks": [
+      {
+        "name": "爪で切り裂く",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "lightning",
+        "amount": 0.4
+      }
+    ],
+    "skills": [
+      {
+        "name": "ライトニングブレス",
+        "desc": "雷を帯びた息を吐き、敵単体に雷属性ダメージを与える。",
+        "usesp": 3,
+        "power": 2,
+        "ability": "con",
+        "element": "lightning",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "earth_dragon",
+    "name": "アースドラゴン",
+    "role": "大地の竜",
+    "look": "岩のような鱗と太い脚を持つ竜。",
+    "personality": "地面を揺らすほどの力で突進する。",
+    "image_prompt": [
+      "earth dragon",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 10,
+    "def": 9,
+    "attributes": {
+      "str": 11,
+      "dex": 4,
+      "con": 11,
+      "int": 4,
+      "wis": 6,
+      "cha": 6
+    },
+    "attacks": [
+      {
+        "name": "爪で切り裂く",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "earth",
+        "amount": 0.4
+      }
+    ],
+    "skills": [
+      {
+        "name": "アースクラッシュ",
+        "desc": "大地を砕く衝撃で、敵単体に地属性ダメージを与える。",
+        "usesp": 3,
+        "power": 2,
+        "ability": "con",
+        "element": "earth",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "wind_dragon",
+    "name": "ウィンドドラゴン",
+    "role": "風を操る竜",
+    "look": "薄い翼と軽い体を持つ緑の竜。",
+    "personality": "風に乗って間合いを変え、爪で切り裂く。",
+    "image_prompt": [
+      "wind dragon",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 8,
+    "def": 5,
+    "attributes": {
+      "str": 7,
+      "dex": 10,
+      "con": 7,
+      "int": 5,
+      "wis": 7,
+      "cha": 7
+    },
+    "attacks": [
+      {
+        "name": "爪で切り裂く",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "wind",
+        "amount": 0.4
+      }
+    ],
+    "skills": [
+      {
+        "name": "ウィンドブレス",
+        "desc": "風の刃を含む息を吐き、敵単体に風属性ダメージを与える。",
+        "usesp": 3,
+        "power": 2,
+        "ability": "con",
+        "element": "wind",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "water_dragon",
+    "name": "ウォータードラゴン",
+    "role": "水辺の竜",
+    "look": "青い鱗と長い尾を持つ水辺の竜。",
+    "personality": "水しぶきで視界を奪いながら噛みつく。",
+    "image_prompt": [
+      "water dragon",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 8,
+    "def": 7,
+    "attributes": {
+      "str": 8,
+      "dex": 6,
+      "con": 9,
+      "int": 5,
+      "wis": 7,
+      "cha": 7
+    },
+    "attacks": [
+      {
+        "name": "爪で切り裂く",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "water",
+        "amount": 0.4
+      }
+    ],
+    "skills": [
+      {
+        "name": "ウォーターブレス",
+        "desc": "激しい水流の息を吐き、敵単体に水属性ダメージを与える。",
+        "usesp": 3,
+        "power": 2,
+        "ability": "con",
+        "element": "water",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "poison_dragon",
+    "name": "ポイズンドラゴン",
+    "role": "毒を吐く竜",
+    "look": "紫がかった鱗と濁った息を持つ竜。",
+    "personality": "毒霧を吐いて相手を弱らせる。",
+    "image_prompt": [
+      "poison dragon",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 8,
+    "def": 7,
+    "attributes": {
+      "str": 8,
+      "dex": 5,
+      "con": 10,
+      "int": 5,
+      "wis": 6,
+      "cha": 6
+    },
+    "attacks": [
+      {
+        "name": "爪で切り裂く",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "poison",
+        "amount": 0.5
+      }
+    ],
+    "skills": [
+      {
+        "name": "ポイズンブレス",
+        "desc": "毒霧の息を吐き、敵単体に毒属性ダメージを与える。",
+        "usesp": 3,
+        "power": 2,
+        "ability": "con",
+        "element": "poison",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "young_dragon",
+    "name": "ヤングドラゴン",
+    "role": "若い竜",
+    "look": "まだ小柄だが鋭い牙を持つ若い竜。",
+    "personality": "未熟ながら竜らしい誇りで立ち向かう。",
+    "image_prompt": [
+      "young dragon",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 7,
+    "def": 5,
+    "attributes": {
+      "str": 8,
+      "dex": 6,
+      "con": 7,
+      "int": 4,
+      "wis": 5,
+      "cha": 6
+    },
+    "attacks": [
+      {
+        "name": "小さな竜の牙で噛む",
+        "type": "physical"
+      }
+    ]
+  },
+  {
+    "id": "wyvern",
+    "name": "ワイバーン",
+    "role": "飛竜",
+    "look": "前脚の代わりに大きな翼を持つ飛竜。",
+    "personality": "空から急降下して毒の尾で刺す。",
+    "image_prompt": [
+      "wyvern",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 8,
+    "def": 5,
+    "attributes": {
+      "str": 8,
+      "dex": 9,
+      "con": 7,
+      "int": 3,
+      "wis": 5,
+      "cha": 5
+    },
+    "attacks": [
+      {
+        "name": "尾で叩く",
+        "type": "physical"
+      }
+    ],
+    "resistance": [
+      {
+        "type": "poison",
+        "amount": 0.2
+      }
+    ],
+    "traits": [
+      {
+        "name": "飛行",
+        "description": "空を飛んで攻撃を避けやすい。",
+        "power": 1
+      }
+    ],
+    "skills": [
+      {
+        "name": "ポイズンスティング",
+        "desc": "毒を帯びた尾針で刺し、敵単体に毒属性ダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "dex",
+        "element": "poison",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "shell_dragon",
+    "name": "シェルドラゴン",
+    "role": "硬い殻の竜",
+    "look": "背中を硬い甲殻で覆われた小型の竜。",
+    "personality": "身を丸めて守りながら重い一撃を放つ。",
+    "image_prompt": [
+      "shell dragon",
+      "fantasy RPG monster"
+    ],
+    "gender": "none",
+    "age": "adult",
+    "category": "enemy_common",
+    "level": 0,
+    "atk": 7,
+    "def": 9,
+    "attributes": {
+      "str": 8,
+      "dex": 4,
+      "con": 10,
+      "int": 3,
+      "wis": 5,
+      "cha": 5
+    },
+    "attacks": [
+      {
+        "name": "甲殻で体当たりする",
+        "type": "physical"
+      }
+    ],
+    "traits": [
+      {
+        "name": "硬い甲殻",
+        "description": "硬い殻で傷を受けにくい。",
+        "power": 1
+      }
+    ]
+  }
+]
