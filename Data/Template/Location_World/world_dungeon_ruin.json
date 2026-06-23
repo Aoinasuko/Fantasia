@@ -1,0 +1,26 @@
+[
+  {
+    "name": "ガナの遺跡",
+    "category": "dungeon",
+    "type": "ruin",
+    "desc": "危険とお宝が眠る遺跡。"
+  },
+  {
+    "name": "フェイの遺跡",
+    "category": "dungeon",
+    "type": "ruin",
+    "desc": "不思議な感覚がする遺跡。"
+  },
+  {
+    "name": "ミルワの遺跡",
+    "category": "dungeon",
+    "type": "ruin",
+    "desc": "かつての歴史が遺る遺跡。"
+  },
+  {
+    "name": "アママの遺跡",
+    "category": "dungeon",
+    "type": "ruin",
+    "desc": "罠がありそうだが、宝もありそうな遺跡。"
+  }
+]

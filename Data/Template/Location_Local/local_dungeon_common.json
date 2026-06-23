@@ -1,0 +1,97 @@
+[
+  {
+    "id": "ore_vein",
+    "name": "鉱脈",
+    "desc": "壁面に鉱石が走る採掘跡。",
+    "target_type": [
+      "forest",
+      "mountain",
+      "ruin",
+      "temple"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.2,
+    "random_generate": true,
+    "innermost_part": false,
+    "generate_boss": false,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_ore_vein_loot"
+  },
+  {
+    "id": "herb_habitat",
+    "name": "薬草の群生地",
+    "desc": "湿った土と薄明かりの中に薬草が群生している場所。",
+    "target_type": [
+      "forest",
+      "mountain",
+      "ruin",
+      "temple"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.15,
+    "random_generate": true,
+    "innermost_part": false,
+    "generate_boss": false,
+    "item_generate": true,
+    "item_regenerate": true,
+    "item_tabel": "local_herb_habitat_loot"
+  },
+  {
+    "id": "underground_stream",
+    "name": "地下水脈",
+    "desc": "冷たい水が岩の隙間を流れる細い水脈。",
+    "target_type": [
+      "forest",
+      "mountain",
+      "ruin",
+      "temple"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.2,
+    "random_generate": true,
+    "innermost_part": false,
+    "generate_boss": false,
+    "item_generate": true,
+    "item_regenerate": true,
+    "item_tabel": "local_underground_stream_loot"
+  },
+  {
+    "id": "abandoned_shed",
+    "name": "朽ちた小屋",
+    "desc": "古い道具や荷箱が残された小さな廃屋。",
+    "target_type": [
+      "forest",
+      "mountain",
+      "ruin",
+      "temple"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.2,
+    "random_generate": true,
+    "innermost_part": false,
+    "generate_boss": false,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_abandoned_shed_loot"
+  },
+  {
+    "id": "monster_nest",
+    "name": "魔物の巣",
+    "desc": "骨や抜け殻が散らばる、魔物が潜む気配の濃い場所。",
+    "target_type": [
+      "forest",
+      "mountain",
+      "ruin",
+      "temple"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.45,
+    "random_generate": true,
+    "innermost_part": false,
+    "generate_boss": false,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_monster_nest_loot"
+  }
+]

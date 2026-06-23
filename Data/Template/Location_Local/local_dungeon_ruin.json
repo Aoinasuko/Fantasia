@@ -1,0 +1,69 @@
+[
+  {
+    "id": "ruin_entrance",
+    "name": "遺跡の入り口",
+    "desc": "崩れた石門の向こうに古い通路が続く入口。",
+    "target_type": [
+      "ruin"
+    ],
+    "entrance": true,
+    "random_generate": false,
+    "multiple_generating": false
+  },
+  {
+    "id": "ruin_broken_corridor",
+    "name": "崩れた回廊",
+    "desc": "天井の一部が崩れ、古い壁画が断片的に残る回廊。",
+    "target_type": [
+      "ruin"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.25,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_ruin_broken_corridor_loot"
+  },
+  {
+    "id": "ruin_storage_room",
+    "name": "朽ちた保管庫",
+    "desc": "割れた壺や腐った木箱が並ぶ古い保管庫。",
+    "target_type": [
+      "ruin"
+    ],
+    "multiple_generating": false,
+    "generate_enemy_rate": 0.2,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_ruin_storage_room_loot"
+  },
+  {
+    "id": "ruin_guardian_hall",
+    "name": "守護像の広間",
+    "desc": "欠けた石像が並び、侵入者を見張るように沈黙している広間。",
+    "target_type": [
+      "ruin"
+    ],
+    "multiple_generating": false,
+    "generate_enemy_rate": 0.4,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_ruin_guardian_hall_loot"
+  },
+  {
+    "id": "ruin_core_chamber",
+    "name": "遺跡の中枢",
+    "desc": "古代の装置や祭壇が残る、遺跡の中心部。",
+    "target_type": [
+      "ruin"
+    ],
+    "multiple_generating": false,
+    "random_generate": false,
+    "innermost_part": true,
+    "generate_boss": true,
+    "item_generate": false,
+    "item_regenerate": false
+  }
+]

@@ -51,9 +51,7 @@ from .items import (
     can_add_item_stack,
     equipment_slot_for_category,
     extract_response_rewards,
-    generate_loot_items,
     generate_reward_item,
-    generate_vendor_items,
     inventory_slot_count,
     is_equipment_item,
     item_label,
@@ -223,6 +221,12 @@ from .world_generation import (
     _world_location_target_count,
     _world_overview_max_tokens,
 )
+from .item_generate_loottabel import generate_loot_table_items
+from .world_generate import (
+    generate_template_world,
+    install_template_dungeon_subnode_graph,
+    refresh_template_subnode_loot,
+)
 from .character import Character
 from .world_model import GameStateData, LocationData, QuestData, WorldData
 
@@ -380,6 +384,7 @@ SHOP_FACILITY_TYPES = {
     "material_store",
     "general_store",
     "magic_store",
+    "junk_store",
     "shop",
     "market",
 }
@@ -394,6 +399,7 @@ SETTLEMENT_OPTIONAL_SHOP_TYPES = (
     "food_store",
     "material_store",
     "magic_store",
+    "junk_store",
 )
 
 DANGER_SUBNODE_RANDOM_ENCOUNTER_CHANCE = 0.20
@@ -406,6 +412,25 @@ SHOP_FACILITY_PRICE_MULTIPLIERS = {
     "black_market": 3.0,
 }
 
+DEFAULT_LOCATION_LOOT_TABEL_ID = "local_default_loot"
+DEFAULT_VENDOR_LOOT_TABEL_ID = "shop_general_store"
+SHOP_LOOT_TABEL_BY_FACILITY_TYPE = {
+    "blacksmith": "shop_blacksmith",
+    "black_market": "shop_black_market",
+    "apothecary": "shop_apothecary",
+    "clinic": "shop_apothecary",
+    "food_store": "shop_food_store",
+    "inn": "shop_food_store",
+    "tavern": "shop_food_store",
+    "material_store": "shop_material_store",
+    "magic_store": "shop_magic_store",
+    "junk_store": "shop_junk_store",
+    "general_store": "shop_general_store",
+    "shop": "shop_general_store",
+    "market": "shop_general_store",
+    "facility": "shop_general_store",
+}
+
 SHOP_FACILITY_NAME_BANK = {
     "blacksmith": ("鋼火鍛冶", "赤炉工房", "槌音鍛冶店", "黒鉄武具店"),
     "black_market": ("影市", "月裏商会", "黒帳武具店", "夜鴉商店"),
@@ -414,6 +439,7 @@ SHOP_FACILITY_NAME_BANK = {
     "material_store": ("素材蔵", "石と根の素材店", "採集者の棚", "原石商会"),
     "general_store": ("よろず屋", "旅支度雑貨店", "何でも棚", "道具箱商店"),
     "magic_store": ("星灯魔術店", "巻物堂", "青燐魔法店", "古文書の塔"),
+    "junk_store": ("がらくた市", "壊れ物横丁", "拾い物倉庫", "錆び棚商店"),
     "shop": ("よろず屋", "旅支度雑貨店", "何でも棚", "道具箱商店"),
     "market": ("広場市場", "朝市", "旅人市場", "屋台通り"),
 }
@@ -783,19 +809,20 @@ class GameEngine:
         )
         world = self._world_from_local_theme(theme, requested_world_name, premise_text, customization)
 
-        self._emit_world_generation_progress(progress_callback, "location_skeleton", "ローカル地図骨格を生成中", 18, 100)
-        self._build_local_world_skeleton(world, premise_text, target_location_count, customization)
-
-        self._emit_world_generation_progress(progress_callback, "location_descriptions", "ロケーション名と概要を生成中", 26, 100)
-        self._describe_local_world_skeleton(
-            player,
-            premise_text,
+        self._emit_world_generation_progress(progress_callback, "location_templates", "ロケーションテンプレートからワールドを生成中", 18, 100)
+        generate_template_world(
+            self,
             world,
-            theme,
+            player_name=player,
+            premise=premise_text,
+            theme=theme,
+            customization=customization,
             progress_callback=progress_callback,
-            progress_start=26,
+            progress_start=18,
             progress_end=48,
         )
+
+        self._emit_world_generation_progress(progress_callback, "location_templates", "テンプレートロケーションを配置済み", 48, 100)
         self._recalculate_world_graph_layout(world)
 
         self._emit_world_generation_progress(progress_callback, "story", "ストーリーを生成中", 50, 100)
@@ -818,16 +845,9 @@ class GameEngine:
         )
 
         settlement_location = world.starting_location
-        self._emit_world_generation_progress(progress_callback, "settlement", "初期拠点を生成中", 62, 100)
-        settlement = self._create_settlement_detail(player, world, settlement_location)
-        self._apply_settlement_detail(world, settlement_location, settlement)
-        world.history.append(
-            {
-                "manager": "create_settlement_detail",
-                "location": settlement_location,
-                "response": _strip_response_metadata(settlement),
-            }
-        )
+        self._emit_world_generation_progress(progress_callback, "settlement", "初期拠点のテンプレート施設を確定中", 62, 100)
+        if world.locations.get(settlement_location):
+            self._ensure_settlement_facilities(world.locations[settlement_location])
         self._set_starting_settlement_gate(world)
 
         self._emit_world_generation_progress(progress_callback, "characters", "NPCを生成中", 72, 100)
@@ -1253,6 +1273,8 @@ class GameEngine:
         return rng.randint(WORLD_FINAL_DANGER_MIN, WORLD_FINAL_DANGER_MAX)
 
     def _install_local_dungeon_subnode_graph(self, location: LocationData, rng: random.Random) -> None:
+        if install_template_dungeon_subnode_graph(self, location, rng):
+            return
         target_count = _dungeon_subnode_target_count(location)
         layout = _fallback_dungeon_subnode_layout(location, target_count)
         graph: dict[str, Any] = {
@@ -1353,58 +1375,12 @@ class GameEngine:
         *,
         source: str,
     ) -> tuple[str, list[dict[str, Any]]]:
-        reward_kind = rng.choice(("treasure", "equipment", "material"))
-        if reward_kind == "treasure":
-            return reward_kind, [
-                self._dungeon_reward_item("treasure", location, index, rng, source=source)
-                for index in range(3)
-            ]
-        if reward_kind == "equipment":
-            weapon_categories = ("weapon_small", "weapon_medium", "weapon_large", "weapon_long", "weapon_range")
-            armor_categories = ("armor_shield", "armor_head", "armor_body", "armor_arm", "armor_leg", "armor_cloth")
-            items: list[dict[str, Any]] = []
-            for index, category in enumerate(rng.sample(list(weapon_categories), 2)):
-                items.append(self._dungeon_reward_item(category, location, index, rng, source=source, rare_or_better=True))
-            for index, category in enumerate(rng.sample(list(armor_categories), 2)):
-                items.append(self._dungeon_reward_item(category, location, index + 2, rng, source=source, rare_or_better=True))
-            return reward_kind, items
-        material_categories = (
-            "material_common",
-            "material_liquid",
-            "material_plant",
-            "material_ore",
-            "material_metal",
-            "material_gem",
-            "material_creature",
-            "material_magical",
-        )
-        return reward_kind, [
-            self._dungeon_reward_item(category, location, index, rng, source=source)
-            for index, category in enumerate(rng.sample(list(material_categories), 5))
-        ]
-
-    def _dungeon_reward_item(
-        self,
-        category: str,
-        location: LocationData,
-        index: int,
-        rng: random.Random,
-        *,
-        source: str,
-        rare_or_better: bool = False,
-    ) -> dict[str, Any]:
-        danger = _clamp_world_danger(location.extra.get("danger_level", location.extra.get("danger", 0)))
-        seed = f"{source}|{location.name}|{category}|{index}"
-        raw = generate_reward_item(category, context=location.name, danger_level=danger, seed=seed)
-        rarity = str(raw.get("rarity") or "common")
-        if rare_or_better:
-            rarity = rng.choices(("rare", "epic", "legendary", "artifact"), weights=(76, 18, 5, 1), k=1)[0]
-        return make_item(
-            category,
-            name=str(raw.get("name") or ""),
-            description=str(raw.get("description") or ""),
-            quantity=_safe_int(raw.get("quantity"), 1),
-            rarity=rarity,
+        loot_table_id = rng.choice(("dungeon_innermost_treasure", "dungeon_innermost_weapon"))
+        return loot_table_id, generate_loot_table_items(
+            loot_table_id,
+            context=location.name,
+            danger_level=_clamp_world_danger(location.extra.get("danger_level", location.extra.get("danger", 0))),
+            seed=f"{source}|{location.name}|deepest",
             source=source,
         )
 
@@ -5743,6 +5719,19 @@ class GameEngine:
                 "source": str(item.get("source") or "settlement"),
                 "aliases": _facility_aliases(original_name, name, facility_type),
             }
+            for template_key in (
+                "template_id",
+                "template_name",
+                "template_desc",
+                "function_npc",
+                "shopkeeper",
+                "shopItem",
+                "shop_item_table",
+                "local_template",
+                "raw_template_world_facility_description",
+            ):
+                if template_key in item:
+                    record[template_key] = item[template_key]
             if _looks_like_guild_name(name):
                 record["type"] = "guild"
                 record.setdefault("npc_role", "ギルド受付")
@@ -7973,7 +7962,12 @@ class GameEngine:
             if not isinstance(inventory, list):
                 inventory = []
                 slot["inventory"] = inventory
-            if not slot.get("seeded") and not inventory:
+            if refresh_template_subnode_loot(self, location, subnode_id, node, slot):
+                inventory = slot.setdefault("inventory", [])
+                if not isinstance(inventory, list):
+                    inventory = []
+                    slot["inventory"] = inventory
+            elif not slot.get("seeded") and not inventory:
                 context = " ".join(
                     str(part)
                     for part in (
@@ -7987,10 +7981,12 @@ class GameEngine:
                     if str(part or "").strip()
                 )
                 inventory.extend(
-                    generate_loot_items(
-                        f"{location.name}:{subnode_id}",
-                        context,
+                    generate_loot_table_items(
+                        DEFAULT_LOCATION_LOOT_TABEL_ID,
+                        context=f"{location.name}:{subnode_id}:{context}",
                         danger_level=self._current_location_danger(location.name),
+                        seed=f"location-fallback|{self.state.world_name}|{location.name}|{subnode_id}",
+                        source="location_fallback",
                     )
                 )
                 slot["seeded"] = True
@@ -8002,7 +7998,15 @@ class GameEngine:
             location.extra["inventory"] = inventory
         if not location.flags.get("inventory_seeded") and not inventory:
             context = " ".join(part for part in (location.area, location.description) if part)
-            inventory.extend(generate_loot_items(location.name, context, danger_level=self._current_location_danger(location.name)))
+            inventory.extend(
+                generate_loot_table_items(
+                    DEFAULT_LOCATION_LOOT_TABEL_ID,
+                    context=f"{location.name}:{context}",
+                    danger_level=self._current_location_danger(location.name),
+                    seed=f"location-fallback|{self.state.world_name}|{location.name}",
+                    source="location_fallback",
+                )
+            )
             location.flags["inventory_seeded"] = True
         return location.name, inventory
 
@@ -9363,23 +9367,36 @@ class GameEngine:
             facility_type = str((location.extra.get("facility_type") if location else "") or "").strip().lower()
         if not facility_type:
             facility_type = _facility_type_from_name(str(extra.get("facility") or character.role or character.name))
-        context = " ".join(
-            part
-            for part in (
-                f"facility_type:{facility_type}",
-                character.role,
-                character.category,
-                character.personality,
-                character.backstory,
-                str(extra.get("facility") or ""),
-                f"day:{day}",
+        template_shop_table = extra.get("shopItem") or extra.get("shop_item_table")
+        if template_shop_table:
+            character.inventory = generate_loot_table_items(
+                template_shop_table,
+                context=f"{character.name}:{facility_type}:day:{day}",
+                danger_level=self._current_location_danger(character.location or self.state.current_location),
+                seed=f"vendor-template|{self.state.world_name}|{character.uuid}|{day}",
+                source="vendor_template",
             )
-            if part
-        )
-        character.inventory = generate_vendor_items(
-            character.name,
-            context,
+            character.gold = character.gold or 120
+            extra["vendor_inventory_day"] = day
+            extra["vendor_base_price_multiplier"] = SHOP_FACILITY_PRICE_MULTIPLIERS.get(facility_type, 1.0)
+            extra["trade_price_multiplier"] = 1.0
+            extra["trade_negotiation"] = {}
+            event = {
+                "character": character.name,
+                "day": day,
+                "location": self.state.current_location,
+                "items": [normalise_item(item) for item in character.inventory],
+                "source": "location_local_template",
+            }
+            self.state.world_data.extra.setdefault("vendor_inventory_events", []).append(event)
+            return {"changed": True, "day": day, "event": event}
+        loot_tabel_id = SHOP_LOOT_TABEL_BY_FACILITY_TYPE.get(facility_type, DEFAULT_VENDOR_LOOT_TABEL_ID)
+        character.inventory = generate_loot_table_items(
+            loot_tabel_id,
+            context=f"{character.name}:{facility_type}:day:{day}",
             danger_level=self._current_location_danger(character.location or self.state.current_location),
+            seed=f"vendor-fallback|{self.state.world_name}|{character.uuid}|{day}",
+            source="vendor_fallback",
         )
         character.gold = character.gold or 120
         extra["vendor_inventory_day"] = day
@@ -9391,6 +9408,8 @@ class GameEngine:
             "day": day,
             "location": self.state.current_location,
             "items": [normalise_item(item) for item in character.inventory],
+            "loot_tabel_id": loot_tabel_id,
+            "source": "facility_type_fallback",
         }
         self.state.world_data.extra.setdefault("vendor_inventory_events", []).append(event)
         return {"changed": True, "day": day, "event": event}
@@ -13141,15 +13160,20 @@ class GameEngine:
             return narration, choices, {}
         roll_seed = f"danger-subnode-random-encounter:{self.state.world_name}:{location_name}:{subnode_id}"
         roll = random.Random(roll_seed).random()
+        chance = (
+            max(0.0, min(1.0, _safe_float(node.get("generate_enemy_rate"), DANGER_SUBNODE_RANDOM_ENCOUNTER_CHANCE)))
+            if isinstance(node, dict) and "generate_enemy_rate" in node
+            else DANGER_SUBNODE_RANDOM_ENCOUNTER_CHANCE
+        )
         event: dict[str, Any] = {
             "source": source,
             "location": location_name,
             "subnode_id": subnode_id,
-            "chance": DANGER_SUBNODE_RANDOM_ENCOUNTER_CHANCE,
+            "chance": chance,
             "roll": round(roll, 6),
             "triggered": False,
         }
-        if roll >= DANGER_SUBNODE_RANDOM_ENCOUNTER_CHANCE:
+        if roll >= chance:
             self.state.world_data.extra.setdefault("danger_subnode_random_encounters", []).append(event)
             return narration, choices, event
         monster = self._generate_random_danger_subnode_monster(
@@ -19292,6 +19316,7 @@ def _shop_type_generic_name(facility_type: str) -> str:
         "material_store": "素材店",
         "general_store": "雑貨店",
         "magic_store": "魔術店",
+        "junk_store": "ジャンク店",
         "town_hall": "役場",
         "shop": "商店",
         "market": "市場",
@@ -19430,6 +19455,7 @@ def _facility_type_from_name(name: str) -> str:
         ("material_store", ("material store", "素材店", "素材", "鉱石", "材料")),
         ("magic_store", ("magic store", "magic shop", "scroll", "魔術店", "魔法店", "巻物")),
         ("general_store", ("general store", "雑貨店", "よろず屋", "道具屋")),
+        ("junk_store", ("junk store", "junk", "ジャンク店", "がらくた", "壊れ物")),
     )
     for facility_type, needles in direct_mapping:
         if any(needle in text for needle in needles):
@@ -19465,6 +19491,7 @@ def _default_facility_role(facility_type: str) -> str:
         "material_store": "素材商",
         "general_store": "雑貨店主",
         "magic_store": "魔術商",
+        "junk_store": "ジャンク屋",
         "town_hall": "役場職員",
     }
     normalized_type = str(facility_type or "").strip().lower()
@@ -19503,6 +19530,7 @@ def _default_facility_npc_look(facility_name: str, facility_type: str, role: str
         "material_store": "丈夫な作業服に道具袋を下げ、素材の傷や質を見抜く目を持つ商人。",
         "general_store": "棚札と帳簿を手に、旅人向けの品を手早く並べ替えている店主。",
         "magic_store": "古い刺繍入りのローブをまとい、巻物や触媒を慎重に扱う魔術商。",
+        "junk_store": "修理跡の多い外套を羽織り、壊れた道具の価値を見抜く目を持つ店主。",
         "town_hall": "整った事務服を着て、印章と書類を抱えながら来訪者に対応する職員。",
         "shop": "店の雰囲気に合った実用的な服装で、品物と客の様子をよく見ている店主。",
         "market": "活気ある市場向けの身軽な服装で、品物を示しながら客を呼び込む商人。",

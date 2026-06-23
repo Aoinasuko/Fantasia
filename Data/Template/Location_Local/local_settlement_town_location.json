@@ -1,0 +1,43 @@
+[
+  {
+    "id": "settlement_town_entrance",
+    "name": "街の入り口",
+    "desc": "街の入り口。",
+    "target_type": ["town"],
+    "entrance": true,
+    "random_generate":false,
+    "multiple_generating": false
+  },
+  {
+    "id": "settlement_village_entrance",
+    "name": "村の入り口",
+    "desc": "村の入り口。",
+    "target_type": ["village"],
+    "entrance": true,
+    "random_generate":false,
+    "multiple_generating": false
+  },
+  {
+    "id": "settlement_church",
+    "name": "教会",
+    "desc": "信仰を求めたり、治療を求める人々が集まる場所。",
+    "target_type": ["town", "village"],
+    "multiple_generating": false,
+    "function_npc": ["priest"]
+  },
+  {
+    "id": "settlement_square",
+    "name": "広場",
+    "desc": "中心となる広場。",
+    "target_type": ["town", "village"],
+    "multiple_generating": false
+  },
+  {
+    "id": "settlement_chief_house",
+    "name": "長の家",
+    "desc": "生活圏の長の家。情報が手に入るかもしれない。",
+    "target_type": ["town", "village"],
+    "multiple_generating": false,
+    "function_npc": ["male_residents", "female_residents"]
+  }
+]

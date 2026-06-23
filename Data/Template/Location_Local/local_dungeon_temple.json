@@ -1,0 +1,69 @@
+[
+  {
+    "id": "temple_entrance",
+    "name": "神殿の入り口",
+    "desc": "古い柱と階段が残り、神殿の奥へ続く入口。",
+    "target_type": [
+      "temple"
+    ],
+    "entrance": true,
+    "random_generate": false,
+    "multiple_generating": false
+  },
+  {
+    "id": "temple_pillar_hall",
+    "name": "列柱の間",
+    "desc": "欠けた柱が等間隔に並ぶ、静まり返った広間。",
+    "target_type": [
+      "temple"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.25,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_temple_pillar_hall_loot"
+  },
+  {
+    "id": "temple_prayer_room",
+    "name": "祈りの小部屋",
+    "desc": "小さな祭壇と古い灯火台が残る祈りの部屋。",
+    "target_type": [
+      "temple"
+    ],
+    "multiple_generating": false,
+    "generate_enemy_rate": 0.2,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_temple_prayer_room_loot"
+  },
+  {
+    "id": "temple_cursed_altar",
+    "name": "呪われた祭壇",
+    "desc": "黒ずんだ石と古い供物が残る、不穏な気配の祭壇。",
+    "target_type": [
+      "temple"
+    ],
+    "multiple_generating": false,
+    "generate_enemy_rate": 0.45,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_temple_cursed_altar_loot"
+  },
+  {
+    "id": "temple_inner_sanctum",
+    "name": "神殿の最奥聖域",
+    "desc": "神殿の力が一点に集まる、閉ざされた最奥の聖域。",
+    "target_type": [
+      "temple"
+    ],
+    "multiple_generating": false,
+    "random_generate": false,
+    "innermost_part": true,
+    "generate_boss": true,
+    "item_generate": false,
+    "item_regenerate": false
+  }
+]

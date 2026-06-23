@@ -37,8 +37,6 @@ from .imagegen import DEFAULT_NEGATIVE_PROMPTS, QUALITY_PRESETS, MockSdxlBackend
 from .items import (
     add_item_stack,
     can_add_item_stack,
-    generate_loot_items,
-    generate_vendor_items,
     inventory_slot_count,
     item_hunger_delta,
     item_hp_delta,
@@ -53,6 +51,7 @@ from .items import (
     transfer_item_stack,
     use_inventory_item,
 )
+from .item_generate_loottabel import generate_loot_table_items
 from .json_store import JsonStore
 from .llm import FixtureLlmBackend, create_llm_backend
 from .model_catalog import (
@@ -7783,11 +7782,11 @@ def _default_player_items() -> list[dict[str, object]]:
 
 
 def _default_loot_items(location_name: str) -> list[dict[str, object]]:
-    return generate_loot_items(location_name)
+    return generate_loot_table_items("local_default_loot", context=location_name, source="default_loot")
 
 
 def _default_vendor_items(owner_name: str) -> list[dict[str, object]]:
-    return generate_vendor_items(owner_name)
+    return generate_loot_table_items("shop_general_store", context=owner_name, source="default_vendor")
 
 
 def _item_value(item: dict[str, object]) -> int:

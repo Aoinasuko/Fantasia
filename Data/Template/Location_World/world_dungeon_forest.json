@@ -1,0 +1,26 @@
+[
+  {
+    "name": "ウルの森",
+    "category": "dungeon",
+    "type": "forest",
+    "desc": "獣が徘徊する森。"
+  },
+  {
+    "name": "アラの森",
+    "category": "dungeon",
+    "type": "forest",
+    "desc": "迷い人が絶えないと噂の森。"
+  },
+  {
+    "name": "ナナの森",
+    "category": "dungeon",
+    "type": "forest",
+    "desc": "自然の息吹が感じられる森。"
+  },
+  {
+    "name": "マアチの森",
+    "category": "dungeon",
+    "type": "forest",
+    "desc": "小鳥の鳴き声が聞こえてくる森。"
+  }
+]

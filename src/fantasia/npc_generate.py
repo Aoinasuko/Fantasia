@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import random
 import re
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 from .character import Character
@@ -1131,6 +1132,10 @@ def ensure_facility_npc(engine: GameEngine, settlement: LocationData, facility: 
         character.extra["facility"] = facility_name
         character.extra["facility_type"] = facility_type
         character.extra["parent_settlement"] = settlement.name
+        if facility.get("shopItem"):
+            character.extra["shopItem"] = deepcopy(facility.get("shopItem"))
+        if facility.get("shop_item_table"):
+            character.extra["shop_item_table"] = deepcopy(facility.get("shop_item_table"))
         finalize_generated_npc(
             engine,
             character,
@@ -1145,6 +1150,10 @@ def ensure_facility_npc(engine: GameEngine, settlement: LocationData, facility: 
         character.extra["facility"] = facility_name or str(character.extra.get("facility") or "")
         character.extra["facility_type"] = facility_type or str(character.extra.get("facility_type") or "")
         character.extra["parent_settlement"] = settlement.name
+        if facility.get("shopItem"):
+            character.extra["shopItem"] = deepcopy(facility.get("shopItem"))
+        if facility.get("shop_item_table"):
+            character.extra["shop_item_table"] = deepcopy(facility.get("shop_item_table"))
         if npc_gender and not character.gender:
             character.gender = npc_gender
         if npc_age and not character.age:

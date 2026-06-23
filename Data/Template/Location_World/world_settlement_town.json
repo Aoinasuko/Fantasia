@@ -1,0 +1,26 @@
+[
+  {
+    "name": "港街アミナス",
+    "category": "settlement",
+    "type": "town",
+    "desc": "活気のいい港街。"
+  },
+  {
+    "name": "城下街アルティナ",
+    "category": "settlement",
+    "type": "town",
+    "desc": "城壁が立ち並ぶ大きな街。"
+  },
+  {
+    "name": "スラム街タミーハ",
+    "category": "settlement",
+    "type": "town",
+    "desc": "少し不穏なスラム街。"
+  },
+  {
+    "name": "草原の街グラシナ",
+    "category": "settlement",
+    "type": "town",
+    "desc": "草原の上に建てられた心地よい風が吹く街。"
+  }
+]

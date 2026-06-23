@@ -350,65 +350,6 @@ def _load_item_templates() -> dict[str, list[dict[str, Any]]]:
 
 ITEM_TEMPLATES = _load_item_templates()
 
-LOOT_PROFILES = {
-    "settlement": [("food", 4), ("drink", 2), ("tool", 3), ("junk", 4), ("document", 2), ("treasure", 1)],
-    "wilderness": [("material_plant", 5), ("material_creature", 2), ("food", 2), ("drink", 1), ("material_common", 2), ("junk", 1), ("material_ore", 1)],
-    "dungeon": [("junk", 4), ("treasure", 2), ("relic", 1), ("potion", 2), ("scroll", 1), ("material_creature", 2), ("material_magical", 1)],
-    "battlefield": [("weapon_small", 2), ("weapon_medium", 2), ("armor_shield", 1), ("junk", 3), ("medicine", 1), ("armor_body", 1), ("material_metal", 1)],
-    "market": [("food", 3), ("drink", 2), ("tool", 3), ("armor_cloth", 2), ("treasure", 1), ("medicine", 1), ("document", 1)],
-    "default": [("food", 2), ("tool", 2), ("junk", 3), ("material_plant", 2), ("treasure", 1), ("medicine", 1), ("material_common", 1)],
-}
-
-VENDOR_PROFILES = {
-    "healer": [("medicine", 5), ("potion", 4), ("material_plant", 3), ("material_liquid", 2), ("scroll", 1)],
-    "apothecary": [("medicine", 5), ("potion", 5), ("material_plant", 4), ("material_liquid", 2)],
-    "blacksmith": [
-        ("weapon_small", 2),
-        ("weapon_medium", 4),
-        ("weapon_large", 2),
-        ("weapon_long", 3),
-        ("weapon_range", 1),
-        ("armor_shield", 2),
-        ("armor_body", 2),
-        ("armor_head", 1),
-        ("armor_arm", 1),
-        ("armor_leg", 1),
-    ],
-    "black_market": [
-        ("weapon_small", 2),
-        ("weapon_medium", 4),
-        ("weapon_large", 2),
-        ("weapon_long", 3),
-        ("weapon_range", 2),
-        ("armor_shield", 2),
-        ("armor_body", 2),
-        ("armor_head", 2),
-        ("armor_arm", 1),
-        ("armor_leg", 1),
-        ("armor_cloth", 1),
-        ("accessory_ring", 2),
-        ("accessory_amulet", 2),
-        ("relic", 1),
-    ],
-    "food_store": [("food", 6), ("drink", 4), ("material_plant", 1)],
-    "material_store": [
-        ("material_common", 4),
-        ("material_ore", 3),
-        ("material_metal", 3),
-        ("material_plant", 2),
-        ("material_creature", 2),
-        ("material_liquid", 2),
-        ("material_magical", 1),
-        ("material_gem", 1),
-        ("junk", 2),
-    ],
-    "mage": [("scroll", 4), ("magicrod", 2), ("potion", 2), ("material_magical", 4), ("material_gem", 2), ("relic", 1), ("document", 2), ("accessory_amulet", 1)],
-    "magic_store": [("scroll", 5), ("magicrod", 2), ("material_magical", 4), ("potion", 2), ("material_gem", 2), ("relic", 1), ("document", 2), ("accessory_ring", 1), ("accessory_amulet", 1)],
-    "inn": [("food", 5), ("drink", 4), ("medicine", 1), ("tool", 1)],
-    "general_store": [("food", 3), ("drink", 2), ("tool", 4), ("medicine", 2), ("armor_cloth", 2), ("junk", 2), ("material_common", 2), ("document", 1)],
-    "general": [("food", 3), ("drink", 2), ("tool", 4), ("medicine", 2), ("armor_cloth", 2), ("junk", 2)],
-}
-
 ITEM_CONTAINER_KEYS = {
     "item",
     "items",
@@ -465,28 +406,6 @@ def starter_items() -> list[dict[str, Any]]:
         make_item("food", name="黒パン", quantity=2, source="starter"),
         make_item("medicine", name="止血薬", quantity=1, source="starter"),
         make_item("tool", name="ロープ", quantity=1, source="starter"),
-    ]
-
-
-def generate_loot_items(location_name: str, context: str = "", count: int | None = None, danger_level: int = 0) -> list[dict[str, Any]]:
-    profile_name = _loot_profile_name(f"{location_name} {context}")
-    profile = LOOT_PROFILES[profile_name]
-    rng = _rng("loot", location_name, context, profile_name)
-    item_count = count if count is not None else rng.randint(2, 4)
-    return [
-        _random_item(profile, rng, source="loot", context=location_name, danger_level=danger_level)
-        for _ in range(max(1, item_count))
-    ]
-
-
-def generate_vendor_items(owner_name: str, context: str = "", count: int | None = None, danger_level: int = 0) -> list[dict[str, Any]]:
-    profile_name = _vendor_profile_name(f"{owner_name} {context}")
-    profile = VENDOR_PROFILES.get(profile_name, VENDOR_PROFILES["general"])
-    rng = _rng("vendor", owner_name, context, profile_name)
-    item_count = count if count is not None else rng.randint(5, 8)
-    return [
-        _random_item(profile, rng, source="vendor", context=owner_name, rarity_profile=profile_name, danger_level=danger_level)
-        for _ in range(max(1, item_count))
     ]
 
 
@@ -657,23 +576,8 @@ def normalise_item(raw: Any, source: str = "", fallback_category: str = "junk") 
     return item
 
 
-def normalise_inventory(inventory: list[dict[str, Any]], source: str = "") -> list[dict[str, Any]]:
-    compacted: list[dict[str, Any]] = []
-    for raw in list(inventory):
-        if isinstance(raw, dict):
-            add_item_stack(compacted, raw, source=source)
-        elif raw is not None:
-            add_item_stack(compacted, normalise_item(raw, source=source), source=source)
-    inventory[:] = compacted
-    return inventory
-
-
 def inventory_slot_count(inventory: list[dict[str, Any]]) -> int:
     return len(inventory)
-
-
-def inventory_free_slots(inventory: list[dict[str, Any]], max_slots: int) -> int:
-    return max(0, int(max_slots) - inventory_slot_count(inventory))
 
 
 def can_add_item_stack(
@@ -926,11 +830,6 @@ def normalise_category(category: str) -> str:
     return value if value in FANTASIA_ITEM_CATEGORY_COUNTS else "junk"
 
 
-def category_label(category: str, language: str = "ja") -> str:
-    normalised = normalise_category(category)
-    return tr_enum("item_category", normalised, language, fallback=CATEGORY_LABELS.get(normalised, category))
-
-
 def normalise_rarity(value: Any) -> str:
     text = str(value or "common").strip().lower().replace(" ", "_").replace("-", "_")
     aliases = {
@@ -1129,7 +1028,6 @@ def _random_item(
     rng: random.Random,
     source: str,
     context: str,
-    rarity_profile: str = "",
     danger_level: int = 0,
 ) -> dict[str, Any]:
     categories, weights = zip(*profile)
@@ -1139,9 +1037,9 @@ def _random_item(
     description = str(template.get("desc") or template.get("description") or "")
     base_value = _safe_int(template.get("value"), CATEGORY_BASE_VALUE.get(category, 5))
     if category in EQUIPMENT_CATEGORIES:
-        rarity = _random_equipment_rarity(rng, rarity_profile)
+        rarity = _random_equipment_rarity(rng)
     else:
-        rarity = _random_stackable_rarity(rng, rarity_profile)
+        rarity = _random_stackable_rarity(rng)
     item_value = _item_value_with_rarity(base_value, rarity, rng)
     quantity = _random_quantity(category, rng)
     return make_item(
@@ -1155,19 +1053,11 @@ def _random_item(
     )
 
 
-def _random_equipment_rarity(rng: random.Random, profile_name: str = "") -> str:
-    if profile_name == "black_market":
-        return rng.choices(["epic", "legendary", "artifact"], weights=[72, 24, 4], k=1)[0]
-    if profile_name == "blacksmith":
-        return rng.choices(["common", "uncommon", "rare", "epic", "legendary"], weights=[42, 34, 20, 3.5, 0.5], k=1)[0]
-    if profile_name == "magic_store":
-        return rng.choices(["uncommon", "rare", "epic", "legendary"], weights=[56, 32, 10, 2], k=1)[0]
+def _random_equipment_rarity(rng: random.Random) -> str:
     return rng.choices(list(RARITY_ORDER), weights=[65, 22, 8, 3.5, 1.2, 0.3], k=1)[0]
 
 
-def _random_stackable_rarity(rng: random.Random, profile_name: str = "") -> str:
-    if profile_name in {"magic_store", "material_store"}:
-        return rng.choices(["common", "uncommon", "rare"], weights=[62, 30, 8], k=1)[0]
+def _random_stackable_rarity(rng: random.Random) -> str:
     return rng.choices(["common", "uncommon", "rare"], weights=[76, 20, 4], k=1)[0]
 
 
@@ -1179,48 +1069,6 @@ def _item_value_with_rarity(base_value: int, rarity: str, rng: random.Random | N
     variance = variance_rng.uniform(ITEM_VALUE_VARIANCE_MIN, ITEM_VALUE_VARIANCE_MAX)
     rarity_floor = base + _rarity_rank(rarity_key)
     return max(1, rarity_floor, int(round(base * multiplier * variance)))
-
-
-def _loot_profile_name(text: str) -> str:
-    lowered = text.lower()
-    if any(word in lowered for word in ("shop", "market", "store", "市", "店", "市場", "商")):
-        return "market"
-    if any(word in lowered for word in ("dungeon", "ruin", "cave", "地下", "遺跡", "洞窟", "迷宮")):
-        return "dungeon"
-    if any(word in lowered for word in ("battle", "war", "fort", "戦", "砦", "城壁")):
-        return "battlefield"
-    if any(word in lowered for word in ("forest", "field", "road", "森", "野", "街道", "山")):
-        return "wilderness"
-    if any(word in lowered for word in ("town", "inn", "settlement", "村", "町", "宿", "都市")):
-        return "settlement"
-    return "default"
-
-
-def _vendor_profile_name(text: str) -> str:
-    lowered = text.lower()
-    if "facility_type:black_market" in lowered or any(word in lowered for word in ("black market", "black_market", "闇商店", "闇市", "裏市場")):
-        return "black_market"
-    if "facility_type:blacksmith" in lowered or any(word in lowered for word in ("blacksmith", "鍛冶", "武具", "武器", "防具")):
-        return "blacksmith"
-    if "facility_type:apothecary" in lowered or any(word in lowered for word in ("potion", "薬品", "薬屋", "薬草", "回復")):
-        return "apothecary"
-    if "facility_type:food_store" in lowered or any(word in lowered for word in ("food store", "grocery", "食料店", "食料", "食材")):
-        return "food_store"
-    if "facility_type:material_store" in lowered or any(word in lowered for word in ("material store", "素材店", "素材", "鉱石", "材料")):
-        return "material_store"
-    if "facility_type:magic_store" in lowered or any(word in lowered for word in ("scroll", "魔術店", "魔法店", "巻物")):
-        return "magic_store"
-    if "facility_type:general_store" in lowered or any(word in lowered for word in ("general store", "雑貨店", "よろず屋", "道具屋")):
-        return "general_store"
-    if any(word in lowered for word in ("heal", "doctor", "apothecary", "薬", "医", "治療", "聖職")):
-        return "healer"
-    if any(word in lowered for word in ("smith", "weapon", "armor", "鍛冶", "武器", "防具", "傭兵")):
-        return "blacksmith"
-    if any(word in lowered for word in ("mage", "magic", "scholar", "魔", "術", "学者", "書")):
-        return "mage"
-    if any(word in lowered for word in ("inn", "cook", "tavern", "宿", "酒場", "料理")):
-        return "inn"
-    return "general"
 
 
 def _fallback_template(category: str, name: str | None = None) -> dict[str, Any]:

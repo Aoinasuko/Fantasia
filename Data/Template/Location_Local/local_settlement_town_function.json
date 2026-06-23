@@ -1,0 +1,26 @@
+[
+  {
+    "id": "settlement_guild",
+    "name": "ギルド",
+    "desc": "冒険者が依頼を確認したり報告を行う施設。",
+    "target_type": ["town", "village"],
+    "multiple_generating": false,
+    "function_npc": ["male_residents", "female_residents"]
+  },
+  {
+    "id": "settlement_townhall",
+    "name": "役場",
+    "desc": "家の建築などを行なえる施設。",
+    "target_type": ["town", "village"],
+    "multiple_generating": false,
+    "function_npc": ["male_residents", "female_residents"]
+  },
+  {
+    "id": "settlement_inn",
+    "name": "宿屋",
+    "desc": "旅の拠点となる施設。",
+    "target_type": ["town", "village"],
+    "multiple_generating": false,
+    "function_npc": ["male_residents", "female_residents"]
+  }
+]

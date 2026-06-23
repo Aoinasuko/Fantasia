@@ -1,0 +1,69 @@
+[
+  {
+    "id": "forest_entrance",
+    "name": "森の入り口",
+    "desc": "木々の影が深くなり、外の道と森の内部を分ける入口。",
+    "target_type": [
+      "forest"
+    ],
+    "entrance": true,
+    "random_generate": false,
+    "multiple_generating": false
+  },
+  {
+    "id": "forest_moss_path",
+    "name": "苔むした小道",
+    "desc": "足音を吸い込む厚い苔に覆われた細い道。",
+    "target_type": [
+      "forest"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.2,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": true,
+    "item_tabel": "local_forest_moss_path_loot"
+  },
+  {
+    "id": "forest_old_tree",
+    "name": "古樹の根元",
+    "desc": "絡み合う根が天然の壁を作る、古い大樹の根元。",
+    "target_type": [
+      "forest"
+    ],
+    "multiple_generating": false,
+    "generate_enemy_rate": 0.25,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_forest_old_tree_loot"
+  },
+  {
+    "id": "forest_beast_clearing",
+    "name": "獣道の開け地",
+    "desc": "獣たちが踏み固めた跡が集まる小さな空き地。",
+    "target_type": [
+      "forest"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.35,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_forest_beast_clearing_loot"
+  },
+  {
+    "id": "forest_deep_grove",
+    "name": "森の最奥部",
+    "desc": "古い精気が満ち、森全体の気配が集まる深奥。",
+    "target_type": [
+      "forest"
+    ],
+    "multiple_generating": false,
+    "random_generate": false,
+    "innermost_part": true,
+    "generate_boss": true,
+    "item_generate": false,
+    "item_regenerate": false
+  }
+]

@@ -1,0 +1,120 @@
+[
+  {
+    "id": "settlement_blacksmith",
+    "name": "鍛冶屋",
+    "desc": "武器や防具を製造・修理する工房。",
+    "target_type": [
+      "town",
+      "village"
+    ],
+    "multiple_generating": false,
+    "shopkeeper": [
+      "male_residents",
+      "female_residents"
+    ],
+    "shopItem": "shop_blacksmith"
+  },
+  {
+    "id": "settlement_apothecary",
+    "name": "薬品店",
+    "desc": "薬草、治療薬、応急処置の道具を扱う店。",
+    "target_type": [
+      "town",
+      "village"
+    ],
+    "multiple_generating": false,
+    "shopkeeper": [
+      "female_residents",
+      "male_residents"
+    ],
+    "shopItem": "shop_apothecary"
+  },
+  {
+    "id": "settlement_general_store",
+    "name": "雑貨店",
+    "desc": "旅道具、日用品、小さな消耗品を広く扱う店。",
+    "target_type": [
+      "town",
+      "village"
+    ],
+    "multiple_generating": false,
+    "shopkeeper": [
+      "male_residents",
+      "female_residents"
+    ],
+    "shopItem": "shop_general_store"
+  },
+  {
+    "id": "settlement_food_store",
+    "name": "食料品店",
+    "desc": "保存食、飲み物、料理用の材料を売る店。",
+    "target_type": [
+      "town",
+      "village"
+    ],
+    "multiple_generating": false,
+    "shopkeeper": [
+      "female_residents",
+      "male_residents"
+    ],
+    "shopItem": "shop_food_store"
+  },
+  {
+    "id": "settlement_black_market",
+    "name": "闇商店",
+    "desc": "表の店には並ばない希少品や危険な品を扱う秘密の店。",
+    "target_type": [
+      "town"
+    ],
+    "multiple_generating": false,
+    "shopkeeper": [
+      "male_residents",
+      "female_residents"
+    ],
+    "shopItem": "shop_black_market"
+  },
+  {
+    "id": "settlement_material_store",
+    "name": "素材店",
+    "desc": "鉱石、木材、魔物素材など、制作に使う素材を扱う店。",
+    "target_type": [
+      "town",
+      "village"
+    ],
+    "multiple_generating": false,
+    "shopkeeper": [
+      "male_residents",
+      "female_residents"
+    ],
+    "shopItem": "shop_material_store"
+  },
+  {
+    "id": "settlement_magic_store",
+    "name": "魔法品店",
+    "desc": "巻物、触媒、魔力を帯びた道具を扱う店。",
+    "target_type": [
+      "town"
+    ],
+    "multiple_generating": false,
+    "shopkeeper": [
+      "female_residents",
+      "male_residents"
+    ],
+    "shopItem": "shop_magic_store"
+  },
+  {
+    "id": "settlement_junk_store",
+    "name": "ジャンク店",
+    "desc": "壊れた道具、半端な部品、掘り出し物になりそうな品を積み上げた店。",
+    "target_type": [
+      "town",
+      "village"
+    ],
+    "multiple_generating": false,
+    "shopkeeper": [
+      "male_residents",
+      "female_residents"
+    ],
+    "shopItem": "shop_junk_store"
+  }
+]

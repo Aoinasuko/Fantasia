@@ -1,0 +1,30 @@
+[
+  {
+    "id": "highway_entrance",
+    "name": "街道",
+    "desc": "街や村をつなぐ街道。",
+    "target_type": [
+      "highway"
+    ],
+    "entrance": true,
+    "random_generate": false,
+    "multiple_generating": false,
+    "item_generate": true,
+    "item_regenerate": true,
+    "item_tabel": "local_highway_entrance_loot"
+  },
+  {
+    "id": "coast_entrance",
+    "name": "街道付近の海岸",
+    "desc": "街や村をつなぐ街道の付近にある海岸。",
+    "target_type": [
+      "coast"
+    ],
+    "entrance": true,
+    "random_generate": false,
+    "multiple_generating": false,
+    "item_generate": true,
+    "item_regenerate": true,
+    "item_tabel": "local_coast_entrance_loot"
+  }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "name": "街道",
+    "category": "highway",
+    "type": "highway",
+    "desc": "街の近くの街道。"
+  },
+  {
+    "name": "花咲く街道",
+    "category": "highway",
+    "type": "highway",
+    "desc": "花が咲く街道。"
+  },
+  {
+    "name": "草原の街道",
+    "category": "highway",
+    "type": "highway",
+    "desc": "心地よい風が吹く草原の街道。"
+  },
+  {
+    "name": "森林の街道",
+    "category": "highway",
+    "type": "highway",
+    "desc": "木が生い茂る街道。"
+  }
+]

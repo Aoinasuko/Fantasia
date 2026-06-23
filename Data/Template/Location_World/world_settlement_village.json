@@ -1,0 +1,26 @@
+[
+  {
+    "name": "農村ジャナ",
+    "category": "settlement",
+    "type": "village",
+    "desc": "穏やかな農村。"
+  },
+  {
+    "name": "小村ギャリア",
+    "category": "settlement",
+    "type": "village",
+    "desc": "どこか懐かしい雰囲気がする小さな村。"
+  },
+  {
+    "name": "小川の村ココア",
+    "category": "settlement",
+    "type": "village",
+    "desc": "きれいな水が流れる小川の傍にある村。"
+  },
+  {
+    "name": "寂れた村ウェルナ",
+    "category": "settlement",
+    "type": "village",
+    "desc": "モンスターの襲撃に遭い、すっかり寂れてしまった村。"
+  }
+]

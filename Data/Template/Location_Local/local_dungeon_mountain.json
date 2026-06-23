@@ -1,0 +1,69 @@
+[
+  {
+    "id": "mountain_entrance",
+    "name": "山の入り口",
+    "desc": "岩肌の裂け目と登山道が重なる、山中へ踏み込む入口。",
+    "target_type": [
+      "mountain"
+    ],
+    "entrance": true,
+    "random_generate": false,
+    "multiple_generating": false
+  },
+  {
+    "id": "mountain_rock_slope",
+    "name": "崩れた岩斜面",
+    "desc": "足場の悪い岩が積み重なり、進むたびに小石が落ちる斜面。",
+    "target_type": [
+      "mountain"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.25,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_mountain_rock_slope_loot"
+  },
+  {
+    "id": "mountain_wind_cave",
+    "name": "風鳴りの洞穴",
+    "desc": "細い穴から吹き抜ける風が笛のように鳴る洞穴。",
+    "target_type": [
+      "mountain"
+    ],
+    "multiple_generating": false,
+    "generate_enemy_rate": 0.3,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_mountain_wind_cave_loot"
+  },
+  {
+    "id": "mountain_old_mine",
+    "name": "古い坑道",
+    "desc": "朽ちた支柱と錆びた軌道が残る、掘り捨てられた坑道。",
+    "target_type": [
+      "mountain"
+    ],
+    "multiple_generating": false,
+    "generate_enemy_rate": 0.35,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_mountain_old_mine_loot"
+  },
+  {
+    "id": "mountain_peak_depth",
+    "name": "山奥の大空洞",
+    "desc": "山の内側に隠された、冷たい空気が満ちる巨大な空洞。",
+    "target_type": [
+      "mountain"
+    ],
+    "multiple_generating": false,
+    "random_generate": false,
+    "innermost_part": true,
+    "generate_boss": true,
+    "item_generate": false,
+    "item_regenerate": false
+  }
+]
