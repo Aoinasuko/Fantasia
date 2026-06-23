@@ -3034,6 +3034,51 @@ class GameEngine:
             return True
         return bool(facility_type and active_type and facility_type == active_type and not facility_name)
 
+    def _npc_visibility_rule_prompt(self) -> str:
+        return (
+            "NPC visibility rule: world_data.nearby_npcs / context.nearby_npcs contains NPCs in the "
+            "current location and current subnode. Treat every listed NPC as present and directly visible "
+            "to the player. Do not describe listed NPCs as absent, too far away, unseen, or not nearby "
+            "unless an explicit state/tool result has moved or hidden them."
+        )
+
+    def _visible_npc_context_fields(self, character: Character, location_name: str) -> dict[str, Any]:
+        location_name = str(location_name or "").strip()
+        assigned_location, assigned_subnode = self._character_subnode_assignment(character)
+        current_subnode = ""
+        if location_name:
+            try:
+                current_subnode = self._current_subnode_id(location_name)
+            except Exception:
+                current_subnode = ""
+        subnode_id = assigned_subnode
+        if not subnode_id:
+            subnode_id = self._ensure_character_subnode_assignment_for_location(character, location_name)
+            if subnode_id:
+                assigned_location = location_name
+        if assigned_location and location_name and assigned_location != location_name:
+            subnode_id = current_subnode
+        if not subnode_id:
+            subnode_id = current_subnode
+        subnode_name = ""
+        if location_name and subnode_id:
+            graph = self._ensure_location_subnode_graph(self.state.world_data, location_name)
+            nodes = graph.get("nodes", {}) if isinstance(graph, dict) and isinstance(graph.get("nodes"), dict) else {}
+            node = nodes.get(subnode_id, {}) if isinstance(nodes, dict) else {}
+            if isinstance(node, dict):
+                subnode_name = str(node.get("name") or subnode_id)
+        same_subnode = bool(current_subnode and subnode_id and current_subnode == subnode_id)
+        return _drop_empty(
+            {
+                "location": location_name,
+                "subnode_id": subnode_id,
+                "subnode_name": subnode_name,
+                "same_location": bool(location_name),
+                "same_subnode": same_subnode or None,
+                "visibility": "visible_current_subnode" if same_subnode else "visible_current_location",
+            }
+        )
+
     def travel_to_facility(self, facility_name: str) -> str:
         self.dismiss_active_cg()
         settlement = self._current_settlement_location()
@@ -12682,6 +12727,8 @@ class GameEngine:
             "必ず content_violation, think, narration, process, finished を持つJSONだけを返してください。",
             "通常進行できる場合は content_violation を false にしてください。",
             "通常の移動はworld_mapの隣接地点だけにしてください。テレポート、ポータル等の明示的な処理がない限り遠隔地へ直接移動させないでください。",
+            "世界データ.nearby_npcs にいるNPCは、現在地かつ現在サブノードにいてプレイヤーから見えるNPCです。",
+            "nearby_npcs のNPCを「近くにいない」「姿が見えない」「別の場所にいる」と描写しないでください。",
         ]
         if has_action_roll:
             system_lines.append("game_side_action_roll が enabled=true の場合、成否・強制成功・強制失敗はゲーム側の確定判定として必ず尊重してください。")
@@ -12794,6 +12841,7 @@ class GameEngine:
             if has_active_quest:
                 lines.append("- クエスト目標への経路や周辺部屋を明かす場合だけ tool_judgements の world_subnode_reveal に confidence=1.0 で subnode_map_reveal / unlock_subnode_route を入れてください。")
         if wants_person:
+            lines.append("- nearby_npcs は同じロケーションかつ同じサブノードにいて、プレイヤーから見える場所のNPCです。そこにいるNPCを不在・遠方・見えない扱いにしないでください。")
             lines.append("- NPC対象がいる場合だけ recipients を使い、好感度は npc_change_relationship、NPC移動は npc_move / npc_join_party / npc_remove_party / npc_dead、新規NPC候補は request_npc_generation に入れてください。既存NPCを再生成しないでください。")
         if wants_items:
             lines.append("- アイテム入手は tool_judgements の item_add、消費・喪失・譲渡は item_remove、装備は item_equip、装備解除は item_unequip を confidence=1.0 で使ってください。所持金だけが増減する場合は gold_delta を使ってください。")
@@ -16776,6 +16824,7 @@ class GameEngine:
             },
         ]
         messages.append({"role": "system", "content": self._conversation_character_reference_rule(character)})
+        messages.append({"role": "system", "content": self._npc_visibility_rule_prompt()})
         messages.append({"role": "system", "content": tool_prompt_instruction()})
         return self._chat_json(
             "conversation_starter",
@@ -16925,6 +16974,7 @@ class GameEngine:
             },
         ]
         messages.append({"role": "system", "content": self._conversation_character_reference_rule(character)})
+        messages.append({"role": "system", "content": self._npc_visibility_rule_prompt()})
         messages.append({"role": "system", "content": tool_prompt_instruction()})
         return self._chat_json(
             "conversation_facilitator",
@@ -16966,6 +17016,7 @@ class GameEngine:
             },
         ]
         messages.append({"role": "system", "content": self._conversation_character_reference_rule(character)})
+        messages.append({"role": "system", "content": self._npc_visibility_rule_prompt()})
         messages.append({"role": "system", "content": tool_prompt_instruction()})
         return self._chat_json(
             "conversation_resolver",
@@ -17207,6 +17258,7 @@ class GameEngine:
                 ),
             }
         )
+        messages.append({"role": "system", "content": self._npc_visibility_rule_prompt()})
         messages.append({"role": "system", "content": tool_prompt_instruction()})
         messages.append({"role": "system", "content": self._movement_choice_rule_prompt()})
         return self._chat_json(
@@ -17562,6 +17614,7 @@ class GameEngine:
                 ),
             },
         ]
+        messages.append({"role": "system", "content": self._npc_visibility_rule_prompt()})
         return self._chat_json(
             "input_gatekeeper",
             messages,
@@ -17629,6 +17682,7 @@ class GameEngine:
                 ),
             },
         ]
+        messages.append({"role": "system", "content": self._npc_visibility_rule_prompt()})
         return self._chat_json(
             "check_action_feasibility",
             messages,
@@ -17660,7 +17714,7 @@ class GameEngine:
                     "uuid": character.uuid,
                     "role": character.role,
                     "state": character.state,
-                    "location": character.location,
+                    **self._visible_npc_context_fields(character, location_name),
                     "hostile": bool(character.flags.get("hostile") or character.extra.get("hostile")),
                     "personality": _short_text(character.personality or str(character.extra.get("personality") or ""), 160),
                 }
@@ -17687,6 +17741,7 @@ class GameEngine:
             "player_hunger": self._player_hunger(),
             "player_max_hunger": PLAYER_MAX_HUNGER,
             "player_inventory": [_compact_item_for_ai(item) for item in self._player_inventory()[:18] if isinstance(item, dict)],
+            "npc_visibility_rule": self._npc_visibility_rule_prompt(),
             "nearby_npcs": nearby_npcs,
             "active_encounter": _compact_value(active_encounter or {}, max_chars=900),
             "active_quest": self.state.active_quest,
@@ -17739,7 +17794,7 @@ class GameEngine:
                         "name": character.name,
                         "role": character.role,
                         "state": character.state,
-                        "location": character.location,
+                        **self._visible_npc_context_fields(character, location_name),
                         "level": character.level,
                         "current_hp": character.current_hp,
                         "max_hp": character.max_hp,
@@ -17792,6 +17847,7 @@ class GameEngine:
             ),
             "movement_options": self._movement_options_ai_context(location_name),
             "active_facility": self._active_facility_record() or {},
+            "npc_visibility_rule": self._npc_visibility_rule_prompt(),
             "nearby_npcs": nearby_npcs,
             "active_quest": _compact_value(_quest_ai_context(active_quest, include_log=False, include_extra=True), max_chars=1400) if active_quest else {},
             "choices": list(self.state.choices[:5]),

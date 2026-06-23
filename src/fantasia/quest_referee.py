@@ -451,6 +451,7 @@ def _quest_referee_with_free_action(
             ),
         }
     )
+    messages.append({"role": "system", "content": self._npc_visibility_rule_prompt()})
     messages.append({"role": "system", "content": tool_prompt_instruction()})
     messages.append({"role": "system", "content": self._movement_choice_rule_prompt()})
     return self._chat_json(
