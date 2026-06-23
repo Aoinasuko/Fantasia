@@ -5,6 +5,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
+from .item_enchant import apply_equipment_level_caps
 from .items import (
     EQUIPMENT_CATEGORIES,
     ITEM_CATEGORY_IDS,
@@ -327,14 +328,16 @@ def build_craft_result(
     ingredients: list[dict[str, Any]],
     craft_roll: dict[str, Any],
     plan: CraftPlan,
+    *,
+    player_level: int = 1,
 ) -> dict[str, Any] | None:
     if bool(craft_roll.get("critical_failure")):
         return None
     items = [normalise_item(item, source="craft") for item in ingredients if isinstance(item, dict)]
     if plan.kind == "equipment_upgrade":
-        return _build_equipment_upgrade_result(response, items, craft_roll, plan)
+        return _build_equipment_upgrade_result(response, items, craft_roll, plan, player_level=player_level)
     if plan.kind == "equipment_create":
-        return _build_equipment_create_result(response, items, craft_roll, plan)
+        return _build_equipment_create_result(response, items, craft_roll, plan, player_level=player_level)
     if plan.kind == "cooking":
         return _build_cooking_result(response, items, craft_roll, plan)
     return _build_consumable_result(response, items, craft_roll, plan)
@@ -348,6 +351,7 @@ def craft_items(
     *,
     home_level: int = 0,
     dangerous_area: bool = False,
+    player_level: int = 1,
 ) -> tuple[dict[str, Any] | None, str]:
     items = [normalise_item(item) for item in ingredients if isinstance(item, dict)]
     if len(items) < 2:
@@ -356,7 +360,7 @@ def craft_items(
     roll = dict(craft_roll or {"success": True, "target": plan.target, "total": plan.target})
     if roll.get("critical_failure"):
         return None, "クラフトに強制失敗しました。素材はすべて失われました。"
-    result = build_craft_result({}, items, roll, plan)
+    result = build_craft_result({}, items, roll, plan, player_level=player_level)
     if not result:
         return None, "クラフトに失敗しました。素材は失われました。"
     return result, f"{result.get('name') or item_label(result, language=language)} を作成しました。{craft_quality_message(roll)}".strip()
@@ -434,6 +438,8 @@ def _build_equipment_upgrade_result(
     items: list[dict[str, Any]],
     craft_roll: dict[str, Any],
     plan: CraftPlan,
+    *,
+    player_level: int,
 ) -> dict[str, Any] | None:
     if not items:
         return None
@@ -469,6 +475,7 @@ def _build_equipment_upgrade_result(
             result["attack"] = max(_safe_int(result.get("attack"), 0), old_attack)
     result["effects"] = _dedupe_effects(_as_list(base.get("effects")) + _as_list(result.get("effects")))[:8]
     result["llm_effects"] = _dedupe_effects(_as_list(base.get("llm_effects")) + _as_list(result.get("llm_effects")))[:4]
+    apply_equipment_level_caps(result, player_level, seed=_craft_enchant_seed(plan, craft_roll, items))
     result["craft_result_kind"] = plan.kind
     result["upgraded_from"] = str(base.get("name") or "")
     result["craft_ingredients"] = _collect_item_uuids(items)
@@ -481,6 +488,8 @@ def _build_equipment_create_result(
     items: list[dict[str, Any]],
     craft_roll: dict[str, Any],
     plan: CraftPlan,
+    *,
+    player_level: int,
 ) -> dict[str, Any]:
     raw = _response_item(response)
     category = normalise_category(str(raw.get("category") or plan.result_category_hint or "weapon_medium"))
@@ -491,6 +500,7 @@ def _build_equipment_create_result(
     description = str(raw.get("description") or raw.get("desc") or "素材から制作された装備。")
     value = _scaled_price(_ingredient_value_total(items), craft_roll)
     result = make_item(category, name=name, description=description, value=value, rarity=rarity, quantity=1, source="craft")
+    apply_equipment_level_caps(result, player_level, seed=_craft_enchant_seed(plan, craft_roll, items))
     result["craft_result_kind"] = plan.kind
     result["craft_ingredients"] = _collect_item_uuids(items)
     result["craft_roll"] = dict(craft_roll)
@@ -787,6 +797,23 @@ def _collect_item_uuids(items: list[dict[str, Any]]) -> list[str]:
         if value:
             result.append(value)
     return result
+
+
+def _craft_enchant_seed(plan: CraftPlan, craft_roll: dict[str, Any], items: list[dict[str, Any]]) -> str:
+    ingredient_keys = [
+        str(item.get("item_uuid") or item.get("name") or item.get("template_id") or "")
+        for item in items
+    ]
+    return "|".join(
+        [
+            plan.kind,
+            str(plan.target),
+            str(plan.result_category_hint),
+            str(craft_roll.get("total", "")),
+            str(craft_roll.get("critical_success", "")),
+            *ingredient_keys,
+        ]
+    )
 
 
 def _dedupe_effects(values: list[Any]) -> list[Any]:

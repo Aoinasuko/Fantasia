@@ -3615,7 +3615,7 @@ class GameEngine:
         response: dict[str, Any] = {}
         if craft_plan.kind != "equipment_upgrade" or craft_roll.get("success"):
             response = self._craft_item_generator(action, items, craft_roll, craft_plan)
-        result = build_craft_result(response, items, craft_roll, craft_plan)
+        result = build_craft_result(response, items, craft_roll, craft_plan, player_level=self._player_level())
         if not result:
             removed = self._consume_craft_ingredients(items, source=source)
             self._append_action_roll_log(craft_roll)
@@ -3738,7 +3738,7 @@ class GameEngine:
         response: dict[str, Any] = {}
         if craft_plan.kind != "equipment_upgrade" or craft_roll.get("success"):
             response = self._craft_item_generator(action, items, craft_roll, craft_plan)
-        result = build_craft_result(response, items, craft_roll, craft_plan)
+        result = build_craft_result(response, items, craft_roll, craft_plan, player_level=self._player_level())
         if not result:
             removed = self._consume_craft_ingredients(items, source=source)
             narration = "クラフトは失敗し、素材は失われました。"

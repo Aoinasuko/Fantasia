@@ -9,7 +9,12 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from .i18n import ELEMENT_IDS, tr_enum
+from .i18n import tr_enum
+from .item_enchant import (
+    ensure_equipment_enchants,
+    equipment_effects as build_equipment_effects,
+    equipment_llm_effects as build_equipment_llm_effects,
+)
 from .status_effects import (
     STATUS_IMMUNITY_EFFECT_IDS,
     canonical_status_effect_id,
@@ -70,22 +75,6 @@ ITEM_USE_EFFECTS = {
 }
 ITEM_VALUE_VARIANCE_MIN = 0.95
 ITEM_VALUE_VARIANCE_MAX = 1.05
-RARITY_EFFECT_COUNT = {
-    "common": 0,
-    "uncommon": 1,
-    "rare": 2,
-    "epic": 3,
-    "legendary": 4,
-    "artifact": 5,
-}
-RARITY_LLM_EFFECT_COUNT = {
-    "common": 0,
-    "uncommon": 0,
-    "rare": 1,
-    "epic": 1,
-    "legendary": 2,
-    "artifact": 2,
-}
 RARITY_POWER = {
     "common": 1,
     "uncommon": 2,
@@ -557,6 +546,7 @@ def make_item(
         item["defense"] = template_power if category not in WEAPON_CATEGORIES and template_power > 0 else _base_equipment_defense(category, rarity)
         item["effects"] = deepcopy(effects) if effects is not None else _equipment_effects(category, rarity, item_name)
         item["llm_effects"] = _equipment_llm_effects(category, rarity, item_name)
+        ensure_equipment_enchants(item)
     else:
         item["effects"] = deepcopy(effects) if effects is not None else _template_effects(template, rarity)
         if item["send_llm"] and not any(
@@ -656,8 +646,7 @@ def normalise_item(raw: Any, source: str = "", fallback_category: str = "junk") 
         default_defense = template_power if category not in WEAPON_CATEGORIES and template_power > 0 else _base_equipment_defense(category, str(item.get("rarity")))
         item["attack"] = _safe_int(item.get("attack"), default_attack) if "attack" in data else default_attack
         item["defense"] = _safe_int(item.get("defense"), default_defense) if "defense" in data else default_defense
-        if not isinstance(item.get("llm_effects"), list):
-            item["llm_effects"] = _equipment_llm_effects(category, str(item.get("rarity")), name)
+        ensure_equipment_enchants(item)
     _ensure_item_uuids(item)
     return item
 
@@ -958,6 +947,7 @@ def calculate_equipment_summary(equipment: dict[str, Any] | None) -> dict[str, A
         "sp_regen": 0,
         "attributes": {"str": 0, "dex": 0, "con": 0, "int": 0, "wis": 0, "cha": 0},
         "status_immunities": [],
+        "damage_reduction": 0.0,
         "resistance": {},
         "element_resistances": {},
         "llm_effects": [],
@@ -1009,6 +999,11 @@ def calculate_equipment_summary(equipment: dict[str, Any] | None) -> dict[str, A
                     resistances = summary["resistance"]
                     resistances[element] = max(_safe_float(resistances.get(element), 0.0), amount)
                     summary["element_resistances"] = dict(resistances)
+            elif effect_type in {"damage_reduction", "damage_reduce", "all_damage_reduction"}:
+                amount = _effect_reduction_amount(effect)
+                resistances = summary["resistance"]
+                resistances["all"] = max(_safe_float(resistances.get("all"), 0.0), amount)
+                summary["damage_reduction"] = max(_safe_float(summary.get("damage_reduction"), 0.0), amount)
         if isinstance(item.get("llm_effects"), list):
             llm_effects.extend(item.get("llm_effects") or [])
     summary["status_immunities"] = _dedupe_texts(immunities)
@@ -1297,66 +1292,11 @@ def _base_equipment_defense(category: str, rarity: str) -> int:
 
 
 def _equipment_effects(category: str, rarity: str, name: str) -> list[dict[str, Any]]:
-    rarity = normalise_rarity(rarity)
-    count = RARITY_EFFECT_COUNT.get(rarity, 0)
-    if count <= 0:
-        return []
-    rng = _rng("equipment_effects", category, rarity, name)
-    pool = [
-        "max_hp",
-        "max_sp",
-        "str",
-        "dex",
-        "con",
-        "int",
-        "wis",
-        "cha",
-        "hp_regen",
-        "sp_regen",
-        "status_immunity",
-    ]
-    if category not in WEAPON_CATEGORIES:
-        pool.append("element_resistance")
-    selected = rng.sample(pool, k=min(count, len(pool)))
-    power = RARITY_POWER.get(rarity, 1)
-    effects: list[dict[str, Any]] = []
-    for effect_type in selected:
-        if effect_type == "max_hp":
-            effects.append({"type": "max_hp", "value": 5 + power * 3})
-        elif effect_type == "max_sp":
-            effects.append({"type": "max_sp", "value": 4 + power * 2})
-        elif effect_type in {"str", "dex", "con", "int", "wis", "cha"}:
-            effects.append({"type": effect_type, "value": max(1, power // 3)})
-        elif effect_type == "hp_regen":
-            effects.append({"type": "hp_regen", "value": max(1, power // 4)})
-        elif effect_type == "sp_regen":
-            effects.append({"type": "sp_regen", "value": max(1, power // 5)})
-        elif effect_type == "status_immunity":
-            status = rng.choice(list(STATUS_IMMUNITY_EFFECT_IDS))
-            effects.append({"type": "status_immunity", "status": status, "value": 1})
-        elif effect_type == "element_resistance":
-            elements = [element_id for element_id in ELEMENT_IDS if element_id != "none"]
-            element_id = rng.choice(elements)
-            amount = 0.5 if power >= 7 else 0.2
-            effects.append({"type": "element_resistance", "element": element_id, "amount": amount})
-    return effects
+    return build_equipment_effects(category, rarity, name)
 
 
 def _equipment_llm_effects(category: str, rarity: str, name: str) -> list[dict[str, Any]]:
-    rarity = normalise_rarity(rarity)
-    count = RARITY_LLM_EFFECT_COUNT.get(rarity, 0)
-    if count <= 0:
-        return []
-    rng = _rng("equipment_llm_effects", category, rarity, name)
-    pool = [
-        {"name": "古い誓約", "effect": "持ち主の約束や過去の縁を物語に反映しやすい。"},
-        {"name": "精霊の気配", "effect": "自然や精霊に関わる場面で反応や手がかりを増やせる。"},
-        {"name": "威圧の意匠", "effect": "交渉や戦闘前の威圧として描写できる。"},
-        {"name": "守護の銘", "effect": "危険を察した時に警告や守りの演出を出せる。"},
-        {"name": "不吉な残響", "effect": "呪い、亡霊、古戦場に関わる描写で存在感を出せる。"},
-        {"name": "幸運の印", "effect": "偶然の発見や小さな幸運を物語に混ぜられる。"},
-    ]
-    return rng.sample(pool, k=min(count, len(pool)))
+    return build_equipment_llm_effects(category, rarity, name)
 
 
 def _equipment_effect_label(effect: Any, language: str = "ja") -> str:
@@ -1393,6 +1333,11 @@ def _equipment_effect_label(effect: Any, language: str = "ja") -> str:
         if str(language or "").strip().lower().startswith("en"):
             return f"{label} damage reduction {percent}%"
         return f"{label}ダメージ軽減 {percent}%"
+    if effect_type in {"damage_reduction", "damage_reduce", "all_damage_reduction"}:
+        percent = int(round(_effect_reduction_amount(effect) * 100))
+        if str(language or "").strip().lower().startswith("en"):
+            return f"Damage reduction {percent}%"
+        return f"ダメージ軽減 {percent}%"
     label = labels.get(effect_type)
     if not label:
         return ""
@@ -1593,6 +1538,15 @@ def _rng(*parts: object) -> random.Random:
     seed_text = "|".join(str(part) for part in parts)
     seed = int(hashlib.sha256(seed_text.encode("utf-8")).hexdigest()[:16], 16)
     return random.Random(seed)
+
+
+def _effect_reduction_amount(effect: dict[str, Any]) -> float:
+    if "amount" in effect:
+        amount = _safe_float(effect.get("amount"), 0.0)
+        if amount > 0:
+            return max(0.0, min(1.0, amount if amount <= 1.0 else amount / 100.0))
+    value = _safe_float(effect.get("value"), 0.0)
+    return max(0.0, min(1.0, value / 100.0))
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
