@@ -1913,6 +1913,7 @@ class FantasiaApp(tk.Tk):
             (_ui_text(self.config_data, "tutorial_page_maps_title"), _ui_text(self.config_data, "tutorial_page_maps_body")),
             (_ui_text(self.config_data, "tutorial_page_items_title"), _ui_text(self.config_data, "tutorial_page_items_body")),
             (_ui_text(self.config_data, "tutorial_page_quests_title"), _ui_text(self.config_data, "tutorial_page_quests_body")),
+            (_ui_text(self.config_data, "tutorial_page_first_goal_title"), _ui_text(self.config_data, "tutorial_page_first_goal_body")),
         ]
 
     def _open_game_tutorial(self) -> None:
@@ -8861,6 +8862,12 @@ UI_TEXT["en"].update(
             "Combat uses HP, SP, attack, defense, skills, conditions, and NPC behavior. Some enemies may attack, flee, surrender, capture, or negotiate depending on the world and their personality.\n\n"
             "If you are unsure what to do, look around, talk to nearby NPCs, check the map, or return to town."
         ),
+        "tutorial_page_first_goal_title": "What To Do First",
+        "tutorial_page_first_goal_body": (
+            "A good first goal is buying a home. Even an inexpensive 500 Gold home lets you rest for free and recover HP and SP.\n\n"
+            "Early on, buy and equip armor even if its defense is low. A little protection matters before entering dangerous areas.\n\n"
+            "Use crafting whenever you can. Cooking food restores more hunger than eating raw ingredients."
+        )
     }
 )
 UI_TEXT["ja"].update(
@@ -8894,8 +8901,8 @@ UI_TEXT["ja"].update(
         "character_setup_tutorial_title": "キャラクター作成の説明",
         "character_setup_tutorial_body": (
             "名前、性別、出自、外見、年齢を設定します。左側は立ち絵プレビューで、画像生成は任意です。\n\n"
-            "BPは6大ステータスにだけ使います。筋力は力仕事や物理攻撃、器用は道具やクラフト、耐久は打たれ強さ、知力は知識や魔法、判断は観察や意志、魅力は会話や交渉に関わります。\n\n"
-            "スキルと体質は名前のボタンを押して1つずつ編集します。BPは消費しません。\n\n"
+            "BPはステータスの強化に使います。筋力は力仕事や物理攻撃、器用は道具やクラフト、耐久は打たれ強さ、知力は知識や魔法、判断は観察や意志、魅力は会話や交渉に関わります。\n\n"
+            "スキルと体質は名前のボタンを押して1つずつ編集します。\n\n"
             "内容が決まったら右下の「冒険を始める」を押してください。"
         ),
         "tutorial_page_start_title": "まず最初に",
@@ -8922,6 +8929,12 @@ UI_TEXT["ja"].update(
             "戦闘ではHP、SP、攻撃力、防御力、スキル、状態、NPCの性格が関わります。敵は世界観や性格によって、攻撃、逃亡、降伏、捕獲、交渉などを選ぶことがあります。\n\n"
             "迷った時は、周囲を見回す、近くのNPCに話す、マップを確認する、街へ戻る、などを試してください。"
         ),
+        "tutorial_page_first_goal_title": "初めに何をすればいいか",
+        "tutorial_page_first_goal_body": (
+            "まずは家を買うことを目標にしましょう。500Goldの安い家でも、無料で休憩してHPとSPを回復できるようになります。\n\n"
+            "初めのうちは、防御力が低い防具でも購入して装備した方が安全です。危険地帯へ入る前の少しの防御が生存につながります。\n\n"
+            "クラフトも活用しましょう。食料を調理すると、そのまま食べるより多くの満腹度を回復できます。"
+        )
     }
 )
 
