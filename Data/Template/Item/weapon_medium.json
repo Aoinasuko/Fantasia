@@ -22,5 +22,53 @@
     "power": 4,
     "send_llm": "",
     "element": ""
+  },
+  {
+    "id": "weapon_medium_sword_iron",
+    "name": "鉄の剣",
+    "category": "weapon_medium",
+    "level": 10,
+    "value": 50,
+    "desc": "標準的な鉄の片手剣。",
+    "use_effect": "None",
+    "power": 5,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "weapon_medium_hammar_iron",
+    "name": "鉄の戦槌",
+    "category": "weapon_medium",
+    "level": 10,
+    "value": 60,
+    "desc": "鎧越しに衝撃を通す鈍器。",
+    "use_effect": "None",
+    "power": 6,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "weapon_medium_sword_diamond",
+    "name": "金剛石の剣",
+    "category": "weapon_medium",
+    "level": 20,
+    "value": 70,
+    "desc": "標準的な鉄の片手剣。",
+    "use_effect": "None",
+    "power": 7,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "weapon_medium_hammar_diamond",
+    "name": "金剛石の戦槌",
+    "category": "weapon_medium",
+    "level": 20,
+    "value": 80,
+    "desc": "鎧越しに衝撃を通す鈍器。",
+    "use_effect": "None",
+    "power": 8,
+    "send_llm": "",
+    "element": ""
   }
 ]

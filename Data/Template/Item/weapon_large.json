@@ -1,7 +1,7 @@
 [
   {
     "id": "weapon_large_sword_wood",
-    "name": "木の剣",
+    "name": "木の大剣",
     "category": "weapon_medium",
     "level": 0,
     "value": 50,
@@ -20,6 +20,54 @@
     "desc": "破壊力のある木の大型斧。",
     "use_effect": "None",
     "power": 6,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "weapon_large_sword_iron",
+    "name": "鉄の大剣",
+    "category": "weapon_medium",
+    "level": 10,
+    "value": 70,
+    "desc": "両手で振るう重い鉄の剣。",
+    "use_effect": "None",
+    "power": 7,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "weapon_large_battleaxe_iron",
+    "name": "鉄の戦斧",
+    "category": "weapon_large",
+    "level": 10,
+    "value": 80,
+    "desc": "破壊力のある鉄の大型斧。",
+    "use_effect": "None",
+    "power": 8,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "weapon_large_sword_diamond",
+    "name": "金剛石の大剣",
+    "category": "weapon_medium",
+    "level": 20,
+    "value": 80,
+    "desc": "両手で振るう重い金剛石の剣。",
+    "use_effect": "None",
+    "power": 8,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "weapon_large_battleaxe_diamond",
+    "name": "金剛石の戦斧",
+    "category": "weapon_large",
+    "level": 20,
+    "value": 90,
+    "desc": "破壊力のある金剛石の大型斧。",
+    "use_effect": "None",
+    "power": 9,
     "send_llm": "",
     "element": ""
   }

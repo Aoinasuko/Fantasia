@@ -20964,6 +20964,7 @@ def _install_quest_modules() -> None:
             "_apply_quest_encounter_outcome",
             "_initialize_quest_state",
             "_quest_objective_pack",
+            "_quest_objective_entries",
             "_ensure_quest_objective_entities",
             "_quest_objective_npc_design",
             "_create_quest_objective_npc",

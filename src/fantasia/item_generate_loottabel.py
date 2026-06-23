@@ -6,6 +6,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from .item_enchant import ensure_equipment_enchants
 from .items import RARITY_ORDER, generate_reward_item, normalise_item, normalise_rarity
 from .paths import LOOT_TABEL_TEMPLATE_DIR, ROOT
 
@@ -135,7 +136,12 @@ def _item_from_loot_entry(
     item["source"] = source
     item["loot_tabel_id"] = loot_table_id
     item["loot_tabel_context"] = context
-    return normalise_item(item, source=source, fallback_category=category)
+    normalised = normalise_item(item, source=source, fallback_category=category)
+    ensure_equipment_enchants(
+        normalised,
+        seed=f"loot-table|{loot_table_id}|{context}|{danger_level}|{seed}",
+    )
+    return normalised
 
 
 def _bounded_rarity(value: Any, rarity_min: Any, rarity_max: Any, rng: random.Random) -> str:

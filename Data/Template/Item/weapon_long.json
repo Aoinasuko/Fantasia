@@ -1,6 +1,6 @@
 [
   {
-    "id": "weapon_long_spear",
+    "id": "weapon_long_spear_wood",
     "name": "木の槍",
     "category": "weapon_long",
     "level": 0,
@@ -12,7 +12,7 @@
     "element": ""
   },
   {
-    "id": "weapon_long_naginata",
+    "id": "weapon_long_naginata_wood",
     "name": "木の薙刀",
     "category": "weapon_long",
     "level": 0,
@@ -20,6 +20,54 @@
     "desc": "斬撃にも突きにも使える長柄武器。",
     "use_effect": "None",
     "power": 4,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "weapon_long_spear_iron",
+    "name": "鉄の槍",
+    "category": "weapon_long",
+    "level": 0,
+    "value": 50,
+    "desc": "間合いを取って突く長武器。",
+    "use_effect": "None",
+    "power": 5,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "weapon_long_naginata_iron",
+    "name": "鉄の薙刀",
+    "category": "weapon_long",
+    "level": 0,
+    "value": 60,
+    "desc": "斬撃にも突きにも使える長柄武器。",
+    "use_effect": "None",
+    "power": 6,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "weapon_long_spear_diamond",
+    "name": "金剛石の槍",
+    "category": "weapon_long",
+    "level": 0,
+    "value": 60,
+    "desc": "間合いを取って突く長武器。",
+    "use_effect": "None",
+    "power": 6,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "weapon_long_naginata_diamond",
+    "name": "金剛石の薙刀",
+    "category": "weapon_long",
+    "level": 0,
+    "value": 70,
+    "desc": "斬撃にも突きにも使える長柄武器。",
+    "use_effect": "None",
+    "power": 7,
     "send_llm": "",
     "element": ""
   }
