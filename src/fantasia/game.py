@@ -10656,10 +10656,11 @@ class GameEngine:
             "神殿": "temple",
             "寺院": "temple",
             "聖域": "temple",
-            "cave": "mountain",
-            "cavern": "mountain",
-            "caverns": "mountain",
-            "grotto": "mountain",
+            "cave": "cave",
+            "cavern": "cave",
+            "caverns": "cave",
+            "grotto": "cave",
+            "tunnel": "cave",
             "ruins": "ruin",
             "mine": "mountain",
             "mines": "mountain",
@@ -10673,7 +10674,7 @@ class GameEngine:
             "church": "temple",
         }
         value = aliases.get(value, value)
-        if value in {"forest", "mountain", "ruin", "temple"}:
+        if value in {"forest", "mountain", "ruin", "temple", "cave"}:
             return value
         return "dungeon"
 
@@ -10683,6 +10684,7 @@ class GameEngine:
             "mountain": "山道",
             "ruin": "遺跡",
             "temple": "神殿",
+            "cave": "洞窟",
             "dungeon": "ダンジョン",
         }
         label = labels.get(subtype, "ダンジョン")

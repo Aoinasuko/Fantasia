@@ -7,7 +7,8 @@
       "forest",
       "mountain",
       "ruin",
-      "temple"
+      "temple",
+      "cave"
     ],
     "multiple_generating": true,
     "generate_enemy_rate": 0.2,
@@ -26,7 +27,8 @@
       "forest",
       "mountain",
       "ruin",
-      "temple"
+      "temple",
+      "cave"
     ],
     "multiple_generating": true,
     "generate_enemy_rate": 0.15,
@@ -45,7 +47,8 @@
       "forest",
       "mountain",
       "ruin",
-      "temple"
+      "temple",
+      "cave"
     ],
     "multiple_generating": true,
     "generate_enemy_rate": 0.2,
@@ -64,7 +67,8 @@
       "forest",
       "mountain",
       "ruin",
-      "temple"
+      "temple",
+      "cave"
     ],
     "multiple_generating": true,
     "generate_enemy_rate": 0.2,
@@ -83,7 +87,8 @@
       "forest",
       "mountain",
       "ruin",
-      "temple"
+      "temple",
+      "cave"
     ],
     "multiple_generating": true,
     "generate_enemy_rate": 0.45,

@@ -478,7 +478,7 @@ def tool_prompt_instruction() -> str:
         "Use home_purchase only when the player explicitly buys a home through a town hall plan. "
         "Use player_rest only when the player explicitly rests at an inn, their home, or the current area. "
         "Use generate_dungeon only when a definite clue, diary, map, document, rumor, or magical effect reveals an unknown dungeon near the current or adjacent main node; "
-        "arguments may include {\"name\":\"dungeon name\",\"description\":\"short description\",\"dungeon_subtype\":\"forest|mountain|ruin|cave|mine|labyrinth|crypt|lair\",\"anchor_location\":\"current or adjacent location\",\"reason\":\"why it is revealed\"}. "
+        "arguments may include {\"name\":\"dungeon name\",\"description\":\"short description\",\"dungeon_subtype\":\"forest|mountain|ruin|temple|cave|mine|labyrinth|crypt|lair\",\"anchor_location\":\"current or adjacent location\",\"reason\":\"why it is revealed\"}. "
         "Use an empty tool_judgements array when no state changes are needed."
     )
 

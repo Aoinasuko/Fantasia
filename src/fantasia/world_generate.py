@@ -827,7 +827,8 @@ class TemplateWorldGenerator:
         folded = str(text or "").casefold()
         keyword_map = {
             "forest": ("forest", "woods", "grove", "lair", "nest", "den", "森", "樹海", "森林", "巣穴"),
-            "mountain": ("mountain", "mine", "peak", "cave", "cavern", "grotto", "quarry", "山", "鉱山", "坑道", "洞窟", "洞穴"),
+            "mountain": ("mountain", "mine", "peak", "quarry", "山", "鉱山", "坑道"),
+            "cave": ("cave", "cavern", "grotto", "tunnel", "洞窟", "洞穴"),
             "ruin": ("ruin", "ruins", "ancient", "labyrinth", "maze", "crypt", "tomb", "遺跡", "廃墟", "古代", "迷宮", "墓所"),
             "temple": ("temple", "shrine", "sanctuary", "church", "holy", "神殿", "寺院", "聖域", "教会"),
         }

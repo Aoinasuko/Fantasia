@@ -3,7 +3,7 @@ from __future__ import annotations
 # Installed onto GameEngine by game._install_quest_modules().
 # Shared helpers are supplied from game.py at install time to avoid import cycles.
 
-QUEST_TEMPLATE_DUNGEON_SUBTYPES = {"forest", "mountain", "ruin", "temple"}
+QUEST_TEMPLATE_DUNGEON_SUBTYPES = {"forest", "mountain", "ruin", "temple", "cave"}
 
 QUEST_DUNGEON_SUBTYPE_ALIASES = {
     "woods": "forest",
@@ -13,10 +13,11 @@ QUEST_DUNGEON_SUBTYPE_ALIASES = {
     "lair": "forest",
     "den": "forest",
     "nest": "forest",
-    "cave": "mountain",
-    "cavern": "mountain",
-    "caverns": "mountain",
-    "grotto": "mountain",
+    "cave": "cave",
+    "cavern": "cave",
+    "caverns": "cave",
+    "grotto": "cave",
+    "tunnel": "cave",
     "mine": "mountain",
     "mines": "mountain",
     "quarry": "mountain",
@@ -34,8 +35,8 @@ QUEST_DUNGEON_SUBTYPE_ALIASES = {
     "holy_site": "temple",
     "森": "forest",
     "山": "mountain",
-    "洞窟": "mountain",
-    "洞穴": "mountain",
+    "洞窟": "cave",
+    "洞穴": "cave",
     "鉱山": "mountain",
     "坑道": "mountain",
     "遺跡": "ruin",
@@ -224,7 +225,8 @@ def _quest_dungeon_subtype(quest: QuestData, hint: dict[str, Any]) -> str:
     ).casefold()
     checks = (
         ("temple", ("temple", "shrine", "sanctuary", "church", "holy", "神殿", "寺院", "聖域", "教会")),
-        ("mountain", ("mountain", "peak", "ridge", "cliff", "ravine", "cave", "cavern", "grotto", "tunnel", "mine", "mineshaft", "quarry", "ore", "山", "洞窟", "洞穴", "鉱山", "坑道")),
+        ("cave", ("cave", "cavern", "grotto", "tunnel", "洞窟", "洞穴")),
+        ("mountain", ("mountain", "peak", "ridge", "cliff", "ravine", "mine", "mineshaft", "quarry", "ore", "山", "鉱山", "坑道")),
         ("ruin", ("ruin", "ruins", "old fort", "ancient", "labyrinth", "maze", "crypt", "tomb", "grave", "遺跡", "廃墟", "迷宮", "墓所")),
         ("forest", ("forest", "woods", "grove", "swamp", "jungle", "lair", "nest", "den", "森", "樹海", "巣穴")),
     )
@@ -234,7 +236,7 @@ def _quest_dungeon_subtype(quest: QuestData, hint: dict[str, Any]) -> str:
     quest_type = str(quest.extra.get("quest_type") or quest.extra.get("objective_type") or "").strip().lower()
     return {
         "rescue": "ruin",
-        "retrieve": "mountain",
+        "retrieve": "cave",
         "defeat": "forest",
         "delivery": "ruin",
         "investigate": "ruin",
