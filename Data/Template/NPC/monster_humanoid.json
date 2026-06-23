@@ -5,6 +5,7 @@
     "role": "野蛮な蛮族",
     "look": "緑色の肌、とんがりとした耳、短剣を持っている。",
     "personality": "人間を襲い、物資を奪いたいと考えている。",
+    "usenamelist": true,
     "image_prompt": [
       "green skin",
       "goblin",
@@ -58,6 +59,7 @@
     "role": "野蛮な蛮族",
     "look": "緑色の肌、とんがりとした耳、弓を持っている。",
     "personality": "人間を襲い、物資を奪いたいと考えている。",
+    "usenamelist": true,
     "image_prompt": [
       "green skin",
       "goblin",
@@ -118,6 +120,7 @@
     "role": "盗賊",
     "look": "バンダナを被っており、短剣を持っている。",
     "personality": "物資を奪おうと考えている。",
+    "usenamelist": true,
     "gender": "male",
     "age_min": 20,
     "age_max": 40,
@@ -160,6 +163,7 @@
     "role": "小柄な蛮族",
     "look": "緑色の肌と短い槍を持つゴブリン。",
     "personality": "臆病だが数で勝てる相手には強気に出る。",
+    "usenamelist": true,
     "image_prompt": [
       "goblin scout",
       "fantasy RPG monster"
@@ -191,6 +195,7 @@
     "role": "大柄な蛮族",
     "look": "ゴブリンより大きく、粗末な鎧を着ている。",
     "personality": "部下を従え、正面から力で押してくる。",
+    "usenamelist": true,
     "image_prompt": [
       "hobgoblin",
       "fantasy RPG monster"
@@ -222,6 +227,7 @@
     "role": "犬面の小鬼",
     "look": "犬のような顔と小柄な体を持つ亜人。",
     "personality": "罠や奇襲を好み、危なくなると逃げ腰になる。",
+    "usenamelist": true,
     "image_prompt": [
       "kobold",
       "fantasy RPG monster"
@@ -253,6 +259,7 @@
     "role": "力の強い蛮族",
     "look": "牙のある顔と分厚い体を持つ亜人。",
     "personality": "力を誇示し、目の前の敵を叩き潰そうとする。",
+    "usenamelist": true,
     "image_prompt": [
       "orc",
       "fantasy RPG monster"
@@ -284,6 +291,7 @@
     "role": "人間の盗賊",
     "look": "軽装で短剣を隠し持つ人間。",
     "personality": "隙を見て物資を奪い、危険なら逃げる。",
+    "usenamelist": true,
     "image_prompt": [
       "human thief",
       "fantasy RPG enemy"
@@ -328,6 +336,7 @@
     "role": "人間の山賊",
     "look": "粗野な装備と山刀を持つ人間。",
     "personality": "旅人を脅して荷物を奪おうとする。",
+    "usenamelist": true,
     "image_prompt": [
       "human bandit",
       "fantasy RPG enemy"
@@ -396,6 +405,7 @@
     "role": "蜥蜴の亜人",
     "look": "鱗の体と槍を持つ蜥蜴人。",
     "personality": "縄張りを荒らす相手に冷静に槍を向ける。",
+    "usenamelist": true,
     "image_prompt": [
       "lizardman",
       "fantasy RPG monster"
@@ -427,6 +437,7 @@
     "role": "再生力を持つ巨人",
     "look": "大きな腕と厚い皮膚を持つ若いトロル。",
     "personality": "鈍いがしぶとく、傷を恐れず近づいてくる。",
+    "usenamelist": true,
     "image_prompt": [
       "young troll",
       "fantasy RPG monster"
@@ -464,6 +475,7 @@
     "role": "人間の射手",
     "look": "革鎧と弓を持つ人間の戦闘員。",
     "personality": "距離を取りながら矢で牽制する。",
+    "usenamelist": true,
     "image_prompt": [
       "human archer",
       "fantasy RPG enemy"

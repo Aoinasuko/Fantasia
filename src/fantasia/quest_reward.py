@@ -3,11 +3,10 @@ from __future__ import annotations
 import random
 from typing import Any
 
+from .item_generate_loottabel import choose_loot_table_by_tag, generate_loot_table_items, loot_table_by_id
 from .quest_rules import (
     _as_list,
     _clamp_world_danger,
-    _quest_destination_danger,
-    _quest_destination_hint,
     _quest_type,
     _safe_int,
     _strip_response_metadata,
@@ -26,36 +25,25 @@ QUEST_REWARD_TABLE = (
     (50, (2000, 2500), (2000, 3000)),
 )
 
-QUEST_REWARD_ITEM_POOLS_BY_TYPE = {
-    "rescue": ("medicine", "potion", "accessory_amulet", "armor_cloth", "treasure"),
-    "retrieve": ("treasure", "relic", "material_gem", "material_magical", "tool"),
-    "defeat": ("weapon_small", "weapon_medium", "armor_body", "armor_shield", "material_creature", "treasure"),
-    "delivery": ("tool", "document", "scroll", "medicine", "accessory_ring"),
-    "investigate": ("document", "scroll", "magicrod", "relic", "material_magical"),
-    "procure": ("material_common", "material_plant", "material_ore", "material_metal", "material_magical"),
-}
-
-QUEST_REWARD_ITEM_POOLS_BY_DANGER = (
-    (1, ("food", "drink", "medicine", "tool", "document", "material_common", "material_plant")),
-    (10, ("medicine", "potion", "tool", "scroll", "material_ore", "material_metal", "material_creature")),
-    (20, ("potion", "scroll", "material_metal", "material_gem", "weapon_small", "weapon_medium", "armor_body")),
-    (30, ("treasure", "relic", "magicrod", "material_magical", "weapon_large", "weapon_long", "armor_body", "accessory_ring")),
-    (40, ("treasure", "relic", "magicrod", "material_gem", "material_magical", "weapon_range", "armor_shield", "accessory_amulet")),
-    (50, ("relic", "treasure", "magicrod", "material_magical", "material_gem", "accessory_ring", "accessory_amulet")),
-)
-
-
 def _assign_quest_danger(self, quest: QuestData, origin_location: str = "") -> int:
-    hint = _quest_destination_hint(quest)
-    kind = str(hint.get("location_kind") or "").strip().lower()
     origin = str(origin_location or quest.neighboring_settlement or self.state.current_location or self.state.world_data.starting_location)
     base_danger = self._current_location_danger(origin)
-    raw_danger = _quest_destination_danger(hint, kind, base_danger)
+    planned_danger = _safe_int(quest.extra.get("planned_danger_level"), 0)
     danger_cap = _clamp_world_danger(base_danger + 5)
-    quest.extra["danger_level"] = max(1, min(_clamp_world_danger(raw_danger), danger_cap))
+    if planned_danger > 0:
+        danger = max(1, min(_clamp_world_danger(planned_danger), danger_cap))
+        source = str(quest.extra.get("danger_source") or "local_quest_plan")
+    else:
+        low = max(1, _clamp_world_danger(base_danger))
+        high = max(low, danger_cap)
+        rng = random.Random(f"quest-danger:{self.state.world_name}:{quest.name}:{origin}:{base_danger}")
+        danger = rng.randint(low, high)
+        source = "local_quest_generation"
+    quest.extra["danger_level"] = danger
+    quest.extra["planned_danger_level"] = danger
     quest.extra["origin_danger_level"] = base_danger
     quest.extra["danger_cap"] = danger_cap
-    quest.extra["danger_source"] = "local_quest_generation"
+    quest.extra["danger_source"] = source
     return int(quest.extra["danger_level"])
 
 
@@ -78,16 +66,43 @@ def _local_quest_reward(self, quest: QuestData, danger: int) -> dict[str, Any]:
         f"quest-reward:{self.state.world_name}:{self.state.world_data.world_name}:{quest.name}:{danger}:{_quest_type(quest)}"
     )
     gold_range, exp_range = _quest_reward_ranges_for_danger(danger)
-    item_category = _quest_reward_item_category(quest, danger, rng)
-    item = _quest_reward_item(quest, danger, item_category)
+    loot_table = _quest_reward_loot_table(self, quest, danger)
+    loot_table_id = str((loot_table or {}).get("id") or "")
+    items = generate_loot_table_items(
+        loot_table_id,
+        context=quest.name,
+        danger_level=danger,
+        seed=f"{quest.name}:{quest.extra.get('quest_type') or ''}:{danger}:{loot_table_id}",
+        source="quest_reward",
+    )
     return {
         "gold": rng.randint(gold_range[0], gold_range[1]),
         "exp": rng.randint(exp_range[0], exp_range[1]),
-        "items": [item],
-        "item_category": item_category,
+        "items": items,
+        "item_category": loot_table_id,
+        "loot_tabel_id": loot_table_id,
+        "loot_tabel_name_jp": str((loot_table or {}).get("name_jp") or ""),
+        "loot_tabel_name_en": str((loot_table or {}).get("name_en") or ""),
         "danger_level": danger,
         "source": "local_quest_reward",
     }
+
+
+def _quest_reward_loot_table(self, quest: QuestData, danger: int) -> dict[str, Any]:
+    table_id = str(quest.extra.get("reward_loot_table_id") or "").strip()
+    table = loot_table_by_id(table_id) if table_id else None
+    if table is None:
+        table = choose_loot_table_by_tag(
+            "reward",
+            seed=f"quest-reward-table:{self.state.world_name}:{quest.name}:{danger}",
+            context=quest.name,
+            danger_level=danger,
+        )
+        table_id = str((table or {}).get("id") or "")
+    quest.extra["reward_loot_table_id"] = table_id
+    quest.extra["reward_loot_table_name_jp"] = str((table or {}).get("name_jp") or "")
+    quest.extra["reward_loot_table_name_en"] = str((table or {}).get("name_en") or "")
+    return table or {}
 
 
 def _quest_reward_ranges_for_danger(danger: int) -> tuple[tuple[int, int], tuple[int, int]]:
@@ -113,40 +128,6 @@ def _quest_reward_ranges_for_danger(danger: int) -> tuple[tuple[int, int], tuple
 def _interpolate_int(start: int, end: int, ratio: float) -> int:
     return int(round(start + (end - start) * max(0.0, min(1.0, ratio))))
 
-
-def _quest_reward_item_category(quest: QuestData, danger: int, rng: random.Random) -> str:
-    quest_type = _quest_type(quest)
-    type_pool = QUEST_REWARD_ITEM_POOLS_BY_TYPE.get(quest_type, ())
-    danger_pool = QUEST_REWARD_ITEM_POOLS_BY_DANGER[0][1]
-    for threshold, pool in QUEST_REWARD_ITEM_POOLS_BY_DANGER:
-        if danger >= threshold:
-            danger_pool = pool
-    if danger >= 40:
-        high_type_pool = {
-            "rescue": ("relic", "treasure", "accessory_amulet", "material_magical"),
-            "retrieve": ("relic", "treasure", "material_gem", "material_magical"),
-            "defeat": ("weapon_large", "weapon_long", "weapon_range", "armor_body", "armor_shield", "relic", "treasure"),
-            "delivery": ("relic", "treasure", "accessory_ring", "accessory_amulet", "scroll"),
-            "investigate": ("relic", "magicrod", "material_magical", "scroll"),
-            "procure": ("material_gem", "material_magical", "relic", "treasure"),
-        }.get(quest_type, ())
-        pool = list(high_type_pool) + list(danger_pool)
-    else:
-        pool = list(type_pool) + list(danger_pool)
-    return rng.choice(pool or ["treasure"])
-
-
-def _quest_reward_item(quest: QuestData, danger: int, category: str) -> dict[str, Any]:
-    from .items import generate_reward_item
-
-    item = generate_reward_item(
-        category,
-        context=quest.name,
-        danger_level=danger,
-        seed=f"{quest.name}:{quest.extra.get('quest_type') or ''}:{danger}",
-    )
-    item["reward_category"] = category
-    return item
 
 def _grant_quest_reward(self, quest: QuestData) -> dict[str, Any]:
     if quest.flags.get("reward_granted"):

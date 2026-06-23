@@ -1,0 +1,47 @@
+[
+  {
+    "id": "local_ore_vein_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "material_ore", "generate_rate": 0.8, "amount_min": 1, "amount_max": 3, "rarity_max": "rare"},
+      {"target_category": "material_metal", "generate_rate": 0.35, "amount_min": 1, "amount_max": 2, "rarity_max": "rare"}
+    ]
+  },
+  {
+    "id": "local_herb_habitat_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "material_plant", "generate_rate": 0.9, "amount_min": 1, "amount_max": 4, "rarity_max": "rare"},
+      {"target_category": "medicine", "generate_rate": 0.25, "amount_min": 1, "amount_max": 1, "rarity_max": "uncommon"}
+    ]
+  },
+  {
+    "id": "local_underground_stream_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "material_liquid", "generate_rate": 0.8, "amount_min": 1, "amount_max": 3, "rarity_max": "rare"},
+      {"target_category": "drink", "generate_rate": 0.3, "amount_min": 1, "amount_max": 2, "rarity_max": "uncommon"}
+    ]
+  },
+  {
+    "id": "local_abandoned_shed_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "tool", "generate_rate": 0.45, "amount_min": 1, "amount_max": 2, "rarity_max": "uncommon"},
+      {"target_category": "junk", "generate_rate": 0.8, "amount_min": 1, "amount_max": 4, "rarity_max": "uncommon"}
+    ]
+  },
+  {
+    "id": "local_monster_nest_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "material_creature", "generate_rate": 0.75, "amount_min": 1, "amount_max": 3, "rarity_max": "rare"},
+      {"target_category": "junk", "generate_rate": 0.35, "amount_min": 1, "amount_max": 2, "rarity_max": "uncommon"}
+    ]
+  }
+]

@@ -1,16 +1,22 @@
 [
   {
     "id": "dungeon_innermost_treasure",
+    "name_jp": "最奥部のお宝",
+    "name_en": "innermost treasure",
     "lot_min": 3,
     "lot_max": 3,
+    "tag": ["dungeon_innermost"],
     "item_tabel": [
       {"target_category": "treasure", "generate_rate": 1.0, "amount_min": 1, "amount_max": 1, "rarity_min": "rare"}
     ]
   },
   {
     "id": "dungeon_innermost_weapon",
+    "name_jp": "最奥部の武具",
+    "name_en": "innermost weapon",
     "lot_min": 4,
     "lot_max": 4,
+    "tag": ["dungeon_innermost"],
     "item_tabel": [
       {"target_category": "weapon_small", "generate_rate": 1.0, "amount_min": 1, "amount_max": 1, "rarity_min": "rare"},
       {"target_category": "weapon_medium", "generate_rate": 1.0, "amount_min": 1, "amount_max": 1, "rarity_min": "rare"},

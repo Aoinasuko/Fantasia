@@ -1,0 +1,70 @@
+[
+  {
+    "id": "local_ruin_broken_corridor_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "document", "generate_rate": 0.35, "amount_min": 1, "amount_max": 2, "rarity_max": "rare"},
+      {"target_category": "junk", "generate_rate": 0.55, "amount_min": 1, "amount_max": 3, "rarity_max": "uncommon"}
+    ]
+  },
+  {
+    "id": "local_ruin_storage_room_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "treasure", "generate_rate": 0.3, "amount_min": 1, "amount_max": 1, "rarity_max": "rare"},
+      {"target_category": "tool", "generate_rate": 0.45, "amount_min": 1, "amount_max": 2, "rarity_max": "uncommon"}
+    ]
+  },
+  {
+    "id": "local_ruin_guardian_hall_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "material_common", "generate_rate": 0.5, "amount_min": 1, "amount_max": 3, "rarity_max": "rare"},
+      {"target_category": "relic", "generate_rate": 0.2, "amount_min": 1, "amount_max": 1, "rarity_min": "rare"}
+    ]
+  },
+  {
+    "id": "local_ruin_script_wall_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "document", "generate_rate": 0.75, "amount_min": 1, "amount_max": 2, "rarity_max": "rare"},
+      {"target_category": "relic", "generate_rate": 0.25, "amount_min": 1, "amount_max": 1, "rarity_min": "rare"},
+      {"target_category": "material_common", "generate_rate": 0.45, "amount_min": 1, "amount_max": 3, "rarity_max": "uncommon"}
+    ]
+  },
+  {
+    "id": "local_ruin_sunken_courtyard_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "material_plant", "generate_rate": 0.55, "amount_min": 1, "amount_max": 3, "rarity_max": "rare"},
+      {"target_category": "material_liquid", "generate_rate": 0.45, "amount_min": 1, "amount_max": 2, "rarity_max": "uncommon"},
+      {"target_category": "treasure", "generate_rate": 0.2, "amount_min": 1, "amount_max": 1, "rarity_max": "rare"}
+    ]
+  },
+  {
+    "id": "local_ruin_trap_gallery_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "tool", "generate_rate": 0.65, "amount_min": 1, "amount_max": 2, "rarity_max": "rare"},
+      {"target_category": "junk", "generate_rate": 0.55, "amount_min": 1, "amount_max": 3, "rarity_max": "uncommon"},
+      {"target_category": "weapon_small", "generate_rate": 0.2, "amount_min": 1, "amount_max": 1, "rarity_max": "rare"}
+    ]
+  },
+  {
+    "id": "local_ruin_arcane_workbench_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "material_magical", "generate_rate": 0.75, "amount_min": 1, "amount_max": 3, "rarity_max": "rare"},
+      {"target_category": "scroll", "generate_rate": 0.35, "amount_min": 1, "amount_max": 1, "rarity_max": "rare"},
+      {"target_category": "magicrod", "generate_rate": 0.2, "amount_min": 1, "amount_max": 1, "rarity_min": "uncommon", "rarity_max": "epic"},
+      {"target_category": "relic", "generate_rate": 0.15, "amount_min": 1, "amount_max": 1, "rarity_min": "rare"}
+    ]
+  }
+]

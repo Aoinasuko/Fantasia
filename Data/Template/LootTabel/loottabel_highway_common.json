@@ -1,0 +1,22 @@
+[
+  {
+    "id": "local_highway_entrance_loot",
+    "lot_min": 1,
+    "lot_max": 3,
+    "item_tabel": [
+      {"target_category": "material_plant", "generate_rate": 1.0, "amount_min": 1, "amount_max": 2},
+      {"target_category": "material_plant", "generate_rate": 1.0, "amount_min": 1, "amount_max": 2},
+      {"target_category": "material_plant", "generate_rate": 1.0, "amount_min": 1, "amount_max": 2}
+    ]
+  },
+  {
+    "id": "local_coast_entrance_loot",
+    "lot_min": 1,
+    "lot_max": 3,
+    "item_tabel": [
+      {"target_category": "junk", "generate_rate": 1.0, "amount_min": 1, "amount_max": 2},
+      {"target_category": "junk", "generate_rate": 1.0, "amount_min": 1, "amount_max": 2},
+      {"target_category": "junk", "generate_rate": 1.0, "amount_min": 1, "amount_max": 2}
+    ]
+  }
+]

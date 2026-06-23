@@ -53,6 +53,62 @@
     "item_tabel": "local_mountain_old_mine_loot"
   },
   {
+    "id": "mountain_crystal_ledge",
+    "name": "水晶の岩棚",
+    "desc": "白い岩肌から水晶が突き出し、薄暗い山腹に冷たい光を返している岩棚。",
+    "target_type": [
+      "mountain"
+    ],
+    "multiple_generating": false,
+    "generate_enemy_rate": 0.25,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_mountain_crystal_ledge_loot"
+  },
+  {
+    "id": "mountain_snow_pocket",
+    "name": "残雪の窪地",
+    "desc": "日陰に残った雪と氷が風を冷やし、足跡を古いまま閉じ込めている窪地。",
+    "target_type": [
+      "mountain"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.25,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": true,
+    "item_tabel": "local_mountain_snow_pocket_loot"
+  },
+  {
+    "id": "mountain_goat_trail",
+    "name": "山羊道の細尾根",
+    "desc": "獣だけが通れそうな細い尾根道。風に晒された草と骨片が岩陰に残る。",
+    "target_type": [
+      "mountain"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.3,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": true,
+    "item_tabel": "local_mountain_goat_trail_loot"
+  },
+  {
+    "id": "mountain_iron_rift",
+    "name": "鉄脈の裂け目",
+    "desc": "赤黒い鉱脈が露出した裂け目。踏み外せば深く落ちるが、鉱石の気配は濃い。",
+    "target_type": [
+      "mountain"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.35,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": true,
+    "item_tabel": "local_mountain_iron_rift_loot"
+  },
+  {
     "id": "mountain_peak_depth",
     "name": "山奥の大空洞",
     "desc": "山の内側に隠された、冷たい空気が満ちる巨大な空洞。",

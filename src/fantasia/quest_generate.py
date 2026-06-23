@@ -3,6 +3,77 @@ from __future__ import annotations
 # Installed onto GameEngine by game._install_quest_modules().
 # Shared helpers are supplied from game.py at install time to avoid import cycles.
 
+QUEST_PLAN_DUNGEON_SUBTYPES = ("forest", "mountain", "ruin", "cave", "mine", "labyrinth", "crypt", "lair")
+
+QUEST_PLAN_TYPES = ("rescue", "retrieve", "defeat", "delivery", "investigate", "procure")
+
+
+def _quest_generation_plan(
+    self,
+    world: WorldData,
+    settlement_name: str,
+    plan_index: int,
+) -> dict[str, Any]:
+    settlement_danger = self._current_location_danger(settlement_name)
+    low = max(1, _clamp_world_danger(settlement_danger))
+    high = max(low, _clamp_world_danger(settlement_danger + 5))
+    rng = random.Random(f"quest-plan|{world.world_name}|{settlement_name}|{plan_index}|{len(world.quests)}")
+    quest_type = rng.choice(QUEST_PLAN_TYPES)
+    dungeon_subtype = rng.choice(QUEST_PLAN_DUNGEON_SUBTYPES)
+    danger = rng.randint(low, high)
+    reward_table = choose_loot_table_by_tag(
+        "reward",
+        seed=f"quest-reward-plan|{world.world_name}|{settlement_name}|{plan_index}|{quest_type}",
+        context=settlement_name,
+        danger_level=danger,
+    ) or {}
+    rescue_template = {}
+    if quest_type == "rescue":
+        rescue_template = choose_npc_template(
+            FRIENDLY_NPC_TEMPLATE_CATEGORIES,
+            danger_level=danger,
+            used_ids=used_npc_template_ids(world),
+            seed=f"quest-rescue-template|{world.world_name}|{settlement_name}|{plan_index}|{danger}",
+            rescued=True,
+        ) or {}
+    return {
+        "quest_plan_id": f"quest_plan_{plan_index + 1:03d}",
+        "quest_type": quest_type,
+        "danger_level": danger,
+        "dungeon_subtype": dungeon_subtype,
+        "reward_loot_table_id": str(reward_table.get("id") or ""),
+        "reward_loot_table_name_jp": str(reward_table.get("name_jp") or ""),
+        "reward_loot_table_name_en": str(reward_table.get("name_en") or ""),
+        "rescue_target_template_id": str(rescue_template.get("id") or ""),
+        "rescue_target_template_name": str(rescue_template.get("name") or ""),
+        "rescue_target_template_role": str(rescue_template.get("role") or ""),
+    }
+
+
+def _apply_quest_generation_plan(item: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
+    planned = dict(item)
+    destination_hint = planned.get("destination_hint") if isinstance(planned.get("destination_hint"), dict) else {}
+    destination_hint = dict(destination_hint)
+    destination_hint["location_kind"] = str(plan.get("dungeon_subtype") or "dungeon")
+    destination_hint.setdefault("anchor_kind", "")
+    planned["destination_hint"] = destination_hint
+    planned["quest_plan_id"] = str(plan.get("quest_plan_id") or "")
+    planned["quest_type"] = str(plan.get("quest_type") or "retrieve")
+    planned["objective_type"] = planned["quest_type"]
+    planned["danger_level"] = _safe_int(plan.get("danger_level"), 1)
+    planned["planned_danger_level"] = planned["danger_level"]
+    planned["danger_source"] = "local_quest_plan"
+    planned["dungeon_subtype"] = str(plan.get("dungeon_subtype") or "")
+    planned["reward_loot_table_id"] = str(plan.get("reward_loot_table_id") or "")
+    planned["reward_loot_table_name_jp"] = str(plan.get("reward_loot_table_name_jp") or "")
+    planned["reward_loot_table_name_en"] = str(plan.get("reward_loot_table_name_en") or "")
+    if planned["quest_type"] == "rescue" and str(plan.get("rescue_target_template_id") or "").strip():
+        planned["target_npc_template_id"] = str(plan.get("rescue_target_template_id") or "")
+        planned["rescue_target_template_id"] = str(plan.get("rescue_target_template_id") or "")
+        planned["rescue_target_template_name"] = str(plan.get("rescue_target_template_name") or "")
+    planned.pop("reward", None)
+    return planned
+
 def _generate_settlement_quests(
     self,
     player_name: str,
@@ -44,6 +115,10 @@ def _generate_settlement_quests(
         request_min = min(SETTLEMENT_QUEST_BATCH_MIN, requested_count)
         if requested_count < SETTLEMENT_QUEST_BATCH_MIN and collected and len(collected) >= QUEST_BOARD_REGEN_MIN:
             break
+        plans = [
+            _quest_generation_plan(self, world, settlement_name, len(collected) + index)
+            for index in range(requested_count)
+        ]
         messages = [
             {
                 "role": "system",
@@ -57,13 +132,11 @@ def _generate_settlement_quests(
                     "各クエストには quest_type を必ず含め、rescue/retrieve/defeat/delivery/investigate/procure のいずれかにしてください。"
                     "街道をふさぐ魔物や危険生物の排除、討伐、退治、狩猟は必ず quest_type=\"defeat\" です。"
                     "薬や食料など指定品をどこかから調達する依頼だけ quest_type=\"procure\" にしてください。"
-                    "報酬金、経験値、報酬アイテムはゲーム側で決定するため、reward は返さないでください。"
-                    f"この拠点の危険度は {settlement_danger} です。生成する依頼は危険度 {quest_danger_cap} 以下の規模にしてください。"
-                    "街の外れ、近隣の街道、浅い洞窟、近場の小規模な魔物など、その危険度に見合う内容だけにしてください。"
-                    "各クエストには destination_hint を含めてください。"
-                    "destination_hint は location_kind, anchor_kind, objective_subnode_name, objective_description を持つ短いヒントです。"
-                    "destination_hint は目的地そのものではなく、ゲーム側がロケーションとサブノードを確定するための材料です。"
-                    "街道近くの森、洞窟の奥、川辺の遺跡など、目標が存在する地形とサブ地点を具体的にしてください。"
+                    "報酬金、経験値、報酬アイテム、危険度、ダンジョン種別、救出対象NPCテンプレートはゲーム側で決定済みです。"
+                    "reward は返さないでください。"
+                    "quest_plans の quest_plan_id ごとに1件ずつ、名称、概要、objective_subnode_name、objective_description、"
+                    "救出対象NPC名または討伐対象NPC名だけを世界観に合わせて生成してください。"
+                    "quest_type, danger_level, dungeon_subtype, reward_loot_table_id, target_npc_template_id は変更しないでください。"
                 ),
             },
             {
@@ -75,9 +148,10 @@ def _generate_settlement_quests(
                     f"依頼危険度上限: {quest_danger_cap}\n"
                     f"バッチ番号: {batch_index}\n"
                     f"今回の生成件数: {request_min}〜{requested_count}\n"
+                    f"quest_plans: {json.dumps(plans, ensure_ascii=False)}\n"
                     f"既存依頼名: {json.dumps(sorted(seen_names), ensure_ascii=False)}\n"
                     f"世界データ: {world_payload}\n"
-                    "この拠点で自然に発生するクエスト候補を、既存依頼と重複しないように作ってください。"
+                    "この拠点で自然に発生するクエスト候補を、quest_plansの固定値に従い、既存依頼と重複しないように作ってください。"
                 ),
             },
         ]
@@ -86,10 +160,10 @@ def _generate_settlement_quests(
                 "role": "system",
                 "content": (
                     f"NPC template candidates: {npc_template_payload}\n"
-                    "When a template fits a quest objective, include target_npc_template_id in the quest object. "
+                    "When a quest_plan already has rescue_target_template_id, copy it exactly as target_npc_template_id. "
                     "Use enemy_templates for defeat targets and rescue blockers. "
-                    "Use friendly_templates for rescue targets and delivery targets. "
-                    "For destination_hint.location_kind, choose a dungeon subtype: forest, mountain, ruin, cave, mine, labyrinth, crypt, or lair. "
+                    "Use friendly_templates only for non-rescue friendly targets. "
+                    "For destination_hint.location_kind, copy the quest_plan dungeon_subtype exactly. "
                     "Do not use road, plain, coast, river, settlement, or wilderness as the quest objective location kind. "
                     "The game will instantiate that template and let a later LLM pass fill only missing flavor details."
                 ),
@@ -104,9 +178,14 @@ def _generate_settlement_quests(
         )
         batch_records.append(_strip_response_metadata(response))
         added = 0
-        for item in _as_list(response.get("quests") or response.get("settlement_quests") or response.get("story_quests")):
+        raw_items = _as_list(response.get("quests") or response.get("settlement_quests") or response.get("story_quests"))
+        plans_by_id = {str(plan.get("quest_plan_id") or ""): plan for plan in plans}
+        for item_index, item in enumerate(raw_items):
             if not isinstance(item, dict):
                 continue
+            plan = plans_by_id.get(str(item.get("quest_plan_id") or "")) or (plans[item_index] if item_index < len(plans) else {})
+            if plan:
+                item = _apply_quest_generation_plan(item, plan)
             name = str(item.get("name") or item.get("quest_name") or item.get("title") or "").strip()
             if not name or name in seen_names:
                 continue

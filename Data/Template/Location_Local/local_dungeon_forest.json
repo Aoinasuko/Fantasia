@@ -53,6 +53,62 @@
     "item_tabel": "local_forest_beast_clearing_loot"
   },
   {
+    "id": "forest_mushroom_ring",
+    "name": "妖精茸の輪",
+    "desc": "淡く光る茸が輪を描いて生え、踏み入ると空気が少し甘くなる場所。",
+    "target_type": [
+      "forest"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.25,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": true,
+    "item_tabel": "local_forest_mushroom_ring_loot"
+  },
+  {
+    "id": "forest_clear_spring",
+    "name": "木漏れ日の泉",
+    "desc": "枝葉の隙間から射す光が澄んだ水面を照らす、静かな湧き水。",
+    "target_type": [
+      "forest"
+    ],
+    "multiple_generating": false,
+    "generate_enemy_rate": 0.15,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": true,
+    "item_tabel": "local_forest_clear_spring_loot"
+  },
+  {
+    "id": "forest_thorn_thicket",
+    "name": "棘茨の密生地",
+    "desc": "鋭い棘を持つ蔦が絡み合い、獣の骨や古い布切れが引っかかっている藪。",
+    "target_type": [
+      "forest"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.35,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_forest_thorn_thicket_loot"
+  },
+  {
+    "id": "forest_witch_hut",
+    "name": "朽ちた魔女小屋",
+    "desc": "苔むした小屋の残骸に、薬瓶や焦げた護符が散らばっている。",
+    "target_type": [
+      "forest"
+    ],
+    "multiple_generating": false,
+    "generate_enemy_rate": 0.3,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_forest_witch_hut_loot"
+  },
+  {
     "id": "forest_deep_grove",
     "name": "森の最奥部",
     "desc": "古い精気が満ち、森全体の気配が集まる深奥。",

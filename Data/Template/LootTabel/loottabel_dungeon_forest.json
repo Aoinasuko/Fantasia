@@ -1,0 +1,69 @@
+[
+  {
+    "id": "local_forest_moss_path_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "material_plant", "generate_rate": 0.75, "amount_min": 1, "amount_max": 3, "rarity_max": "rare"},
+      {"target_category": "food", "generate_rate": 0.35, "amount_min": 1, "amount_max": 2, "rarity_max": "uncommon"}
+    ]
+  },
+  {
+    "id": "local_forest_old_tree_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "material_plant", "generate_rate": 0.9, "amount_min": 1, "amount_max": 4, "rarity_max": "rare"},
+      {"target_category": "material_magical", "generate_rate": 0.25, "amount_min": 1, "amount_max": 1, "rarity_min": "uncommon", "rarity_max": "epic"}
+    ]
+  },
+  {
+    "id": "local_forest_beast_clearing_loot",
+    "lot_min": 1,
+    "lot_max": 1,
+    "item_tabel": [
+      {"target_category": "material_creature", "generate_rate": 0.7, "amount_min": 1, "amount_max": 3, "rarity_max": "rare"}
+    ]
+  },
+  {
+    "id": "local_forest_mushroom_ring_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "material_plant", "generate_rate": 0.85, "amount_min": 1, "amount_max": 4, "rarity_max": "rare"},
+      {"target_category": "food", "generate_rate": 0.45, "amount_min": 1, "amount_max": 2, "rarity_max": "uncommon"},
+      {"target_category": "material_magical", "generate_rate": 0.25, "amount_min": 1, "amount_max": 1, "rarity_min": "uncommon", "rarity_max": "epic"}
+    ]
+  },
+  {
+    "id": "local_forest_clear_spring_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "material_liquid", "generate_rate": 0.85, "amount_min": 1, "amount_max": 3, "rarity_max": "rare"},
+      {"target_category": "drink", "generate_rate": 0.45, "amount_min": 1, "amount_max": 2, "rarity_max": "uncommon"},
+      {"target_category": "medicine", "generate_rate": 0.25, "amount_min": 1, "amount_max": 1, "rarity_max": "rare"}
+    ]
+  },
+  {
+    "id": "local_forest_thorn_thicket_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "material_plant", "generate_rate": 0.8, "amount_min": 1, "amount_max": 4, "rarity_max": "rare"},
+      {"target_category": "material_creature", "generate_rate": 0.35, "amount_min": 1, "amount_max": 2, "rarity_max": "rare"},
+      {"target_category": "medicine", "generate_rate": 0.2, "amount_min": 1, "amount_max": 1, "rarity_max": "uncommon"}
+    ]
+  },
+  {
+    "id": "local_forest_witch_hut_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "potion", "generate_rate": 0.45, "amount_min": 1, "amount_max": 2, "rarity_max": "rare"},
+      {"target_category": "scroll", "generate_rate": 0.35, "amount_min": 1, "amount_max": 1, "rarity_max": "rare"},
+      {"target_category": "material_magical", "generate_rate": 0.55, "amount_min": 1, "amount_max": 3, "rarity_max": "rare"},
+      {"target_category": "junk", "generate_rate": 0.45, "amount_min": 1, "amount_max": 3, "rarity_max": "uncommon"}
+    ]
+  }
+]

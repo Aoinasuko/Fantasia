@@ -72,6 +72,36 @@ def loot_table_ids() -> set[str]:
     return set(LOOT_TABELS_BY_ID)
 
 
+def loot_table_by_id(table_id: Any) -> dict[str, Any] | None:
+    table = LOOT_TABELS_BY_ID.get(str(table_id or "").strip())
+    return deepcopy(table) if table else None
+
+
+def loot_tables_with_tag(tag: Any) -> list[dict[str, Any]]:
+    tag_text = str(tag or "").strip()
+    if not tag_text:
+        return []
+    return [
+        deepcopy(table)
+        for table in LOOT_TABELS_BY_ID.values()
+        if tag_text in _tag_list(table.get("tag"))
+    ]
+
+
+def choose_loot_table_by_tag(
+    tag: Any,
+    *,
+    seed: str = "",
+    context: str = "",
+    danger_level: int = 0,
+) -> dict[str, Any] | None:
+    tables = loot_tables_with_tag(tag)
+    if not tables:
+        return None
+    rng = random.Random(f"loot-tabel-tag|{tag}|{context}|{danger_level}|{seed}")
+    return deepcopy(rng.choice(tables))
+
+
 def _item_from_loot_entry(
     entry: dict[str, Any],
     *,
@@ -142,6 +172,9 @@ def _load_loot_tabels() -> dict[str, dict[str, Any]]:
                 loaded[table_id] = {
                     **deepcopy(raw),
                     "source_path": str(path),
+                    "tag": _tag_list(raw.get("tag")),
+                    "name_jp": str(raw.get("name_jp") or raw.get("name_ja") or "").strip(),
+                    "name_en": str(raw.get("name_en") or raw.get("english_en") or "").strip(),
                     "lot_min": max(0, _safe_int(raw.get("lot_min"), 1)),
                     "lot_max": max(0, _safe_int(raw.get("lot_max"), _safe_int(raw.get("lot_min"), 1))),
                 }
@@ -181,6 +214,10 @@ def _as_list(value: Any) -> list[Any]:
     if isinstance(value, tuple):
         return list(value)
     return [value]
+
+
+def _tag_list(value: Any) -> list[str]:
+    return [str(item).strip() for item in _as_list(value) if str(item).strip()]
 
 
 def _safe_int(value: Any, fallback: int = 0) -> int:

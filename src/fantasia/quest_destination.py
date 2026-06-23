@@ -332,9 +332,9 @@ def _create_quest_dungeon_location(self, quest: QuestData, hint: dict[str, Any],
     explicit_name = str(hint.get("location") or hint.get("destination_location") or "").strip()
     base_name = explicit_name or _quest_destination_name(quest, {**hint, "location_kind": subtype or "dungeon"}, origin, branch_anchor)
     location_name = _unique_world_location_name(world, base_name)
-    anchor_node = self._location_graph_for_update(world).get("nodes", {}).get(branch_anchor, {})
-    anchor_danger = _safe_int(anchor_node.get("danger") if isinstance(anchor_node, dict) else 0, self._current_location_danger(branch_anchor))
-    danger = max(anchor_danger + 1, _quest_destination_danger(hint, kind, anchor_danger))
+    danger = _safe_int(quest.extra.get("danger_level") or quest.extra.get("planned_danger_level"), 0)
+    if danger <= 0:
+        danger = self._assign_quest_danger(quest, quest.neighboring_settlement or origin)
     description = str(hint.get("description") or hint.get("objective_subnode_description") or "").strip()
     if not description:
         description = f"依頼「{quest.name}」の目的地となる探索地。"

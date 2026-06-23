@@ -7782,7 +7782,7 @@ def _default_player_items() -> list[dict[str, object]]:
 
 
 def _default_loot_items(location_name: str) -> list[dict[str, object]]:
-    return generate_loot_table_items("local_default_loot", context=location_name, source="default_loot")
+    return []
 
 
 def _default_vendor_items(owner_name: str) -> list[dict[str, object]]:

@@ -53,6 +53,62 @@
     "item_tabel": "local_ruin_guardian_hall_loot"
   },
   {
+    "id": "ruin_script_wall",
+    "name": "碑文の壁面",
+    "desc": "崩れた壁に古い文字列が刻まれ、剥がれた石片が床を埋めている。",
+    "target_type": [
+      "ruin"
+    ],
+    "multiple_generating": false,
+    "generate_enemy_rate": 0.2,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_ruin_script_wall_loot"
+  },
+  {
+    "id": "ruin_sunken_courtyard",
+    "name": "沈んだ中庭",
+    "desc": "雨水と泥に沈んだ中庭。割れた敷石の間から草と古い装飾片が覗く。",
+    "target_type": [
+      "ruin"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.25,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": true,
+    "item_tabel": "local_ruin_sunken_courtyard_loot"
+  },
+  {
+    "id": "ruin_trap_gallery",
+    "name": "罠仕掛けの回廊",
+    "desc": "床板や壁穴に古い仕掛けが残り、壊れた矢や道具が散らばる回廊。",
+    "target_type": [
+      "ruin"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.35,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_ruin_trap_gallery_loot"
+  },
+  {
+    "id": "ruin_arcane_workbench",
+    "name": "魔導工房跡",
+    "desc": "焦げた作業台と割れた器具が残る部屋。魔力を帯びた粉塵がまだ漂っている。",
+    "target_type": [
+      "ruin"
+    ],
+    "multiple_generating": false,
+    "generate_enemy_rate": 0.3,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_ruin_arcane_workbench_loot"
+  },
+  {
     "id": "ruin_core_chamber",
     "name": "遺跡の中枢",
     "desc": "古代の装置や祭壇が残る、遺跡の中心部。",

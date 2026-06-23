@@ -53,6 +53,62 @@
     "item_tabel": "local_temple_cursed_altar_loot"
   },
   {
+    "id": "temple_purification_font",
+    "name": "清めの水盤",
+    "desc": "割れた水盤に澄んだ水が溜まり、触れると微かな祈りの残響が広がる。",
+    "target_type": [
+      "temple"
+    ],
+    "multiple_generating": false,
+    "generate_enemy_rate": 0.15,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": true,
+    "item_tabel": "local_temple_purification_font_loot"
+  },
+  {
+    "id": "temple_offering_vault",
+    "name": "奉納品庫",
+    "desc": "錆びた飾り扉の奥に、信徒が捧げた品々の残骸が眠っている小部屋。",
+    "target_type": [
+      "temple"
+    ],
+    "multiple_generating": false,
+    "generate_enemy_rate": 0.25,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_temple_offering_vault_loot"
+  },
+  {
+    "id": "temple_incense_cloister",
+    "name": "香煙の回廊",
+    "desc": "古い香炉が並ぶ回廊。冷えた灰の下から、まだ香りを残す薬草が見つかる。",
+    "target_type": [
+      "temple"
+    ],
+    "multiple_generating": true,
+    "generate_enemy_rate": 0.25,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": true,
+    "item_tabel": "local_temple_incense_cloister_loot"
+  },
+  {
+    "id": "temple_oracle_mirror",
+    "name": "神託鏡の間",
+    "desc": "曇った鏡が壁一面に掛けられ、割れた鏡片が淡い魔力を反射している。",
+    "target_type": [
+      "temple"
+    ],
+    "multiple_generating": false,
+    "generate_enemy_rate": 0.35,
+    "random_generate": true,
+    "item_generate": true,
+    "item_regenerate": false,
+    "item_tabel": "local_temple_oracle_mirror_loot"
+  },
+  {
     "id": "temple_inner_sanctum",
     "name": "神殿の最奥聖域",
     "desc": "神殿の力が一点に集まる、閉ざされた最奥の聖域。",

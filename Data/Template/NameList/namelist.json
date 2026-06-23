@@ -1,0 +1,2502 @@
+[
+  {
+    "id": "fantasy_001",
+    "name_ja": "アリシア",
+    "english_en": "Alicia"
+  },
+  {
+    "id": "fantasy_002",
+    "name_ja": "エリオット",
+    "english_en": "Elliot"
+  },
+  {
+    "id": "fantasy_003",
+    "name_ja": "セレス",
+    "english_en": "Celes"
+  },
+  {
+    "id": "fantasy_004",
+    "name_ja": "ルーカス",
+    "english_en": "Lucas"
+  },
+  {
+    "id": "fantasy_005",
+    "name_ja": "ミレイユ",
+    "english_en": "Mireille"
+  },
+  {
+    "id": "fantasy_006",
+    "name_ja": "ノア",
+    "english_en": "Noah"
+  },
+  {
+    "id": "fantasy_007",
+    "name_ja": "フィオナ",
+    "english_en": "Fiona"
+  },
+  {
+    "id": "fantasy_008",
+    "name_ja": "オーウェン",
+    "english_en": "Owen"
+  },
+  {
+    "id": "fantasy_009",
+    "name_ja": "リディア",
+    "english_en": "Lydia"
+  },
+  {
+    "id": "fantasy_010",
+    "name_ja": "カイル",
+    "english_en": "Kyle"
+  },
+  {
+    "id": "fantasy_011",
+    "name_ja": "イリス",
+    "english_en": "Iris"
+  },
+  {
+    "id": "fantasy_012",
+    "name_ja": "レオン",
+    "english_en": "Leon"
+  },
+  {
+    "id": "fantasy_013",
+    "name_ja": "マリベル",
+    "english_en": "Maribel"
+  },
+  {
+    "id": "fantasy_014",
+    "name_ja": "シリル",
+    "english_en": "Cyril"
+  },
+  {
+    "id": "fantasy_015",
+    "name_ja": "エステル",
+    "english_en": "Estelle"
+  },
+  {
+    "id": "fantasy_016",
+    "name_ja": "ガレス",
+    "english_en": "Gareth"
+  },
+  {
+    "id": "fantasy_017",
+    "name_ja": "ユリアナ",
+    "english_en": "Juliana"
+  },
+  {
+    "id": "fantasy_018",
+    "name_ja": "アルヴァン",
+    "english_en": "Alvan"
+  },
+  {
+    "id": "fantasy_019",
+    "name_ja": "ロザリア",
+    "english_en": "Rosalia"
+  },
+  {
+    "id": "fantasy_020",
+    "name_ja": "セドリック",
+    "english_en": "Cedric"
+  },
+  {
+    "id": "fantasy_021",
+    "name_ja": "ティアナ",
+    "english_en": "Tiana"
+  },
+  {
+    "id": "fantasy_022",
+    "name_ja": "ラウル",
+    "english_en": "Raoul"
+  },
+  {
+    "id": "fantasy_023",
+    "name_ja": "メルヴィ",
+    "english_en": "Melvie"
+  },
+  {
+    "id": "fantasy_024",
+    "name_ja": "オルフェ",
+    "english_en": "Orphe"
+  },
+  {
+    "id": "fantasy_025",
+    "name_ja": "サフィラ",
+    "english_en": "Saphira"
+  },
+  {
+    "id": "fantasy_026",
+    "name_ja": "グレン",
+    "english_en": "Glenn"
+  },
+  {
+    "id": "fantasy_027",
+    "name_ja": "リュシエン",
+    "english_en": "Lucien"
+  },
+  {
+    "id": "fantasy_028",
+    "name_ja": "エルナ",
+    "english_en": "Elna"
+  },
+  {
+    "id": "fantasy_029",
+    "name_ja": "ヴァレリオ",
+    "english_en": "Valerio"
+  },
+  {
+    "id": "fantasy_030",
+    "name_ja": "モモナ",
+    "english_en": "Momona"
+  },
+  {
+    "id": "fantasy_031",
+    "name_ja": "エイルイア",
+    "english_en": "Aelia"
+  },
+  {
+    "id": "fantasy_032",
+    "name_ja": "エイルイオン",
+    "english_en": "Aelion"
+  },
+  {
+    "id": "fantasy_033",
+    "name_ja": "エイルエラ",
+    "english_en": "Aelella"
+  },
+  {
+    "id": "fantasy_034",
+    "name_ja": "エイルアラン",
+    "english_en": "Aelaran"
+  },
+  {
+    "id": "fantasy_035",
+    "name_ja": "エイルエス",
+    "english_en": "Aeleth"
+  },
+  {
+    "id": "fantasy_036",
+    "name_ja": "エイルオリス",
+    "english_en": "Aeloris"
+  },
+  {
+    "id": "fantasy_037",
+    "name_ja": "エイルウィン",
+    "english_en": "Aelwyn"
+  },
+  {
+    "id": "fantasy_038",
+    "name_ja": "エイルアステ",
+    "english_en": "Aelaste"
+  },
+  {
+    "id": "fantasy_039",
+    "name_ja": "エイルモラ",
+    "english_en": "Aelmora"
+  },
+  {
+    "id": "fantasy_040",
+    "name_ja": "エイルサール",
+    "english_en": "Aelthal"
+  },
+  {
+    "id": "fantasy_041",
+    "name_ja": "ベルイア",
+    "english_en": "Belia"
+  },
+  {
+    "id": "fantasy_042",
+    "name_ja": "ベルイオン",
+    "english_en": "Belion"
+  },
+  {
+    "id": "fantasy_043",
+    "name_ja": "ベルエラ",
+    "english_en": "Belella"
+  },
+  {
+    "id": "fantasy_044",
+    "name_ja": "ベルアラン",
+    "english_en": "Belaran"
+  },
+  {
+    "id": "fantasy_045",
+    "name_ja": "ベルエス",
+    "english_en": "Beleth"
+  },
+  {
+    "id": "fantasy_046",
+    "name_ja": "ベルオリス",
+    "english_en": "Beloris"
+  },
+  {
+    "id": "fantasy_047",
+    "name_ja": "ベルウィン",
+    "english_en": "Belwyn"
+  },
+  {
+    "id": "fantasy_048",
+    "name_ja": "ベルアステ",
+    "english_en": "Belaste"
+  },
+  {
+    "id": "fantasy_049",
+    "name_ja": "ベルモラ",
+    "english_en": "Belmora"
+  },
+  {
+    "id": "fantasy_050",
+    "name_ja": "ベルサール",
+    "english_en": "Belthal"
+  },
+  {
+    "id": "fantasy_051",
+    "name_ja": "ケイルイア",
+    "english_en": "Caelia"
+  },
+  {
+    "id": "fantasy_052",
+    "name_ja": "ケイルイオン",
+    "english_en": "Caelion"
+  },
+  {
+    "id": "fantasy_053",
+    "name_ja": "ケイルエラ",
+    "english_en": "Caelella"
+  },
+  {
+    "id": "fantasy_054",
+    "name_ja": "ケイルアラン",
+    "english_en": "Caelaran"
+  },
+  {
+    "id": "fantasy_055",
+    "name_ja": "ケイルエス",
+    "english_en": "Caeleth"
+  },
+  {
+    "id": "fantasy_056",
+    "name_ja": "ケイルオリス",
+    "english_en": "Caeloris"
+  },
+  {
+    "id": "fantasy_057",
+    "name_ja": "ケイルウィン",
+    "english_en": "Caelwyn"
+  },
+  {
+    "id": "fantasy_058",
+    "name_ja": "ケイルアステ",
+    "english_en": "Caelaste"
+  },
+  {
+    "id": "fantasy_059",
+    "name_ja": "ケイルモラ",
+    "english_en": "Caelmora"
+  },
+  {
+    "id": "fantasy_060",
+    "name_ja": "ケイルサール",
+    "english_en": "Caelthal"
+  },
+  {
+    "id": "fantasy_061",
+    "name_ja": "ダルイア",
+    "english_en": "Daria"
+  },
+  {
+    "id": "fantasy_062",
+    "name_ja": "ダルイオン",
+    "english_en": "Darion"
+  },
+  {
+    "id": "fantasy_063",
+    "name_ja": "ダルエラ",
+    "english_en": "Darella"
+  },
+  {
+    "id": "fantasy_064",
+    "name_ja": "ダルアラン",
+    "english_en": "Dararan"
+  },
+  {
+    "id": "fantasy_065",
+    "name_ja": "ダルエス",
+    "english_en": "Dareth"
+  },
+  {
+    "id": "fantasy_066",
+    "name_ja": "ダルオリス",
+    "english_en": "Daroris"
+  },
+  {
+    "id": "fantasy_067",
+    "name_ja": "ダルウィン",
+    "english_en": "Darwyn"
+  },
+  {
+    "id": "fantasy_068",
+    "name_ja": "ダルアステ",
+    "english_en": "Daraste"
+  },
+  {
+    "id": "fantasy_069",
+    "name_ja": "ダルモラ",
+    "english_en": "Darmora"
+  },
+  {
+    "id": "fantasy_070",
+    "name_ja": "ダルサール",
+    "english_en": "Darthal"
+  },
+  {
+    "id": "fantasy_071",
+    "name_ja": "エルイア",
+    "english_en": "Elia"
+  },
+  {
+    "id": "fantasy_072",
+    "name_ja": "エルイオン",
+    "english_en": "Elion"
+  },
+  {
+    "id": "fantasy_073",
+    "name_ja": "エルエラ",
+    "english_en": "Elella"
+  },
+  {
+    "id": "fantasy_074",
+    "name_ja": "エルアラン",
+    "english_en": "Elaran"
+  },
+  {
+    "id": "fantasy_075",
+    "name_ja": "エルエス",
+    "english_en": "Eleth"
+  },
+  {
+    "id": "fantasy_076",
+    "name_ja": "エルオリス",
+    "english_en": "Eloris"
+  },
+  {
+    "id": "fantasy_077",
+    "name_ja": "エルウィン",
+    "english_en": "Elwyn"
+  },
+  {
+    "id": "fantasy_078",
+    "name_ja": "エルアステ",
+    "english_en": "Elaste"
+  },
+  {
+    "id": "fantasy_079",
+    "name_ja": "エルモラ",
+    "english_en": "Elmora"
+  },
+  {
+    "id": "fantasy_080",
+    "name_ja": "エルサール",
+    "english_en": "Elthal"
+  },
+  {
+    "id": "fantasy_081",
+    "name_ja": "フェイルイア",
+    "english_en": "Faelia"
+  },
+  {
+    "id": "fantasy_082",
+    "name_ja": "フェイルイオン",
+    "english_en": "Faelion"
+  },
+  {
+    "id": "fantasy_083",
+    "name_ja": "フェイルエラ",
+    "english_en": "Faelella"
+  },
+  {
+    "id": "fantasy_084",
+    "name_ja": "フェイルアラン",
+    "english_en": "Faelaran"
+  },
+  {
+    "id": "fantasy_085",
+    "name_ja": "フェイルエス",
+    "english_en": "Faeleth"
+  },
+  {
+    "id": "fantasy_086",
+    "name_ja": "フェイルオリス",
+    "english_en": "Faeloris"
+  },
+  {
+    "id": "fantasy_087",
+    "name_ja": "フェイルウィン",
+    "english_en": "Faelwyn"
+  },
+  {
+    "id": "fantasy_088",
+    "name_ja": "フェイルアステ",
+    "english_en": "Faelaste"
+  },
+  {
+    "id": "fantasy_089",
+    "name_ja": "フェイルモラ",
+    "english_en": "Faelmora"
+  },
+  {
+    "id": "fantasy_090",
+    "name_ja": "フェイルサール",
+    "english_en": "Faelthal"
+  },
+  {
+    "id": "fantasy_091",
+    "name_ja": "ガルイア",
+    "english_en": "Galia"
+  },
+  {
+    "id": "fantasy_092",
+    "name_ja": "ガルイオン",
+    "english_en": "Galion"
+  },
+  {
+    "id": "fantasy_093",
+    "name_ja": "ガルエラ",
+    "english_en": "Galella"
+  },
+  {
+    "id": "fantasy_094",
+    "name_ja": "ガルアラン",
+    "english_en": "Galaran"
+  },
+  {
+    "id": "fantasy_095",
+    "name_ja": "ガルエス",
+    "english_en": "Galeth"
+  },
+  {
+    "id": "fantasy_096",
+    "name_ja": "ガルオリス",
+    "english_en": "Galoris"
+  },
+  {
+    "id": "fantasy_097",
+    "name_ja": "ガルウィン",
+    "english_en": "Galwyn"
+  },
+  {
+    "id": "fantasy_098",
+    "name_ja": "ガルアステ",
+    "english_en": "Galaste"
+  },
+  {
+    "id": "fantasy_099",
+    "name_ja": "ガルモラ",
+    "english_en": "Galmora"
+  },
+  {
+    "id": "fantasy_100",
+    "name_ja": "ガルサール",
+    "english_en": "Galthal"
+  },
+  {
+    "id": "fantasy_101",
+    "name_ja": "ハルイア",
+    "english_en": "Halia"
+  },
+  {
+    "id": "fantasy_102",
+    "name_ja": "ハルイオン",
+    "english_en": "Halion"
+  },
+  {
+    "id": "fantasy_103",
+    "name_ja": "ハルエラ",
+    "english_en": "Halella"
+  },
+  {
+    "id": "fantasy_104",
+    "name_ja": "ハルアラン",
+    "english_en": "Halaran"
+  },
+  {
+    "id": "fantasy_105",
+    "name_ja": "ハルエス",
+    "english_en": "Haleth"
+  },
+  {
+    "id": "fantasy_106",
+    "name_ja": "ハルオリス",
+    "english_en": "Haloris"
+  },
+  {
+    "id": "fantasy_107",
+    "name_ja": "ハルウィン",
+    "english_en": "Halwyn"
+  },
+  {
+    "id": "fantasy_108",
+    "name_ja": "ハルアステ",
+    "english_en": "Halaste"
+  },
+  {
+    "id": "fantasy_109",
+    "name_ja": "ハルモラ",
+    "english_en": "Halmora"
+  },
+  {
+    "id": "fantasy_110",
+    "name_ja": "ハルサール",
+    "english_en": "Halthal"
+  },
+  {
+    "id": "fantasy_111",
+    "name_ja": "イースイア",
+    "english_en": "Isia"
+  },
+  {
+    "id": "fantasy_112",
+    "name_ja": "イースイオン",
+    "english_en": "Ision"
+  },
+  {
+    "id": "fantasy_113",
+    "name_ja": "イースエラ",
+    "english_en": "Isella"
+  },
+  {
+    "id": "fantasy_114",
+    "name_ja": "イースアラン",
+    "english_en": "Isaran"
+  },
+  {
+    "id": "fantasy_115",
+    "name_ja": "イースエス",
+    "english_en": "Iseth"
+  },
+  {
+    "id": "fantasy_116",
+    "name_ja": "イースオリス",
+    "english_en": "Isoris"
+  },
+  {
+    "id": "fantasy_117",
+    "name_ja": "イースウィン",
+    "english_en": "Iswyn"
+  },
+  {
+    "id": "fantasy_118",
+    "name_ja": "イースアステ",
+    "english_en": "Isaste"
+  },
+  {
+    "id": "fantasy_119",
+    "name_ja": "イースモラ",
+    "english_en": "Ismora"
+  },
+  {
+    "id": "fantasy_120",
+    "name_ja": "イースサール",
+    "english_en": "Isthal"
+  },
+  {
+    "id": "fantasy_121",
+    "name_ja": "ジョルイア",
+    "english_en": "Joria"
+  },
+  {
+    "id": "fantasy_122",
+    "name_ja": "ジョルイオン",
+    "english_en": "Jorion"
+  },
+  {
+    "id": "fantasy_123",
+    "name_ja": "ジョルエラ",
+    "english_en": "Jorella"
+  },
+  {
+    "id": "fantasy_124",
+    "name_ja": "ジョルアラン",
+    "english_en": "Joraran"
+  },
+  {
+    "id": "fantasy_125",
+    "name_ja": "ジョルエス",
+    "english_en": "Joreth"
+  },
+  {
+    "id": "fantasy_126",
+    "name_ja": "ジョルオリス",
+    "english_en": "Jororis"
+  },
+  {
+    "id": "fantasy_127",
+    "name_ja": "ジョルウィン",
+    "english_en": "Jorwyn"
+  },
+  {
+    "id": "fantasy_128",
+    "name_ja": "ジョルアステ",
+    "english_en": "Joraste"
+  },
+  {
+    "id": "fantasy_129",
+    "name_ja": "ジョルモラ",
+    "english_en": "Jormora"
+  },
+  {
+    "id": "fantasy_130",
+    "name_ja": "ジョルサール",
+    "english_en": "Jorthal"
+  },
+  {
+    "id": "fantasy_131",
+    "name_ja": "カイルイア",
+    "english_en": "Kaelia"
+  },
+  {
+    "id": "fantasy_132",
+    "name_ja": "カイルイオン",
+    "english_en": "Kaelion"
+  },
+  {
+    "id": "fantasy_133",
+    "name_ja": "カイルエラ",
+    "english_en": "Kaelella"
+  },
+  {
+    "id": "fantasy_134",
+    "name_ja": "カイルアラン",
+    "english_en": "Kaelaran"
+  },
+  {
+    "id": "fantasy_135",
+    "name_ja": "カイルエス",
+    "english_en": "Kaeleth"
+  },
+  {
+    "id": "fantasy_136",
+    "name_ja": "カイルオリス",
+    "english_en": "Kaeloris"
+  },
+  {
+    "id": "fantasy_137",
+    "name_ja": "カイルウィン",
+    "english_en": "Kaelwyn"
+  },
+  {
+    "id": "fantasy_138",
+    "name_ja": "カイルアステ",
+    "english_en": "Kaelaste"
+  },
+  {
+    "id": "fantasy_139",
+    "name_ja": "カイルモラ",
+    "english_en": "Kaelmora"
+  },
+  {
+    "id": "fantasy_140",
+    "name_ja": "カイルサール",
+    "english_en": "Kaelthal"
+  },
+  {
+    "id": "fantasy_141",
+    "name_ja": "リルイア",
+    "english_en": "Lyria"
+  },
+  {
+    "id": "fantasy_142",
+    "name_ja": "リルイオン",
+    "english_en": "Lyrion"
+  },
+  {
+    "id": "fantasy_143",
+    "name_ja": "リルエラ",
+    "english_en": "Lyrella"
+  },
+  {
+    "id": "fantasy_144",
+    "name_ja": "リルアラン",
+    "english_en": "Lyraran"
+  },
+  {
+    "id": "fantasy_145",
+    "name_ja": "リルエス",
+    "english_en": "Lyreth"
+  },
+  {
+    "id": "fantasy_146",
+    "name_ja": "リルオリス",
+    "english_en": "Lyroris"
+  },
+  {
+    "id": "fantasy_147",
+    "name_ja": "リルウィン",
+    "english_en": "Lyrwyn"
+  },
+  {
+    "id": "fantasy_148",
+    "name_ja": "リルアステ",
+    "english_en": "Lyraste"
+  },
+  {
+    "id": "fantasy_149",
+    "name_ja": "リルモラ",
+    "english_en": "Lyrmora"
+  },
+  {
+    "id": "fantasy_150",
+    "name_ja": "リルサール",
+    "english_en": "Lyrthal"
+  },
+  {
+    "id": "fantasy_151",
+    "name_ja": "メイルイア",
+    "english_en": "Maelia"
+  },
+  {
+    "id": "fantasy_152",
+    "name_ja": "メイルイオン",
+    "english_en": "Maelion"
+  },
+  {
+    "id": "fantasy_153",
+    "name_ja": "メイルエラ",
+    "english_en": "Maelella"
+  },
+  {
+    "id": "fantasy_154",
+    "name_ja": "メイルアラン",
+    "english_en": "Maelaran"
+  },
+  {
+    "id": "fantasy_155",
+    "name_ja": "メイルエス",
+    "english_en": "Maeleth"
+  },
+  {
+    "id": "fantasy_156",
+    "name_ja": "メイルオリス",
+    "english_en": "Maeloris"
+  },
+  {
+    "id": "fantasy_157",
+    "name_ja": "メイルウィン",
+    "english_en": "Maelwyn"
+  },
+  {
+    "id": "fantasy_158",
+    "name_ja": "メイルアステ",
+    "english_en": "Maelaste"
+  },
+  {
+    "id": "fantasy_159",
+    "name_ja": "メイルモラ",
+    "english_en": "Maelmora"
+  },
+  {
+    "id": "fantasy_160",
+    "name_ja": "メイルサール",
+    "english_en": "Maelthal"
+  },
+  {
+    "id": "fantasy_161",
+    "name_ja": "ニルイア",
+    "english_en": "Nyria"
+  },
+  {
+    "id": "fantasy_162",
+    "name_ja": "ニルイオン",
+    "english_en": "Nyrion"
+  },
+  {
+    "id": "fantasy_163",
+    "name_ja": "ニルエラ",
+    "english_en": "Nyrella"
+  },
+  {
+    "id": "fantasy_164",
+    "name_ja": "ニルアラン",
+    "english_en": "Nyraran"
+  },
+  {
+    "id": "fantasy_165",
+    "name_ja": "ニルエス",
+    "english_en": "Nyreth"
+  },
+  {
+    "id": "fantasy_166",
+    "name_ja": "ニルオリス",
+    "english_en": "Nyroris"
+  },
+  {
+    "id": "fantasy_167",
+    "name_ja": "ニルウィン",
+    "english_en": "Nyrwyn"
+  },
+  {
+    "id": "fantasy_168",
+    "name_ja": "ニルアステ",
+    "english_en": "Nyraste"
+  },
+  {
+    "id": "fantasy_169",
+    "name_ja": "ニルモラ",
+    "english_en": "Nyrmora"
+  },
+  {
+    "id": "fantasy_170",
+    "name_ja": "ニルサール",
+    "english_en": "Nyrthal"
+  },
+  {
+    "id": "fantasy_171",
+    "name_ja": "オルイア",
+    "english_en": "Oria"
+  },
+  {
+    "id": "fantasy_172",
+    "name_ja": "オルイオン",
+    "english_en": "Orion"
+  },
+  {
+    "id": "fantasy_173",
+    "name_ja": "オルエラ",
+    "english_en": "Orella"
+  },
+  {
+    "id": "fantasy_174",
+    "name_ja": "オルアラン",
+    "english_en": "Oraran"
+  },
+  {
+    "id": "fantasy_175",
+    "name_ja": "オルエス",
+    "english_en": "Oreth"
+  },
+  {
+    "id": "fantasy_176",
+    "name_ja": "オルオリス",
+    "english_en": "Ororis"
+  },
+  {
+    "id": "fantasy_177",
+    "name_ja": "オルウィン",
+    "english_en": "Orwyn"
+  },
+  {
+    "id": "fantasy_178",
+    "name_ja": "オルアステ",
+    "english_en": "Oraste"
+  },
+  {
+    "id": "fantasy_179",
+    "name_ja": "オルモラ",
+    "english_en": "Ormora"
+  },
+  {
+    "id": "fantasy_180",
+    "name_ja": "オルサール",
+    "english_en": "Orthal"
+  },
+  {
+    "id": "fantasy_181",
+    "name_ja": "フェイイア",
+    "english_en": "Phaeia"
+  },
+  {
+    "id": "fantasy_182",
+    "name_ja": "フェイイオン",
+    "english_en": "Phaeion"
+  },
+  {
+    "id": "fantasy_183",
+    "name_ja": "フェイエラ",
+    "english_en": "Phaeella"
+  },
+  {
+    "id": "fantasy_184",
+    "name_ja": "フェイアラン",
+    "english_en": "Phaearan"
+  },
+  {
+    "id": "fantasy_185",
+    "name_ja": "フェイエス",
+    "english_en": "Phaeeth"
+  },
+  {
+    "id": "fantasy_186",
+    "name_ja": "フェイオリス",
+    "english_en": "Phaeoris"
+  },
+  {
+    "id": "fantasy_187",
+    "name_ja": "フェイウィン",
+    "english_en": "Phaewyn"
+  },
+  {
+    "id": "fantasy_188",
+    "name_ja": "フェイアステ",
+    "english_en": "Phaeaste"
+  },
+  {
+    "id": "fantasy_189",
+    "name_ja": "フェイモラ",
+    "english_en": "Phaemora"
+  },
+  {
+    "id": "fantasy_190",
+    "name_ja": "フェイサール",
+    "english_en": "Phaethal"
+  },
+  {
+    "id": "fantasy_191",
+    "name_ja": "クェルイア",
+    "english_en": "Quelia"
+  },
+  {
+    "id": "fantasy_192",
+    "name_ja": "クェルイオン",
+    "english_en": "Quelion"
+  },
+  {
+    "id": "fantasy_193",
+    "name_ja": "クェルエラ",
+    "english_en": "Quelella"
+  },
+  {
+    "id": "fantasy_194",
+    "name_ja": "クェルアラン",
+    "english_en": "Quelaran"
+  },
+  {
+    "id": "fantasy_195",
+    "name_ja": "クェルエス",
+    "english_en": "Queleth"
+  },
+  {
+    "id": "fantasy_196",
+    "name_ja": "クェルオリス",
+    "english_en": "Queloris"
+  },
+  {
+    "id": "fantasy_197",
+    "name_ja": "クェルウィン",
+    "english_en": "Quelwyn"
+  },
+  {
+    "id": "fantasy_198",
+    "name_ja": "クェルアステ",
+    "english_en": "Quelaste"
+  },
+  {
+    "id": "fantasy_199",
+    "name_ja": "クェルモラ",
+    "english_en": "Quelmora"
+  },
+  {
+    "id": "fantasy_200",
+    "name_ja": "クェルサール",
+    "english_en": "Quelthal"
+  },
+  {
+    "id": "fantasy_201",
+    "name_ja": "レイイア",
+    "english_en": "Rhaeia"
+  },
+  {
+    "id": "fantasy_202",
+    "name_ja": "レイイオン",
+    "english_en": "Rhaeion"
+  },
+  {
+    "id": "fantasy_203",
+    "name_ja": "レイエラ",
+    "english_en": "Rhaeella"
+  },
+  {
+    "id": "fantasy_204",
+    "name_ja": "レイアラン",
+    "english_en": "Rhaearan"
+  },
+  {
+    "id": "fantasy_205",
+    "name_ja": "レイエス",
+    "english_en": "Rhaeeth"
+  },
+  {
+    "id": "fantasy_206",
+    "name_ja": "レイオリス",
+    "english_en": "Rhaeoris"
+  },
+  {
+    "id": "fantasy_207",
+    "name_ja": "レイウィン",
+    "english_en": "Rhaewyn"
+  },
+  {
+    "id": "fantasy_208",
+    "name_ja": "レイアステ",
+    "english_en": "Rhaeaste"
+  },
+  {
+    "id": "fantasy_209",
+    "name_ja": "レイモラ",
+    "english_en": "Rhaemora"
+  },
+  {
+    "id": "fantasy_210",
+    "name_ja": "レイサール",
+    "english_en": "Rhaethal"
+  },
+  {
+    "id": "fantasy_211",
+    "name_ja": "シルイア",
+    "english_en": "Sylia"
+  },
+  {
+    "id": "fantasy_212",
+    "name_ja": "シルイオン",
+    "english_en": "Sylion"
+  },
+  {
+    "id": "fantasy_213",
+    "name_ja": "シルエラ",
+    "english_en": "Sylella"
+  },
+  {
+    "id": "fantasy_214",
+    "name_ja": "シルアラン",
+    "english_en": "Sylaran"
+  },
+  {
+    "id": "fantasy_215",
+    "name_ja": "シルエス",
+    "english_en": "Syleth"
+  },
+  {
+    "id": "fantasy_216",
+    "name_ja": "シルオリス",
+    "english_en": "Syloris"
+  },
+  {
+    "id": "fantasy_217",
+    "name_ja": "シルウィン",
+    "english_en": "Sylwyn"
+  },
+  {
+    "id": "fantasy_218",
+    "name_ja": "シルアステ",
+    "english_en": "Sylaste"
+  },
+  {
+    "id": "fantasy_219",
+    "name_ja": "シルモラ",
+    "english_en": "Sylmora"
+  },
+  {
+    "id": "fantasy_220",
+    "name_ja": "シルサール",
+    "english_en": "Sylthal"
+  },
+  {
+    "id": "fantasy_221",
+    "name_ja": "テイルイア",
+    "english_en": "Thaelia"
+  },
+  {
+    "id": "fantasy_222",
+    "name_ja": "テイルイオン",
+    "english_en": "Thaelion"
+  },
+  {
+    "id": "fantasy_223",
+    "name_ja": "テイルエラ",
+    "english_en": "Thaelella"
+  },
+  {
+    "id": "fantasy_224",
+    "name_ja": "テイルアラン",
+    "english_en": "Thaelaran"
+  },
+  {
+    "id": "fantasy_225",
+    "name_ja": "テイルエス",
+    "english_en": "Thaeleth"
+  },
+  {
+    "id": "fantasy_226",
+    "name_ja": "テイルオリス",
+    "english_en": "Thaeloris"
+  },
+  {
+    "id": "fantasy_227",
+    "name_ja": "テイルウィン",
+    "english_en": "Thaelwyn"
+  },
+  {
+    "id": "fantasy_228",
+    "name_ja": "テイルアステ",
+    "english_en": "Thaelaste"
+  },
+  {
+    "id": "fantasy_229",
+    "name_ja": "テイルモラ",
+    "english_en": "Thaelmora"
+  },
+  {
+    "id": "fantasy_230",
+    "name_ja": "テイルサール",
+    "english_en": "Thaelthal"
+  },
+  {
+    "id": "fantasy_231",
+    "name_ja": "ウルイア",
+    "english_en": "Ulia"
+  },
+  {
+    "id": "fantasy_232",
+    "name_ja": "ウルイオン",
+    "english_en": "Ulion"
+  },
+  {
+    "id": "fantasy_233",
+    "name_ja": "ウルエラ",
+    "english_en": "Ulella"
+  },
+  {
+    "id": "fantasy_234",
+    "name_ja": "ウルアラン",
+    "english_en": "Ularan"
+  },
+  {
+    "id": "fantasy_235",
+    "name_ja": "ウルエス",
+    "english_en": "Uleth"
+  },
+  {
+    "id": "fantasy_236",
+    "name_ja": "ウルオリス",
+    "english_en": "Uloris"
+  },
+  {
+    "id": "fantasy_237",
+    "name_ja": "ウルウィン",
+    "english_en": "Ulwyn"
+  },
+  {
+    "id": "fantasy_238",
+    "name_ja": "ウルアステ",
+    "english_en": "Ulaste"
+  },
+  {
+    "id": "fantasy_239",
+    "name_ja": "ウルモラ",
+    "english_en": "Ulmora"
+  },
+  {
+    "id": "fantasy_240",
+    "name_ja": "ウルサール",
+    "english_en": "Ulthal"
+  },
+  {
+    "id": "fantasy_241",
+    "name_ja": "ヴェイルイア",
+    "english_en": "Vaelia"
+  },
+  {
+    "id": "fantasy_242",
+    "name_ja": "ヴェイルイオン",
+    "english_en": "Vaelion"
+  },
+  {
+    "id": "fantasy_243",
+    "name_ja": "ヴェイルエラ",
+    "english_en": "Vaelella"
+  },
+  {
+    "id": "fantasy_244",
+    "name_ja": "ヴェイルアラン",
+    "english_en": "Vaelaran"
+  },
+  {
+    "id": "fantasy_245",
+    "name_ja": "ヴェイルエス",
+    "english_en": "Vaeleth"
+  },
+  {
+    "id": "fantasy_246",
+    "name_ja": "ヴェイルオリス",
+    "english_en": "Vaeloris"
+  },
+  {
+    "id": "fantasy_247",
+    "name_ja": "ヴェイルウィン",
+    "english_en": "Vaelwyn"
+  },
+  {
+    "id": "fantasy_248",
+    "name_ja": "ヴェイルアステ",
+    "english_en": "Vaelaste"
+  },
+  {
+    "id": "fantasy_249",
+    "name_ja": "ヴェイルモラ",
+    "english_en": "Vaelmora"
+  },
+  {
+    "id": "fantasy_250",
+    "name_ja": "ヴェイルサール",
+    "english_en": "Vaelthal"
+  },
+  {
+    "id": "fantasy_251",
+    "name_ja": "ウィルイア",
+    "english_en": "Wyria"
+  },
+  {
+    "id": "fantasy_252",
+    "name_ja": "ウィルイオン",
+    "english_en": "Wyrion"
+  },
+  {
+    "id": "fantasy_253",
+    "name_ja": "ウィルエラ",
+    "english_en": "Wyrella"
+  },
+  {
+    "id": "fantasy_254",
+    "name_ja": "ウィルアラン",
+    "english_en": "Wyraran"
+  },
+  {
+    "id": "fantasy_255",
+    "name_ja": "ウィルエス",
+    "english_en": "Wyreth"
+  },
+  {
+    "id": "fantasy_256",
+    "name_ja": "ウィルオリス",
+    "english_en": "Wyroris"
+  },
+  {
+    "id": "fantasy_257",
+    "name_ja": "ウィルウィン",
+    "english_en": "Wyrwyn"
+  },
+  {
+    "id": "fantasy_258",
+    "name_ja": "ウィルアステ",
+    "english_en": "Wyraste"
+  },
+  {
+    "id": "fantasy_259",
+    "name_ja": "ウィルモラ",
+    "english_en": "Wyrmora"
+  },
+  {
+    "id": "fantasy_260",
+    "name_ja": "ウィルサール",
+    "english_en": "Wyrthal"
+  },
+  {
+    "id": "fantasy_261",
+    "name_ja": "ザルイア",
+    "english_en": "Xalia"
+  },
+  {
+    "id": "fantasy_262",
+    "name_ja": "ザルイオン",
+    "english_en": "Xalion"
+  },
+  {
+    "id": "fantasy_263",
+    "name_ja": "ザルエラ",
+    "english_en": "Xalella"
+  },
+  {
+    "id": "fantasy_264",
+    "name_ja": "ザルアラン",
+    "english_en": "Xalaran"
+  },
+  {
+    "id": "fantasy_265",
+    "name_ja": "ザルエス",
+    "english_en": "Xaleth"
+  },
+  {
+    "id": "fantasy_266",
+    "name_ja": "ザルオリス",
+    "english_en": "Xaloris"
+  },
+  {
+    "id": "fantasy_267",
+    "name_ja": "ザルウィン",
+    "english_en": "Xalwyn"
+  },
+  {
+    "id": "fantasy_268",
+    "name_ja": "ザルアステ",
+    "english_en": "Xalaste"
+  },
+  {
+    "id": "fantasy_269",
+    "name_ja": "ザルモラ",
+    "english_en": "Xalmora"
+  },
+  {
+    "id": "fantasy_270",
+    "name_ja": "ザルサール",
+    "english_en": "Xalthal"
+  },
+  {
+    "id": "fantasy_271",
+    "name_ja": "イーズイア",
+    "english_en": "Yseia"
+  },
+  {
+    "id": "fantasy_272",
+    "name_ja": "イーズイオン",
+    "english_en": "Yseion"
+  },
+  {
+    "id": "fantasy_273",
+    "name_ja": "イーズエラ",
+    "english_en": "Yseella"
+  },
+  {
+    "id": "fantasy_274",
+    "name_ja": "イーズアラン",
+    "english_en": "Ysearan"
+  },
+  {
+    "id": "fantasy_275",
+    "name_ja": "イーズエス",
+    "english_en": "Yseeth"
+  },
+  {
+    "id": "fantasy_276",
+    "name_ja": "イーズオリス",
+    "english_en": "Yseoris"
+  },
+  {
+    "id": "fantasy_277",
+    "name_ja": "イーズウィン",
+    "english_en": "Ysewyn"
+  },
+  {
+    "id": "fantasy_278",
+    "name_ja": "イーズアステ",
+    "english_en": "Yseaste"
+  },
+  {
+    "id": "fantasy_279",
+    "name_ja": "イーズモラ",
+    "english_en": "Ysemora"
+  },
+  {
+    "id": "fantasy_280",
+    "name_ja": "イーズサール",
+    "english_en": "Ysethal"
+  },
+  {
+    "id": "fantasy_281",
+    "name_ja": "ゾルイア",
+    "english_en": "Zoria"
+  },
+  {
+    "id": "fantasy_282",
+    "name_ja": "ゾルイオン",
+    "english_en": "Zorion"
+  },
+  {
+    "id": "fantasy_283",
+    "name_ja": "ゾルエラ",
+    "english_en": "Zorella"
+  },
+  {
+    "id": "fantasy_284",
+    "name_ja": "ゾルアラン",
+    "english_en": "Zoraran"
+  },
+  {
+    "id": "fantasy_285",
+    "name_ja": "ゾルエス",
+    "english_en": "Zoreth"
+  },
+  {
+    "id": "fantasy_286",
+    "name_ja": "ゾルオリス",
+    "english_en": "Zororis"
+  },
+  {
+    "id": "fantasy_287",
+    "name_ja": "ゾルウィン",
+    "english_en": "Zorwyn"
+  },
+  {
+    "id": "fantasy_288",
+    "name_ja": "ゾルアステ",
+    "english_en": "Zoraste"
+  },
+  {
+    "id": "fantasy_289",
+    "name_ja": "ゾルモラ",
+    "english_en": "Zormora"
+  },
+  {
+    "id": "fantasy_290",
+    "name_ja": "ゾルサール",
+    "english_en": "Zorthal"
+  },
+  {
+    "id": "fantasy_291",
+    "name_ja": "アルイア",
+    "english_en": "Aria"
+  },
+  {
+    "id": "fantasy_292",
+    "name_ja": "アルイオン",
+    "english_en": "Arion"
+  },
+  {
+    "id": "fantasy_293",
+    "name_ja": "アルエラ",
+    "english_en": "Arella"
+  },
+  {
+    "id": "fantasy_294",
+    "name_ja": "アルアラン",
+    "english_en": "Araran"
+  },
+  {
+    "id": "fantasy_295",
+    "name_ja": "アルエス",
+    "english_en": "Areth"
+  },
+  {
+    "id": "fantasy_296",
+    "name_ja": "アルオリス",
+    "english_en": "Aroris"
+  },
+  {
+    "id": "fantasy_297",
+    "name_ja": "アルウィン",
+    "english_en": "Arwyn"
+  },
+  {
+    "id": "fantasy_298",
+    "name_ja": "アルアステ",
+    "english_en": "Araste"
+  },
+  {
+    "id": "fantasy_299",
+    "name_ja": "アルモラ",
+    "english_en": "Armora"
+  },
+  {
+    "id": "fantasy_300",
+    "name_ja": "アルサール",
+    "english_en": "Arthal"
+  },
+  {
+    "id": "fantasy_301",
+    "name_ja": "ブリンイア",
+    "english_en": "Brinia"
+  },
+  {
+    "id": "fantasy_302",
+    "name_ja": "ブリンイオン",
+    "english_en": "Brinion"
+  },
+  {
+    "id": "fantasy_303",
+    "name_ja": "ブリンエラ",
+    "english_en": "Brinella"
+  },
+  {
+    "id": "fantasy_304",
+    "name_ja": "ブリンアラン",
+    "english_en": "Brinaran"
+  },
+  {
+    "id": "fantasy_305",
+    "name_ja": "ブリンエス",
+    "english_en": "Brineth"
+  },
+  {
+    "id": "fantasy_306",
+    "name_ja": "ブリンオリス",
+    "english_en": "Brinoris"
+  },
+  {
+    "id": "fantasy_307",
+    "name_ja": "ブリンウィン",
+    "english_en": "Brinwyn"
+  },
+  {
+    "id": "fantasy_308",
+    "name_ja": "ブリンアステ",
+    "english_en": "Brinaste"
+  },
+  {
+    "id": "fantasy_309",
+    "name_ja": "ブリンモラ",
+    "english_en": "Brinmora"
+  },
+  {
+    "id": "fantasy_310",
+    "name_ja": "ブリンサール",
+    "english_en": "Brinthal"
+  },
+  {
+    "id": "fantasy_311",
+    "name_ja": "コルイア",
+    "english_en": "Coria"
+  },
+  {
+    "id": "fantasy_312",
+    "name_ja": "コルイオン",
+    "english_en": "Corion"
+  },
+  {
+    "id": "fantasy_313",
+    "name_ja": "コルエラ",
+    "english_en": "Corella"
+  },
+  {
+    "id": "fantasy_314",
+    "name_ja": "コルアラン",
+    "english_en": "Coraran"
+  },
+  {
+    "id": "fantasy_315",
+    "name_ja": "コルエス",
+    "english_en": "Coreth"
+  },
+  {
+    "id": "fantasy_316",
+    "name_ja": "コルオリス",
+    "english_en": "Cororis"
+  },
+  {
+    "id": "fantasy_317",
+    "name_ja": "コルウィン",
+    "english_en": "Corwyn"
+  },
+  {
+    "id": "fantasy_318",
+    "name_ja": "コルアステ",
+    "english_en": "Coraste"
+  },
+  {
+    "id": "fantasy_319",
+    "name_ja": "コルモラ",
+    "english_en": "Cormora"
+  },
+  {
+    "id": "fantasy_320",
+    "name_ja": "コルサール",
+    "english_en": "Corthal"
+  },
+  {
+    "id": "fantasy_321",
+    "name_ja": "デイイア",
+    "english_en": "Daeia"
+  },
+  {
+    "id": "fantasy_322",
+    "name_ja": "デイイオン",
+    "english_en": "Daeion"
+  },
+  {
+    "id": "fantasy_323",
+    "name_ja": "デイエラ",
+    "english_en": "Daeella"
+  },
+  {
+    "id": "fantasy_324",
+    "name_ja": "デイアラン",
+    "english_en": "Daearan"
+  },
+  {
+    "id": "fantasy_325",
+    "name_ja": "デイエス",
+    "english_en": "Daeeth"
+  },
+  {
+    "id": "fantasy_326",
+    "name_ja": "デイオリス",
+    "english_en": "Daeoris"
+  },
+  {
+    "id": "fantasy_327",
+    "name_ja": "デイウィン",
+    "english_en": "Daewyn"
+  },
+  {
+    "id": "fantasy_328",
+    "name_ja": "デイアステ",
+    "english_en": "Daeaste"
+  },
+  {
+    "id": "fantasy_329",
+    "name_ja": "デイモラ",
+    "english_en": "Daemora"
+  },
+  {
+    "id": "fantasy_330",
+    "name_ja": "デイサール",
+    "english_en": "Daethal"
+  },
+  {
+    "id": "fantasy_331",
+    "name_ja": "エリンイア",
+    "english_en": "Erynia"
+  },
+  {
+    "id": "fantasy_332",
+    "name_ja": "エリンイオン",
+    "english_en": "Erynion"
+  },
+  {
+    "id": "fantasy_333",
+    "name_ja": "エリンエラ",
+    "english_en": "Erynella"
+  },
+  {
+    "id": "fantasy_334",
+    "name_ja": "エリンアラン",
+    "english_en": "Erynaran"
+  },
+  {
+    "id": "fantasy_335",
+    "name_ja": "エリンエス",
+    "english_en": "Eryneth"
+  },
+  {
+    "id": "fantasy_336",
+    "name_ja": "エリンオリス",
+    "english_en": "Erynoris"
+  },
+  {
+    "id": "fantasy_337",
+    "name_ja": "エリンウィン",
+    "english_en": "Erynwyn"
+  },
+  {
+    "id": "fantasy_338",
+    "name_ja": "エリンアステ",
+    "english_en": "Erynaste"
+  },
+  {
+    "id": "fantasy_339",
+    "name_ja": "エリンモラ",
+    "english_en": "Erynmora"
+  },
+  {
+    "id": "fantasy_340",
+    "name_ja": "エリンサール",
+    "english_en": "Erynthal"
+  },
+  {
+    "id": "fantasy_341",
+    "name_ja": "フィオルイア",
+    "english_en": "Fioria"
+  },
+  {
+    "id": "fantasy_342",
+    "name_ja": "フィオルイオン",
+    "english_en": "Fiorion"
+  },
+  {
+    "id": "fantasy_343",
+    "name_ja": "フィオルエラ",
+    "english_en": "Fiorella"
+  },
+  {
+    "id": "fantasy_344",
+    "name_ja": "フィオルアラン",
+    "english_en": "Fioraran"
+  },
+  {
+    "id": "fantasy_345",
+    "name_ja": "フィオルエス",
+    "english_en": "Fioreth"
+  },
+  {
+    "id": "fantasy_346",
+    "name_ja": "フィオルオリス",
+    "english_en": "Fiororis"
+  },
+  {
+    "id": "fantasy_347",
+    "name_ja": "フィオルウィン",
+    "english_en": "Fiorwyn"
+  },
+  {
+    "id": "fantasy_348",
+    "name_ja": "フィオルアステ",
+    "english_en": "Fioraste"
+  },
+  {
+    "id": "fantasy_349",
+    "name_ja": "フィオルモラ",
+    "english_en": "Fiormora"
+  },
+  {
+    "id": "fantasy_350",
+    "name_ja": "フィオルサール",
+    "english_en": "Fiorthal"
+  },
+  {
+    "id": "fantasy_351",
+    "name_ja": "グレイイア",
+    "english_en": "Graeia"
+  },
+  {
+    "id": "fantasy_352",
+    "name_ja": "グレイイオン",
+    "english_en": "Graeion"
+  },
+  {
+    "id": "fantasy_353",
+    "name_ja": "グレイエラ",
+    "english_en": "Graeella"
+  },
+  {
+    "id": "fantasy_354",
+    "name_ja": "グレイアラン",
+    "english_en": "Graearan"
+  },
+  {
+    "id": "fantasy_355",
+    "name_ja": "グレイエス",
+    "english_en": "Graeeth"
+  },
+  {
+    "id": "fantasy_356",
+    "name_ja": "グレイオリス",
+    "english_en": "Graeoris"
+  },
+  {
+    "id": "fantasy_357",
+    "name_ja": "グレイウィン",
+    "english_en": "Graewyn"
+  },
+  {
+    "id": "fantasy_358",
+    "name_ja": "グレイアステ",
+    "english_en": "Graeaste"
+  },
+  {
+    "id": "fantasy_359",
+    "name_ja": "グレイモラ",
+    "english_en": "Graemora"
+  },
+  {
+    "id": "fantasy_360",
+    "name_ja": "グレイサール",
+    "english_en": "Graethal"
+  },
+  {
+    "id": "fantasy_361",
+    "name_ja": "ヘストイア",
+    "english_en": "Hestia"
+  },
+  {
+    "id": "fantasy_362",
+    "name_ja": "ヘストイオン",
+    "english_en": "Hestion"
+  },
+  {
+    "id": "fantasy_363",
+    "name_ja": "ヘストエラ",
+    "english_en": "Hestella"
+  },
+  {
+    "id": "fantasy_364",
+    "name_ja": "ヘストアラン",
+    "english_en": "Hestaran"
+  },
+  {
+    "id": "fantasy_365",
+    "name_ja": "ヘストエス",
+    "english_en": "Hesteth"
+  },
+  {
+    "id": "fantasy_366",
+    "name_ja": "ヘストオリス",
+    "english_en": "Hestoris"
+  },
+  {
+    "id": "fantasy_367",
+    "name_ja": "ヘストウィン",
+    "english_en": "Hestwyn"
+  },
+  {
+    "id": "fantasy_368",
+    "name_ja": "ヘストアステ",
+    "english_en": "Hestaste"
+  },
+  {
+    "id": "fantasy_369",
+    "name_ja": "ヘストモラ",
+    "english_en": "Hestmora"
+  },
+  {
+    "id": "fantasy_370",
+    "name_ja": "ヘストサール",
+    "english_en": "Hestthal"
+  },
+  {
+    "id": "fantasy_371",
+    "name_ja": "イリイア",
+    "english_en": "Ilyia"
+  },
+  {
+    "id": "fantasy_372",
+    "name_ja": "イリイオン",
+    "english_en": "Ilyion"
+  },
+  {
+    "id": "fantasy_373",
+    "name_ja": "イリエラ",
+    "english_en": "Ilyella"
+  },
+  {
+    "id": "fantasy_374",
+    "name_ja": "イリアラン",
+    "english_en": "Ilyaran"
+  },
+  {
+    "id": "fantasy_375",
+    "name_ja": "イリエス",
+    "english_en": "Ilyeth"
+  },
+  {
+    "id": "fantasy_376",
+    "name_ja": "イリオリス",
+    "english_en": "Ilyoris"
+  },
+  {
+    "id": "fantasy_377",
+    "name_ja": "イリウィン",
+    "english_en": "Ilywyn"
+  },
+  {
+    "id": "fantasy_378",
+    "name_ja": "イリアステ",
+    "english_en": "Ilyaste"
+  },
+  {
+    "id": "fantasy_379",
+    "name_ja": "イリモラ",
+    "english_en": "Ilymora"
+  },
+  {
+    "id": "fantasy_380",
+    "name_ja": "イリサール",
+    "english_en": "Ilythal"
+  },
+  {
+    "id": "fantasy_381",
+    "name_ja": "ジャストイア",
+    "english_en": "Jastia"
+  },
+  {
+    "id": "fantasy_382",
+    "name_ja": "ジャストイオン",
+    "english_en": "Jastion"
+  },
+  {
+    "id": "fantasy_383",
+    "name_ja": "ジャストエラ",
+    "english_en": "Jastella"
+  },
+  {
+    "id": "fantasy_384",
+    "name_ja": "ジャストアラン",
+    "english_en": "Jastaran"
+  },
+  {
+    "id": "fantasy_385",
+    "name_ja": "ジャストエス",
+    "english_en": "Jasteth"
+  },
+  {
+    "id": "fantasy_386",
+    "name_ja": "ジャストオリス",
+    "english_en": "Jastoris"
+  },
+  {
+    "id": "fantasy_387",
+    "name_ja": "ジャストウィン",
+    "english_en": "Jastwyn"
+  },
+  {
+    "id": "fantasy_388",
+    "name_ja": "ジャストアステ",
+    "english_en": "Jastaste"
+  },
+  {
+    "id": "fantasy_389",
+    "name_ja": "ジャストモラ",
+    "english_en": "Jastmora"
+  },
+  {
+    "id": "fantasy_390",
+    "name_ja": "ジャストサール",
+    "english_en": "Jastthal"
+  },
+  {
+    "id": "fantasy_391",
+    "name_ja": "キンイア",
+    "english_en": "Kynia"
+  },
+  {
+    "id": "fantasy_392",
+    "name_ja": "キンイオン",
+    "english_en": "Kynion"
+  },
+  {
+    "id": "fantasy_393",
+    "name_ja": "キンエラ",
+    "english_en": "Kynella"
+  },
+  {
+    "id": "fantasy_394",
+    "name_ja": "キンアラン",
+    "english_en": "Kynaran"
+  },
+  {
+    "id": "fantasy_395",
+    "name_ja": "キンエス",
+    "english_en": "Kyneth"
+  },
+  {
+    "id": "fantasy_396",
+    "name_ja": "キンオリス",
+    "english_en": "Kynoris"
+  },
+  {
+    "id": "fantasy_397",
+    "name_ja": "キンウィン",
+    "english_en": "Kynwyn"
+  },
+  {
+    "id": "fantasy_398",
+    "name_ja": "キンアステ",
+    "english_en": "Kynaste"
+  },
+  {
+    "id": "fantasy_399",
+    "name_ja": "キンモラ",
+    "english_en": "Kynmora"
+  },
+  {
+    "id": "fantasy_400",
+    "name_ja": "キンサール",
+    "english_en": "Kynthal"
+  },
+  {
+    "id": "fantasy_401",
+    "name_ja": "リオルイア",
+    "english_en": "Lioria"
+  },
+  {
+    "id": "fantasy_402",
+    "name_ja": "リオルイオン",
+    "english_en": "Liorion"
+  },
+  {
+    "id": "fantasy_403",
+    "name_ja": "リオルエラ",
+    "english_en": "Liorella"
+  },
+  {
+    "id": "fantasy_404",
+    "name_ja": "リオルアラン",
+    "english_en": "Lioraran"
+  },
+  {
+    "id": "fantasy_405",
+    "name_ja": "リオルエス",
+    "english_en": "Lioreth"
+  },
+  {
+    "id": "fantasy_406",
+    "name_ja": "リオルオリス",
+    "english_en": "Liororis"
+  },
+  {
+    "id": "fantasy_407",
+    "name_ja": "リオルウィン",
+    "english_en": "Liorwyn"
+  },
+  {
+    "id": "fantasy_408",
+    "name_ja": "リオルアステ",
+    "english_en": "Lioraste"
+  },
+  {
+    "id": "fantasy_409",
+    "name_ja": "リオルモラ",
+    "english_en": "Liormora"
+  },
+  {
+    "id": "fantasy_410",
+    "name_ja": "リオルサール",
+    "english_en": "Liorthal"
+  },
+  {
+    "id": "fantasy_411",
+    "name_ja": "ミルイア",
+    "english_en": "Myria"
+  },
+  {
+    "id": "fantasy_412",
+    "name_ja": "ミルイオン",
+    "english_en": "Myrion"
+  },
+  {
+    "id": "fantasy_413",
+    "name_ja": "ミルエラ",
+    "english_en": "Myrella"
+  },
+  {
+    "id": "fantasy_414",
+    "name_ja": "ミルアラン",
+    "english_en": "Myraran"
+  },
+  {
+    "id": "fantasy_415",
+    "name_ja": "ミルエス",
+    "english_en": "Myreth"
+  },
+  {
+    "id": "fantasy_416",
+    "name_ja": "ミルオリス",
+    "english_en": "Myroris"
+  },
+  {
+    "id": "fantasy_417",
+    "name_ja": "ミルウィン",
+    "english_en": "Myrwyn"
+  },
+  {
+    "id": "fantasy_418",
+    "name_ja": "ミルアステ",
+    "english_en": "Myraste"
+  },
+  {
+    "id": "fantasy_419",
+    "name_ja": "ミルモラ",
+    "english_en": "Myrmora"
+  },
+  {
+    "id": "fantasy_420",
+    "name_ja": "ミルサール",
+    "english_en": "Myrthal"
+  },
+  {
+    "id": "fantasy_421",
+    "name_ja": "ニアイア",
+    "english_en": "Niaia"
+  },
+  {
+    "id": "fantasy_422",
+    "name_ja": "ニアイオン",
+    "english_en": "Niaion"
+  },
+  {
+    "id": "fantasy_423",
+    "name_ja": "ニアエラ",
+    "english_en": "Niaella"
+  },
+  {
+    "id": "fantasy_424",
+    "name_ja": "ニアアラン",
+    "english_en": "Niaaran"
+  },
+  {
+    "id": "fantasy_425",
+    "name_ja": "ニアエス",
+    "english_en": "Niaeth"
+  },
+  {
+    "id": "fantasy_426",
+    "name_ja": "ニアオリス",
+    "english_en": "Niaoris"
+  },
+  {
+    "id": "fantasy_427",
+    "name_ja": "ニアウィン",
+    "english_en": "Niawyn"
+  },
+  {
+    "id": "fantasy_428",
+    "name_ja": "ニアアステ",
+    "english_en": "Niaaste"
+  },
+  {
+    "id": "fantasy_429",
+    "name_ja": "ニアモラ",
+    "english_en": "Niamora"
+  },
+  {
+    "id": "fantasy_430",
+    "name_ja": "ニアサール",
+    "english_en": "Niathal"
+  },
+  {
+    "id": "fantasy_431",
+    "name_ja": "オリンイア",
+    "english_en": "Orynia"
+  },
+  {
+    "id": "fantasy_432",
+    "name_ja": "オリンイオン",
+    "english_en": "Orynion"
+  },
+  {
+    "id": "fantasy_433",
+    "name_ja": "オリンエラ",
+    "english_en": "Orynella"
+  },
+  {
+    "id": "fantasy_434",
+    "name_ja": "オリンアラン",
+    "english_en": "Orynaran"
+  },
+  {
+    "id": "fantasy_435",
+    "name_ja": "オリンエス",
+    "english_en": "Oryneth"
+  },
+  {
+    "id": "fantasy_436",
+    "name_ja": "オリンオリス",
+    "english_en": "Orynoris"
+  },
+  {
+    "id": "fantasy_437",
+    "name_ja": "オリンウィン",
+    "english_en": "Orynwyn"
+  },
+  {
+    "id": "fantasy_438",
+    "name_ja": "オリンアステ",
+    "english_en": "Orynaste"
+  },
+  {
+    "id": "fantasy_439",
+    "name_ja": "オリンモラ",
+    "english_en": "Orynmora"
+  },
+  {
+    "id": "fantasy_440",
+    "name_ja": "オリンサール",
+    "english_en": "Orynthal"
+  },
+  {
+    "id": "fantasy_441",
+    "name_ja": "プライイア",
+    "english_en": "Pryia"
+  },
+  {
+    "id": "fantasy_442",
+    "name_ja": "プライイオン",
+    "english_en": "Pryion"
+  },
+  {
+    "id": "fantasy_443",
+    "name_ja": "プライエラ",
+    "english_en": "Pryella"
+  },
+  {
+    "id": "fantasy_444",
+    "name_ja": "プライアラン",
+    "english_en": "Pryaran"
+  },
+  {
+    "id": "fantasy_445",
+    "name_ja": "プライエス",
+    "english_en": "Pryeth"
+  },
+  {
+    "id": "fantasy_446",
+    "name_ja": "プライオリス",
+    "english_en": "Pryoris"
+  },
+  {
+    "id": "fantasy_447",
+    "name_ja": "プライウィン",
+    "english_en": "Prywyn"
+  },
+  {
+    "id": "fantasy_448",
+    "name_ja": "プライアステ",
+    "english_en": "Pryaste"
+  },
+  {
+    "id": "fantasy_449",
+    "name_ja": "プライモラ",
+    "english_en": "Prymora"
+  },
+  {
+    "id": "fantasy_450",
+    "name_ja": "プライサール",
+    "english_en": "Prythal"
+  },
+  {
+    "id": "fantasy_451",
+    "name_ja": "クェンイア",
+    "english_en": "Quenia"
+  },
+  {
+    "id": "fantasy_452",
+    "name_ja": "クェンイオン",
+    "english_en": "Quenion"
+  },
+  {
+    "id": "fantasy_453",
+    "name_ja": "クェンエラ",
+    "english_en": "Quenella"
+  },
+  {
+    "id": "fantasy_454",
+    "name_ja": "クェンアラン",
+    "english_en": "Quenaran"
+  },
+  {
+    "id": "fantasy_455",
+    "name_ja": "クェンエス",
+    "english_en": "Queneth"
+  },
+  {
+    "id": "fantasy_456",
+    "name_ja": "クェンオリス",
+    "english_en": "Quenoris"
+  },
+  {
+    "id": "fantasy_457",
+    "name_ja": "クェンウィン",
+    "english_en": "Quenwyn"
+  },
+  {
+    "id": "fantasy_458",
+    "name_ja": "クェンアステ",
+    "english_en": "Quenaste"
+  },
+  {
+    "id": "fantasy_459",
+    "name_ja": "クェンモラ",
+    "english_en": "Quenmora"
+  },
+  {
+    "id": "fantasy_460",
+    "name_ja": "クェンサール",
+    "english_en": "Quenthal"
+  },
+  {
+    "id": "fantasy_461",
+    "name_ja": "リヴェンイア",
+    "english_en": "Rivenia"
+  },
+  {
+    "id": "fantasy_462",
+    "name_ja": "リヴェンイオン",
+    "english_en": "Rivenion"
+  },
+  {
+    "id": "fantasy_463",
+    "name_ja": "リヴェンエラ",
+    "english_en": "Rivenella"
+  },
+  {
+    "id": "fantasy_464",
+    "name_ja": "リヴェンアラン",
+    "english_en": "Rivenaran"
+  },
+  {
+    "id": "fantasy_465",
+    "name_ja": "リヴェンエス",
+    "english_en": "Riveneth"
+  },
+  {
+    "id": "fantasy_466",
+    "name_ja": "リヴェンオリス",
+    "english_en": "Rivenoris"
+  },
+  {
+    "id": "fantasy_467",
+    "name_ja": "リヴェンウィン",
+    "english_en": "Rivenwyn"
+  },
+  {
+    "id": "fantasy_468",
+    "name_ja": "リヴェンアステ",
+    "english_en": "Rivenaste"
+  },
+  {
+    "id": "fantasy_469",
+    "name_ja": "リヴェンモラ",
+    "english_en": "Rivenmora"
+  },
+  {
+    "id": "fantasy_470",
+    "name_ja": "リヴェンサール",
+    "english_en": "Riventhal"
+  },
+  {
+    "id": "fantasy_471",
+    "name_ja": "セライア",
+    "english_en": "Seraia"
+  },
+  {
+    "id": "fantasy_472",
+    "name_ja": "セライオン",
+    "english_en": "Seraion"
+  },
+  {
+    "id": "fantasy_473",
+    "name_ja": "セラエラ",
+    "english_en": "Seraella"
+  },
+  {
+    "id": "fantasy_474",
+    "name_ja": "セラアラン",
+    "english_en": "Seraaran"
+  },
+  {
+    "id": "fantasy_475",
+    "name_ja": "セラエス",
+    "english_en": "Seraeth"
+  },
+  {
+    "id": "fantasy_476",
+    "name_ja": "セラオリス",
+    "english_en": "Seraoris"
+  },
+  {
+    "id": "fantasy_477",
+    "name_ja": "セラウィン",
+    "english_en": "Serawyn"
+  },
+  {
+    "id": "fantasy_478",
+    "name_ja": "セラアステ",
+    "english_en": "Seraaste"
+  },
+  {
+    "id": "fantasy_479",
+    "name_ja": "セラモラ",
+    "english_en": "Seramora"
+  },
+  {
+    "id": "fantasy_480",
+    "name_ja": "セラサール",
+    "english_en": "Serathal"
+  },
+  {
+    "id": "fantasy_481",
+    "name_ja": "トルイア",
+    "english_en": "Toria"
+  },
+  {
+    "id": "fantasy_482",
+    "name_ja": "トルイオン",
+    "english_en": "Torion"
+  },
+  {
+    "id": "fantasy_483",
+    "name_ja": "トルエラ",
+    "english_en": "Torella"
+  },
+  {
+    "id": "fantasy_484",
+    "name_ja": "トルアラン",
+    "english_en": "Toraran"
+  },
+  {
+    "id": "fantasy_485",
+    "name_ja": "トルエス",
+    "english_en": "Toreth"
+  },
+  {
+    "id": "fantasy_486",
+    "name_ja": "トルオリス",
+    "english_en": "Tororis"
+  },
+  {
+    "id": "fantasy_487",
+    "name_ja": "トルウィン",
+    "english_en": "Torwyn"
+  },
+  {
+    "id": "fantasy_488",
+    "name_ja": "トルアステ",
+    "english_en": "Toraste"
+  },
+  {
+    "id": "fantasy_489",
+    "name_ja": "トルモラ",
+    "english_en": "Tormora"
+  },
+  {
+    "id": "fantasy_490",
+    "name_ja": "トルサール",
+    "english_en": "Torthal"
+  },
+  {
+    "id": "fantasy_491",
+    "name_ja": "ウリイア",
+    "english_en": "Uriia"
+  },
+  {
+    "id": "fantasy_492",
+    "name_ja": "ウリイオン",
+    "english_en": "Uriion"
+  },
+  {
+    "id": "fantasy_493",
+    "name_ja": "ウリエラ",
+    "english_en": "Uriella"
+  },
+  {
+    "id": "fantasy_494",
+    "name_ja": "ウリアラン",
+    "english_en": "Uriaran"
+  },
+  {
+    "id": "fantasy_495",
+    "name_ja": "ウリエス",
+    "english_en": "Urieth"
+  },
+  {
+    "id": "fantasy_496",
+    "name_ja": "ウリオリス",
+    "english_en": "Urioris"
+  },
+  {
+    "id": "fantasy_497",
+    "name_ja": "ウリウィン",
+    "english_en": "Uriwyn"
+  },
+  {
+    "id": "fantasy_498",
+    "name_ja": "ウリアステ",
+    "english_en": "Uriaste"
+  },
+  {
+    "id": "fantasy_499",
+    "name_ja": "ウリモラ",
+    "english_en": "Urimora"
+  },
+  {
+    "id": "fantasy_500",
+    "name_ja": "ウリサール",
+    "english_en": "Urithal"
+  }
+]

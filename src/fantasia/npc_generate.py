@@ -19,6 +19,7 @@ from .npc_templates import (
     npc_template_to_character_payload,
     used_npc_template_ids,
 )
+from .namelist import apply_namelist_metadata, claim_name_from_namelist
 from .quest_context import _quest_ai_context
 from .quest_rules import INTERNAL_QUEST_TOKEN_LABELS, _quest_destination_source_text
 from .world_generation import _clamp_world_danger
@@ -762,6 +763,42 @@ def world_has_dead_npc_identity(world: WorldData, *, name: str = "", uuid: str =
     return False
 
 
+def _explicit_npc_name_from_payload(value: Any) -> str:
+    if isinstance(value, dict):
+        for key in ("name", "character_name", "npc_name", "monster_name", "enemy_name", "target_name"):
+            name = str(value.get(key) or "").strip()
+            if name:
+                return name
+        return ""
+    return str(value or "").strip()
+
+
+def _apply_namelist_name_to_payload(
+    engine: GameEngine,
+    payload: dict[str, Any],
+    template: dict[str, Any] | None,
+    *,
+    raw: Any,
+    seed: str,
+    reason: str,
+) -> dict[str, Any]:
+    if not template or not _as_bool(template.get("usenamelist")):
+        return payload
+    if _explicit_npc_name_from_payload(raw):
+        return payload
+    entry = claim_name_from_namelist(
+        engine.state.world_data,
+        seed=f"{seed}:namelist:{template.get('id')}",
+        reason=reason,
+        reserved_names=[str(payload.get("name") or "")],
+    )
+    if not entry:
+        return payload
+    payload["name"] = str(entry.get("name_ja") or payload.get("name") or "")
+    apply_namelist_metadata(payload, entry, reason=reason)
+    return payload
+
+
 def npc_template_used_ids(engine: GameEngine, world: WorldData | None = None) -> set[str]:
     return used_npc_template_ids(world or engine.state.world_data)
 
@@ -896,6 +933,7 @@ def choose_npc_template_for_raw(
     danger_level: int,
     seed: str,
     preferred_ids: list[str] | tuple[str, ...] | None = None,
+    rescued: bool | None = None,
 ) -> dict[str, Any] | None:
     if preferred_ids:
         return choose_npc_template(
@@ -904,11 +942,13 @@ def choose_npc_template_for_raw(
             preferred_ids=preferred_ids,
             used_ids=npc_template_used_ids(engine),
             seed=seed,
+            rescued=rescued,
         )
     candidates = npc_templates_for_categories(
         categories,
         danger_level=danger_level,
         used_ids=npc_template_used_ids(engine),
+        rescued=rescued,
     )
     if not candidates:
         return None
@@ -916,6 +956,18 @@ def choose_npc_template_for_raw(
     scored = [(score_npc_template_for_raw(template, raw), rng.random(), template) for template in candidates]
     scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
     return scored[0][2]
+
+
+def quest_objective_danger_level(engine: GameEngine, quest: QuestData, location_name: str) -> int:
+    danger = _safe_int(quest.extra.get("danger_level") or quest.extra.get("planned_danger_level"), 0)
+    if danger <= 0 and hasattr(engine, "_assign_quest_danger"):
+        try:
+            danger = _safe_int(engine._assign_quest_danger(quest, quest.neighboring_settlement or location_name), 0)
+        except Exception:
+            danger = 0
+    if danger <= 0:
+        danger = npc_template_danger_for_location(engine, location_name)
+    return max(1, danger)
 
 
 def template_augmented_npc_raw(
@@ -949,7 +1001,15 @@ def template_augmented_npc_raw(
         hostile=hostile,
         boss=boss,
     )
-    return merge_npc_template_payload(template_payload, raw)
+    merged = merge_npc_template_payload(template_payload, raw)
+    return _apply_namelist_name_to_payload(
+        engine,
+        merged,
+        template,
+        raw=raw,
+        seed=seed,
+        reason="npc_template",
+    )
 
 
 def generated_npc_level(
@@ -1066,7 +1126,17 @@ def ensure_facility_npc(engine: GameEngine, settlement: LocationData, facility: 
     gh = _game_helpers()
     npc_name = str(facility.get("npc_name") or "").strip()
     if not npc_name:
-        npc_name = gh._default_facility_npc_name(str(facility.get("name") or ""), str(facility.get("type") or ""))
+        name_entry = claim_name_from_namelist(
+            engine.state.world_data,
+            seed=f"facility-npc:{engine.state.world_name}:{settlement.name}:{facility.get('template_id') or facility.get('name')}",
+            reason="facility_npc",
+        )
+        if name_entry:
+            npc_name = str(name_entry.get("name_ja") or "")
+            facility["npc_namelist_id"] = str(name_entry.get("id") or "")
+            facility["npc_namelist_english_en"] = str(name_entry.get("english_en") or "")
+        if not npc_name:
+            npc_name = gh._default_facility_npc_name(str(facility.get("name") or ""), str(facility.get("type") or ""))
         facility["npc_name"] = npc_name
     npc_payload = facility.get("npc") if isinstance(facility.get("npc"), dict) else {}
     npc_gender = str(facility.get("npc_gender") or npc_payload.get("gender") or "").strip()
@@ -1216,7 +1286,8 @@ def quest_objective_npc_design(
 ) -> dict[str, Any]:
     gh = _game_helpers()
     fallback = gh._quest_objective_npc_fallback_design(quest, response, objective_role=objective_role)
-    danger_level = npc_template_danger_for_location(engine, location_name)
+    danger_level = quest_objective_danger_level(engine, quest, location_name)
+    rescued_only = True if objective_role == "rescue_target" else None
     template = choose_npc_template_for_raw(
         engine,
         {
@@ -1235,6 +1306,7 @@ def quest_objective_npc_design(
         danger_level=danger_level,
         seed=f"quest-objective:{engine.state.world_name}:{quest.name}:{objective_role}:{location_name}:{subnode_id}",
         preferred_ids=npc_template_ids_from_payloads(quest.extra, response),
+        rescued=rescued_only,
     )
     template_payload = npc_template_character_payload(
         engine,
@@ -1242,6 +1314,15 @@ def quest_objective_npc_design(
         danger_level=danger_level,
         seed=f"quest-objective-payload:{engine.state.world_name}:{quest.name}:{objective_role}:{location_name}:{subnode_id}",
         hostile=objective_role in {"defeat_target", "blocker"},
+    )
+    explicit_objective_name = _explicit_npc_name_from_payload(response) or _explicit_npc_name_from_payload(quest.extra)
+    template_payload = _apply_namelist_name_to_payload(
+        engine,
+        template_payload,
+        template,
+        raw={"name": explicit_objective_name} if explicit_objective_name else {},
+        seed=f"quest-objective-payload:{engine.state.world_name}:{quest.name}:{objective_role}:{location_name}:{subnode_id}",
+        reason="quest_objective_npc_template",
     )
     if template_payload:
         template_extra = template_payload.get("extra") if isinstance(template_payload.get("extra"), dict) else {}
@@ -1266,6 +1347,7 @@ def quest_objective_npc_design(
                 "npc_template_id": template_extra.get("npc_template_id") if isinstance(template_extra, dict) else "",
                 "npc_template_category": template_extra.get("npc_template_category") if isinstance(template_extra, dict) else "",
                 "npc_template_payload": template_payload,
+                "namelist_id": template_extra.get("namelist_id") if isinstance(template_extra, dict) else "",
             }
         )
     location = engine.state.world_data.locations.get(location_name)
@@ -1297,6 +1379,7 @@ def quest_objective_npc_design(
                 "when a human age or binary gender is not meaningful. "
                 "If npc_template is supplied, keep the same creature/person type and use it as the base; fill only "
                 "missing flavor such as a concrete name variant, look details, personality details, skills, or traits. "
+                "If fallback has namelist_id, keep fallback.name exactly and do not invent another name. "
                 "When traits are returned, each trait must contain only name and desc."
             ),
         },
@@ -1310,7 +1393,7 @@ def quest_objective_npc_design(
                     "destination": {
                         "location": location_name,
                         "location_kind": str((location.extra if location else {}).get("location_kind") or ""),
-                        "danger_level": _safe_int((location.extra if location else {}).get("danger_level"), 0),
+                        "danger_level": danger_level,
                         "description": str(location.description if location else ""),
                         "subnode": subnode_context,
                     },
@@ -1351,6 +1434,9 @@ def quest_objective_npc_design(
         design["aliases"] = aliases
     if "hostile" in generated:
         design["hostile"] = _as_bool(generated.get("hostile"))
+    if str(fallback.get("namelist_id") or "").strip():
+        design["name"] = str(fallback.get("name") or design.get("name") or "")
+        design["display_alias"] = str(fallback.get("display_alias") or design["name"])
     design["name"] = _clean_generated_name(design.get("name"), fallback.get("name") or "依頼対象", kind="character")
     if not str(design.get("display_alias") or "").strip():
         design["display_alias"] = design["name"]
@@ -1452,7 +1538,7 @@ def create_quest_objective_npc(
         engine,
         character,
         location_name=location_name,
-        danger_level=npc_template_danger_for_location(engine, location_name),
+        danger_level=quest_objective_danger_level(engine, quest, location_name),
         role_hint=objective_role,
         boss=objective_role == "boss",
     )

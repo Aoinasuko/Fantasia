@@ -39,5 +39,93 @@
     "target_type": ["town", "village"],
     "multiple_generating": false,
     "function_npc": ["male_residents", "female_residents"]
+  },
+  {
+    "id": "settlement_communal_well",
+    "name": "共同井戸",
+    "desc": "住民が水を汲み、日々の噂や頼みごとが自然と集まる井戸。",
+    "target_type": ["town", "village"],
+    "multiple_generating": false,
+    "function_npc": ["female_residents", "male_residents"]
+  },
+  {
+    "id": "settlement_clinic",
+    "name": "診療所",
+    "desc": "軽い怪我や病を診るための小さな診療所。薬草や包帯の匂いが残る。",
+    "target_type": ["town", "village"],
+    "multiple_generating": false,
+    "function_npc": ["female_residents", "male_residents"]
+  },
+  {
+    "id": "settlement_stable",
+    "name": "馬小屋",
+    "desc": "旅人や住民の荷運び獣を預かる小屋。干し草と革具の匂いが漂う。",
+    "target_type": ["town", "village"],
+    "multiple_generating": false,
+    "function_npc": ["male_residents", "female_residents"]
+  },
+  {
+    "id": "settlement_library",
+    "name": "図書館",
+    "desc": "街の記録や古い書物を収めた静かな建物。知識を求める人々が訪れる。",
+    "target_type": ["town"],
+    "multiple_generating": false,
+    "function_npc": ["female_residents", "male_residents"]
+  },
+  {
+    "id": "settlement_guard_station",
+    "name": "衛兵詰所",
+    "desc": "街路の治安を守る衛兵たちの詰所。掲示や巡回記録が壁に掛けられている。",
+    "target_type": ["town"],
+    "multiple_generating": false,
+    "function_npc": ["male_residents", "female_residents"]
+  },
+  {
+    "id": "settlement_bathhouse",
+    "name": "公衆浴場",
+    "desc": "旅の疲れを流せる湯場。湯気の向こうで住民たちの世間話が交わされる。",
+    "target_type": ["town"],
+    "multiple_generating": false,
+    "function_npc": ["female_residents", "male_residents"]
+  },
+  {
+    "id": "settlement_theater",
+    "name": "小劇場",
+    "desc": "吟遊詩人や旅芸人が舞台に立つ小さな劇場。街の娯楽と噂の集まる場所。",
+    "target_type": ["town"],
+    "multiple_generating": false,
+    "function_npc": ["female_residents", "male_residents"]
+  },
+  {
+    "id": "settlement_watermill",
+    "name": "水車小屋",
+    "desc": "小川の流れで粉を挽く水車小屋。木の軋む音が村の外れに響く。",
+    "target_type": ["village"],
+    "multiple_generating": false,
+    "function_npc": ["male_residents", "female_residents"]
+  },
+  {
+    "id": "settlement_common_field",
+    "name": "共同畑",
+    "desc": "村人たちが世話をする畑。作物の様子から土地の暮らしぶりが見えてくる。",
+    "target_type": ["village"],
+    "multiple_generating": false,
+    "function_npc": ["female_residents", "male_residents"]
+  },
+  {
+    "id": "settlement_livestock_shed",
+    "name": "家畜小屋",
+    "desc": "鶏や山羊などを飼う小屋。朝夕には世話をする住民の姿がある。",
+    "target_type": ["village"],
+    "multiple_generating": false,
+    "function_npc": ["male_residents", "female_residents"]
+  },
+  {
+    "id": "settlement_charcoal_kiln",
+    "name": "炭焼き小屋",
+    "desc": "森から運んだ薪を炭にする小屋。黒い灰と煙の匂いが染みついている。",
+    "target_type": ["village"],
+    "multiple_generating": false,
+    "function_npc": ["male_residents", "female_residents"]
   }
 ]

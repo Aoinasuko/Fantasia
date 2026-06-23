@@ -157,6 +157,8 @@ def _normalise_npc_template(raw: Any, source_path: Path) -> dict[str, Any] | Non
         "age": str(raw.get("age") or "").strip(),
         "age_min": max(0, _safe_int(raw.get("age_min"), 0)),
         "age_max": max(0, _safe_int(raw.get("age_max"), 0)),
+        "usenamelist": bool(raw.get("usenamelist")),
+        "rescued": bool(raw.get("rescued")),
         "category": category,
         "level": max(0, _safe_int(raw.get("level"), 0)),
         "atk": max(0, _safe_int(raw.get("atk"), 0)),
@@ -235,6 +237,7 @@ def npc_templates_for_categories(
     *,
     danger_level: int = 0,
     used_ids: set[str] | None = None,
+    rescued: bool | None = None,
 ) -> list[dict[str, Any]]:
     used_ids = used_ids or set()
     level = max(0, _safe_int(danger_level, 0))
@@ -243,6 +246,8 @@ def npc_templates_for_categories(
         for template in NPC_TEMPLATES.get(str(category), []):
             if _template_is_unique(template) and str(template.get("id") or "") in used_ids:
                 continue
+            if rescued is not None and bool(template.get("rescued")) != bool(rescued):
+                continue
             if _safe_int(template.get("level"), 0) <= level:
                 candidates.append(template)
     if candidates:
@@ -250,6 +255,8 @@ def npc_templates_for_categories(
     for category in categories:
         for template in NPC_TEMPLATES.get(str(category), []):
             if _template_is_unique(template) and str(template.get("id") or "") in used_ids:
+                continue
+            if rescued is not None and bool(template.get("rescued")) != bool(rescued):
                 continue
             candidates.append(template)
     return [deepcopy(item) for item in candidates]
@@ -305,6 +312,7 @@ def choose_npc_template(
     preferred_ids: list[str] | tuple[str, ...] | None = None,
     used_ids: set[str] | None = None,
     seed: str = "",
+    rescued: bool | None = None,
 ) -> dict[str, Any] | None:
     used_ids = used_ids or set()
     for template_id in preferred_ids or ():
@@ -315,8 +323,10 @@ def choose_npc_template(
             continue
         if _template_is_unique(template) and str(template.get("id") or "") in used_ids:
             continue
+        if rescued is not None and bool(template.get("rescued")) != bool(rescued):
+            continue
         return deepcopy(template)
-    candidates = npc_templates_for_categories(categories, danger_level=danger_level, used_ids=used_ids)
+    candidates = npc_templates_for_categories(categories, danger_level=danger_level, used_ids=used_ids, rescued=rescued)
     if not candidates:
         return None
     rng = random.Random(seed or f"npc-template:{danger_level}:{','.join(categories)}")
@@ -346,6 +356,8 @@ def npc_template_ai_context(template: dict[str, Any] | None) -> dict[str, Any]:
         "attacks": template.get("attacks") or [],
         "skills": template.get("skills") if template.get("skills_defined") else "generate_if_needed",
         "traits": template.get("traits") if template.get("traits_defined") else "generate_if_needed",
+        "usenamelist": bool(template.get("usenamelist")),
+        "rescued": bool(template.get("rescued")),
     }
 
 
@@ -355,9 +367,10 @@ def npc_template_prompt_summaries(
     danger_level: int = 0,
     used_ids: set[str] | None = None,
     limit: int = 12,
+    rescued: bool | None = None,
 ) -> list[dict[str, Any]]:
     summaries: list[dict[str, Any]] = []
-    for template in npc_templates_for_categories(categories, danger_level=danger_level, used_ids=used_ids)[: max(0, limit)]:
+    for template in npc_templates_for_categories(categories, danger_level=danger_level, used_ids=used_ids, rescued=rescued)[: max(0, limit)]:
         summaries.append(
             {
                 "id": template.get("id"),
@@ -369,6 +382,8 @@ def npc_template_prompt_summaries(
                 "personality": template.get("personality"),
                 "attacks": template.get("attacks") or [],
                 "resistance": template.get("resistance") or [],
+                "usenamelist": bool(template.get("usenamelist")),
+                "rescued": bool(template.get("rescued")),
             }
         )
     return summaries
@@ -450,6 +465,8 @@ def npc_template_to_character_payload(
             "base_attack": max(0, _safe_int(template.get("atk"), 0)),
             "base_defense": max(0, _safe_int(template.get("def"), 0)),
             "base_level": max(1, _safe_int(template.get("level"), 1)),
+            "usenamelist": bool(template.get("usenamelist")),
+            "rescued": bool(template.get("rescued")),
         },
         "flags": {
             "npc_template_id": str(template.get("id") or ""),

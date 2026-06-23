@@ -1,0 +1,70 @@
+[
+  {
+    "id": "local_temple_pillar_hall_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "document", "generate_rate": 0.4, "amount_min": 1, "amount_max": 2, "rarity_max": "rare"},
+      {"target_category": "material_common", "generate_rate": 0.45, "amount_min": 1, "amount_max": 3, "rarity_max": "uncommon"}
+    ]
+  },
+  {
+    "id": "local_temple_prayer_room_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "medicine", "generate_rate": 0.35, "amount_min": 1, "amount_max": 2, "rarity_max": "rare"},
+      {"target_category": "material_magical", "generate_rate": 0.5, "amount_min": 1, "amount_max": 3, "rarity_max": "rare"}
+    ]
+  },
+  {
+    "id": "local_temple_cursed_altar_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "material_magical", "generate_rate": 0.75, "amount_min": 1, "amount_max": 4, "rarity_min": "uncommon"},
+      {"target_category": "relic", "generate_rate": 0.25, "amount_min": 1, "amount_max": 1, "rarity_min": "rare"}
+    ]
+  },
+  {
+    "id": "local_temple_purification_font_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "material_liquid", "generate_rate": 0.75, "amount_min": 1, "amount_max": 3, "rarity_max": "rare"},
+      {"target_category": "medicine", "generate_rate": 0.45, "amount_min": 1, "amount_max": 2, "rarity_max": "rare"},
+      {"target_category": "potion", "generate_rate": 0.25, "amount_min": 1, "amount_max": 1, "rarity_max": "rare"}
+    ]
+  },
+  {
+    "id": "local_temple_offering_vault_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "treasure", "generate_rate": 0.45, "amount_min": 1, "amount_max": 1, "rarity_max": "rare"},
+      {"target_category": "relic", "generate_rate": 0.35, "amount_min": 1, "amount_max": 1, "rarity_min": "rare"},
+      {"target_category": "document", "generate_rate": 0.35, "amount_min": 1, "amount_max": 2, "rarity_max": "rare"}
+    ]
+  },
+  {
+    "id": "local_temple_incense_cloister_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "material_plant", "generate_rate": 0.65, "amount_min": 1, "amount_max": 3, "rarity_max": "rare"},
+      {"target_category": "material_magical", "generate_rate": 0.45, "amount_min": 1, "amount_max": 2, "rarity_max": "rare"},
+      {"target_category": "medicine", "generate_rate": 0.25, "amount_min": 1, "amount_max": 1, "rarity_max": "uncommon"}
+    ]
+  },
+  {
+    "id": "local_temple_oracle_mirror_loot",
+    "lot_min": 1,
+    "lot_max": 2,
+    "item_tabel": [
+      {"target_category": "scroll", "generate_rate": 0.45, "amount_min": 1, "amount_max": 1, "rarity_max": "rare"},
+      {"target_category": "material_gem", "generate_rate": 0.35, "amount_min": 1, "amount_max": 2, "rarity_min": "uncommon", "rarity_max": "epic"},
+      {"target_category": "material_magical", "generate_rate": 0.55, "amount_min": 1, "amount_max": 3, "rarity_max": "rare"},
+      {"target_category": "relic", "generate_rate": 0.2, "amount_min": 1, "amount_max": 1, "rarity_min": "rare"}
+    ]
+  }
+]

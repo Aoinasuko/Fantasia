@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .item_generate_loottabel import generate_loot_table_items
+from .namelist import claim_name_from_namelist
 from .paths import LOCATION_LOCAL_TEMPLATE_DIR, LOCATION_WORLD_TEMPLATE_DIR, ROOT
 from .world_generation import (
     DEFAULT_SUBNODE_ID,
@@ -56,6 +57,32 @@ FACILITY_TYPE_BY_TEMPLATE_ID = {
     "settlement_church": "temple",
     "settlement_chief_house": "town_hall",
 }
+FACILITY_DISPLAY_LABEL_BY_TYPE = {
+    "guild": "冒険者ギルド",
+    "town_hall": "役場",
+    "inn": "宿屋",
+    "blacksmith": "鍛冶屋",
+    "apothecary": "薬品店",
+    "general_store": "雑貨店",
+    "food_store": "食料品店",
+    "black_market": "闇商店",
+    "material_store": "素材店",
+    "magic_store": "魔法品店",
+    "junk_store": "ジャンク店",
+    "temple": "教会",
+}
+FACILITY_NPC_NAMED_TYPES = {
+    "inn",
+    "blacksmith",
+    "apothecary",
+    "general_store",
+    "food_store",
+    "black_market",
+    "material_store",
+    "magic_store",
+    "junk_store",
+}
+FACILITY_SETTLEMENT_NAMED_TYPES = {"guild", "town_hall", "temple"}
 ROUTE_SLOTS = (
     {"category": "settlement", "type": "town", "role": "starting_settlement"},
     {"category": "highway", "type": "highway", "role": "route"},
@@ -522,6 +549,9 @@ class TemplateWorldGenerator:
                 "Use Japanese names and Japanese in-world descriptions.",
                 "Avoid internal words such as slot_id, category, target_type, danger rule, template, placeholder, unnamed, or initial point.",
                 "For facility slots, describe the facility only. Do not copy the facility description into NPC appearance or personality.",
+                "For facility slots, parent_location_name is the settlement name and npc_name is the fixed keeper name.",
+                "For facility shop slots, include npc_name in the facility name, such as '<npc_name>の鍛冶屋'.",
+                "For guild, town hall, church, or similar public facility slots, include parent_location_name in the facility name.",
                 "For the final_destination location, use the final_destination_concept and make it a concrete final dungeon name.",
             ],
         }
@@ -546,8 +576,10 @@ class TemplateWorldGenerator:
             )
         except Exception as exc:
             self.world.extra.setdefault("template_world_description_errors", []).append({"error": str(exc)})
+            self._apply_facility_owner_names(specs)
             return
         self._apply_description_response(specs, response)
+        self._apply_facility_owner_names(specs)
         self.world.history.append({"manager": "template_world_location_describer", "response": _strip_response_metadata(response)})
 
     def _description_slots(self, specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -578,10 +610,13 @@ class TemplateWorldGenerator:
                             "slot_id": f"{spec['slot_id']}:facility:{facility.get('template_id') or facility.get('id') or facility.get('name')}",
                             "target": "facility",
                             "parent_slot_id": spec["slot_id"],
+                            "parent_location_name": location.name,
                             "facility_type": facility.get("type"),
                             "template_id": facility.get("template_id"),
                             "template_name": facility.get("template_name") or facility.get("name"),
                             "template_desc": facility.get("template_desc") or facility.get("description"),
+                            "npc_name": facility.get("npc_name"),
+                            "npc_role": facility.get("npc_role"),
                         }
                     )
             graph = location.extra.get(SUBNODE_GRAPH_KEY)
@@ -658,15 +693,43 @@ class TemplateWorldGenerator:
             }
             if template_part not in key_values:
                 continue
-            name = _clean_llm_name(item.get("name") or item.get("title") or "", fallback=str(facility.get("name") or ""))
+            llm_name = _clean_llm_name(item.get("name") or item.get("title") or "", fallback=str(facility.get("name") or ""))
+            name = _facility_display_name_with_owner(llm_name, facility, location.name)
             description = _clean_llm_description(item.get("description") or item.get("desc") or item.get("summary") or "")
             if name:
+                original_name = str(facility.get("name") or "")
                 facility["name"] = name
                 facility["sub_location"] = name
+                aliases = facility.setdefault("aliases", [])
+                if isinstance(aliases, list):
+                    for alias in (original_name, llm_name):
+                        if alias and alias != name and alias not in aliases:
+                            aliases.append(alias)
             if description:
                 facility["description"] = description
             facility["raw_template_world_facility_description"] = _strip_response_metadata(item)
             return
+
+    def _apply_facility_owner_names(self, specs: list[dict[str, Any]]) -> None:
+        for spec in specs:
+            if spec.get("category") != "settlement":
+                continue
+            location = self.world.locations.get(str(spec.get("name") or ""))
+            facilities = location.extra.get("facilities") if location else None
+            if not isinstance(facilities, list):
+                continue
+            for facility in facilities:
+                if not isinstance(facility, dict):
+                    continue
+                original_name = str(facility.get("name") or "").strip()
+                display_name = _facility_display_name_with_owner(original_name, facility, location.name)
+                if not display_name or display_name == original_name:
+                    continue
+                facility["name"] = display_name
+                facility["sub_location"] = display_name
+                aliases = facility.setdefault("aliases", [])
+                if isinstance(aliases, list) and original_name and original_name not in aliases:
+                    aliases.append(original_name)
 
     def _apply_subnode_description(self, spec_by_id: dict[str, dict[str, Any]], slot_id: str, item: dict[str, Any]) -> None:
         parent_slot, _, node_id = slot_id.partition(":subnode:")
@@ -780,11 +843,17 @@ class TemplateWorldGenerator:
         template_id = str(template.get("id") or "")
         facility_type = FACILITY_TYPE_BY_TEMPLATE_ID.get(template_id) or _facility_type_from_template(template)
         name = str(template.get("name") or template_id or facility_type)
+        name_entry = claim_name_from_namelist(
+            self.world,
+            seed=f"facility-template:{self.world.world_name}:{location.name}:{template_id}",
+            reason="facility_npc_candidate",
+        )
+        npc_name = str((name_entry or {}).get("name_ja") or "")
         record: dict[str, Any] = {
             "name": name,
             "type": facility_type,
             "description": str(template.get("desc") or ""),
-            "npc_name": "",
+            "npc_name": npc_name,
             "npc_role": _default_facility_role(facility_type),
             "location_name": location.name,
             "sub_location": name,
@@ -797,6 +866,9 @@ class TemplateWorldGenerator:
             "shopItem": deepcopy(_as_list(template.get("shopItem"))),
             "local_template": deepcopy(template),
         }
+        if name_entry:
+            record["npc_namelist_id"] = str(name_entry.get("id") or "")
+            record["npc_namelist_english_en"] = str(name_entry.get("english_en") or "")
         return record
 
     def _node_template_payload(self, template: dict[str, Any]) -> dict[str, Any]:
@@ -939,6 +1011,19 @@ def _facility_type_from_template(template: dict[str, Any]) -> str:
     if "townhall" in template_id:
         return "town_hall"
     return "facility"
+
+
+def _facility_display_name_with_owner(name: str, facility: dict[str, Any], settlement_name: str) -> str:
+    clean_name = str(name or "").strip()
+    facility_type = str(facility.get("type") or _facility_type_from_template(facility)).strip().lower()
+    label = FACILITY_DISPLAY_LABEL_BY_TYPE.get(facility_type) or str(facility.get("template_name") or clean_name).strip()
+    npc_name = str(facility.get("npc_name") or "").strip()
+    settlement = str(settlement_name or facility.get("location_name") or "").strip()
+    if facility_type in FACILITY_NPC_NAMED_TYPES and npc_name:
+        return clean_name if npc_name in clean_name else f"{npc_name}の{label}"
+    if facility_type in FACILITY_SETTLEMENT_NAMED_TYPES and settlement:
+        return clean_name if settlement in clean_name else f"{settlement}の{label}"
+    return clean_name
 
 
 def _default_facility_role(facility_type: str) -> str:

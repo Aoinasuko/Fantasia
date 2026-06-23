@@ -73,6 +73,7 @@ from .llm_tool import (
 from .npc_templates import (
     ENEMY_NPC_TEMPLATE_CATEGORIES,
     FRIENDLY_NPC_TEMPLATE_CATEGORIES,
+    choose_npc_template,
     npc_template_prompt_summaries,
     used_npc_template_ids,
 )
@@ -221,7 +222,7 @@ from .world_generation import (
     _world_location_target_count,
     _world_overview_max_tokens,
 )
-from .item_generate_loottabel import generate_loot_table_items
+from .item_generate_loottabel import choose_loot_table_by_tag, generate_loot_table_items, loot_table_by_id
 from .world_generate import (
     generate_template_world,
     install_template_dungeon_subnode_graph,
@@ -412,7 +413,6 @@ SHOP_FACILITY_PRICE_MULTIPLIERS = {
     "black_market": 3.0,
 }
 
-DEFAULT_LOCATION_LOOT_TABEL_ID = "local_default_loot"
 DEFAULT_VENDOR_LOOT_TABEL_ID = "shop_general_store"
 SHOP_LOOT_TABEL_BY_FACILITY_TYPE = {
     "blacksmith": "shop_blacksmith",
@@ -1375,7 +1375,13 @@ class GameEngine:
         *,
         source: str,
     ) -> tuple[str, list[dict[str, Any]]]:
-        loot_table_id = rng.choice(("dungeon_innermost_treasure", "dungeon_innermost_weapon"))
+        table = choose_loot_table_by_tag(
+            "dungeon_innermost",
+            seed=f"{source}|{location.name}|deepest|{rng.random()}",
+            context=location.name,
+            danger_level=_clamp_world_danger(location.extra.get("danger_level", location.extra.get("danger", 0))),
+        )
+        loot_table_id = str((table or {}).get("id") or "dungeon_innermost_treasure")
         return loot_table_id, generate_loot_table_items(
             loot_table_id,
             context=location.name,
@@ -5729,6 +5735,8 @@ class GameEngine:
                 "shop_item_table",
                 "local_template",
                 "raw_template_world_facility_description",
+                "npc_namelist_id",
+                "npc_namelist_english_en",
             ):
                 if template_key in item:
                     record[template_key] = item[template_key]
@@ -7967,29 +7975,6 @@ class GameEngine:
                 if not isinstance(inventory, list):
                     inventory = []
                     slot["inventory"] = inventory
-            elif not slot.get("seeded") and not inventory:
-                context = " ".join(
-                    str(part)
-                    for part in (
-                        location.area,
-                        location.description,
-                        node.get("name"),
-                        node.get("description"),
-                        node.get("loot_hint"),
-                        node.get("resource_hint"),
-                    )
-                    if str(part or "").strip()
-                )
-                inventory.extend(
-                    generate_loot_table_items(
-                        DEFAULT_LOCATION_LOOT_TABEL_ID,
-                        context=f"{location.name}:{subnode_id}:{context}",
-                        danger_level=self._current_location_danger(location.name),
-                        seed=f"location-fallback|{self.state.world_name}|{location.name}|{subnode_id}",
-                        source="location_fallback",
-                    )
-                )
-                slot["seeded"] = True
             label = f"{location.name} / {node.get('name') or subnode_id}"
             return label, inventory
         inventory = location.extra.setdefault("inventory", [])
@@ -7997,16 +7982,6 @@ class GameEngine:
             inventory = []
             location.extra["inventory"] = inventory
         if not location.flags.get("inventory_seeded") and not inventory:
-            context = " ".join(part for part in (location.area, location.description) if part)
-            inventory.extend(
-                generate_loot_table_items(
-                    DEFAULT_LOCATION_LOOT_TABEL_ID,
-                    context=f"{location.name}:{context}",
-                    danger_level=self._current_location_danger(location.name),
-                    seed=f"location-fallback|{self.state.world_name}|{location.name}",
-                    source="location_fallback",
-                )
-            )
             location.flags["inventory_seeded"] = True
         return location.name, inventory
 
