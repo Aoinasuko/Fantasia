@@ -66,7 +66,7 @@ CRAFT_KIND_LABELS = {
 }
 
 CONSUMABLE_CATEGORIES = {"medicine", "potion", "scroll", "magicrod", "food", "drink"}
-COOKING_CATEGORIES = {"food", "drink"}
+COOKING_CATEGORIES = {"food", "drink", "material_plant"}
 ALCHEMY_HINT_CATEGORIES = {"medicine", "potion", "material_liquid", "material_plant", "material_magical", "material_gem"}
 SMITHING_HINT_CATEGORIES = {"material_ore", "material_metal"}
 RARITY_UPGRADE_TARGETS = {

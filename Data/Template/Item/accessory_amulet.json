@@ -1,0 +1,74 @@
+[
+  {
+    "id": "accessory_amulet_travel",
+    "name": "旅人の護符",
+    "category": "accessory_amulet",
+    "level": 0,
+    "value": 20,
+    "desc": "旅の安全を願った護符。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "accessory_amulet_maid",
+    "name": "使用人の飾り",
+    "category": "accessory_amulet",
+    "level": 0,
+    "value": 20,
+    "desc": "使用人を識別できる飾り。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "accessory_amulet_fairy",
+    "name": "妖精の首飾り",
+    "category": "accessory_amulet",
+    "level": 0,
+    "value": 20,
+    "desc": "妖精の飾りがついた首飾り。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "accessory_amulet_element",
+    "name": "精霊の首飾り",
+    "category": "accessory_amulet",
+    "level": 0,
+    "value": 20,
+    "desc": "精霊の飾りがついた首飾り。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "accessory_amulet_wolf",
+    "name": "狼のアミュレット",
+    "category": "accessory_amulet",
+    "level": 0,
+    "value": 40,
+    "desc": "狼の紋章が彫られたアミュレット。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "accessory_amulet_succubus",
+    "name": "淫魔のアミュレット",
+    "category": "accessory_amulet",
+    "level": 0,
+    "value": 40,
+    "desc": "淫魔の紋章が彫られたアミュレット。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  }
+]

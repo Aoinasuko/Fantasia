@@ -1,5 +1,6 @@
 [
   {
+    "id": "material_gem_crystal",
     "name": "水晶片",
     "category": "material_gem",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": ""
   },
   {
+    "id": "material_gem_sapphire",
     "name": "サファイア原石",
     "category": "material_gem",
     "level": 0,
@@ -22,6 +24,7 @@
     "element": ""
   },
   {
+    "id": "material_gem_ruby",
     "name": "ルビー原石",
     "category": "material_gem",
     "level": 0,

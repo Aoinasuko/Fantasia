@@ -1,5 +1,6 @@
 [
   {
+    "id": "material_common_thread",
     "name": "丈夫な糸",
     "category": "material_common",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": ""
   },
   {
+    "id": "material_common_bone_fragment",
     "name": "獣の骨片",
     "category": "material_common",
     "level": 0,
@@ -22,6 +24,7 @@
     "element": ""
   },
   {
+    "id": "material_common_lumber",
     "name": "加工木材",
     "category": "material_common",
     "level": 0,
@@ -33,6 +36,7 @@
     "element": ""
   },
   {
+    "id": "material_common_stone",
     "name": "加工石材",
     "category": "material_common",
     "level": 0,

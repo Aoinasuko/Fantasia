@@ -1726,8 +1726,9 @@ class FantasiaApp(tk.Tk):
         self.craft_btn = self._tool_icon_button(left_tools, "craft", _ui_text(self.config_data, "game_craft"), self._open_craft_window)
         self.loot_btn = self._tool_icon_button(left_tools, "loot", _ui_text(self.config_data, "game_loot"), self._open_loot_inventory)
         self.world_map_btn = self._tool_icon_button(left_tools, "worldmap", _ui_text(self.config_data, "game_world_map"), self._open_world_map_window)
+        self.quest_status_btn = self._tool_icon_button(left_tools, "quest", _ui_text(self.config_data, "game_quest_status"), self._open_active_quest_window)
         self.subnode_map_btn = self._tool_icon_button(left_tools, "worldmap", _ui_text(self.config_data, "game_subnode_map"), self._open_subnode_map_window)
-        for column, button in enumerate((self.inventory_btn, self.craft_btn, self.loot_btn, self.world_map_btn, self.subnode_map_btn)):
+        for column, button in enumerate((self.inventory_btn, self.craft_btn, self.loot_btn, self.world_map_btn, self.quest_status_btn, self.subnode_map_btn)):
             button.grid(row=0, column=column, padx=(0, 10), pady=0)
 
         self.cg_btn = self._tool_icon_button(right_tools, "cg", _ui_text(self.config_data, "game_cg"), self._generate_cg_image)
@@ -1736,12 +1737,13 @@ class FantasiaApp(tk.Tk):
         self.setting_btn = self._tool_icon_button(right_tools, "setting", _ui_text(self.config_data, "game_setting"), self._open_game_submenu)
         for column, button in enumerate((self.cg_btn, self.tutorial_btn, self.save_btn, self.setting_btn)):
             button.grid(row=0, column=column, padx=(10, 0), pady=0)
-        self.task_buttons.extend([self.inventory_btn, self.craft_btn, self.loot_btn, self.world_map_btn, self.subnode_map_btn, self.cg_btn, self.tutorial_btn, self.save_btn, self.setting_btn])
+        self.task_buttons.extend([self.inventory_btn, self.craft_btn, self.loot_btn, self.world_map_btn, self.quest_status_btn, self.subnode_map_btn, self.cg_btn, self.tutorial_btn, self.save_btn, self.setting_btn])
         for button, title_key, help_key in (
             (self.inventory_btn, "game_inventory", "game_inventory_help"),
             (self.craft_btn, "game_craft", "game_craft_help"),
             (self.loot_btn, "game_loot", "game_loot_help"),
             (self.world_map_btn, "game_world_map", "game_world_map_help"),
+            (self.quest_status_btn, "game_quest_status", "game_quest_status_help"),
             (self.subnode_map_btn, "game_subnode_map", "game_subnode_map_help"),
             (self.cg_btn, "game_cg", "game_cg_help"),
             (self.tutorial_btn, "game_tutorial", "game_tutorial_help"),
@@ -3635,6 +3637,119 @@ class FantasiaApp(tk.Tk):
             )
 
         self._instant_button(footer, _ui_text(self.config_data, "subnode_map_move"), travel).grid(row=0, column=1, sticky="e", padx=(12, 0))
+
+    def _open_active_quest_window(self) -> None:
+        self._hide_game_button_help()
+        dialog = self._create_modal_dialog(_ui_text(self.config_data, "quest_status_title"), 760, 520)
+        dialog.title(_ui_text(self.config_data, "quest_status_title"))
+        dialog.configure(bg=APP_DEEP_BG)
+        dialog.columnconfigure(0, weight=1)
+        dialog.rowconfigure(1, weight=1)
+
+        header = tk.Frame(dialog, bg=APP_DEEP_BG)
+        header.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 8))
+        header.columnconfigure(0, weight=1)
+        tk.Label(header, text=_ui_text(self.config_data, "quest_status_title"), bg=APP_DEEP_BG, fg="#f2f2f2", font=self.ui_fonts.bold(1)).grid(row=0, column=0, sticky="w")
+        self._instant_button(header, _ui_text(self.config_data, "character_close"), dialog.destroy).grid(row=0, column=1, sticky="e")
+
+        text = self._instant_text(dialog, 1, 0, height=18, padx=16, pady=(0, 14))
+        text.insert("1.0", self._active_quest_status_text())
+        text.configure(state="disabled")
+
+    def _active_quest_status_text(self) -> str:
+        state = self.engine.state
+        active_name = str(state.active_quest or "").strip()
+        if not active_name:
+            return _ui_text(self.config_data, "quest_status_empty")
+        quest = next((item for item in state.world_data.quests if item.name == active_name), None)
+        if quest is None:
+            return f"{_ui_text(self.config_data, 'quest_status_name')}: {active_name}\n{_ui_text(self.config_data, 'quest_status_missing')}"
+        extra = quest.extra if isinstance(quest.extra, dict) else {}
+        destination = extra.get("destination") if isinstance(extra.get("destination"), dict) else {}
+        pack = extra.get("objective_entities") if isinstance(extra.get("objective_entities"), dict) else {}
+        entries = [entry for entry in pack.get("entries", []) if isinstance(entry, dict)] if isinstance(pack, dict) else []
+        location = str(destination.get("location") or extra.get("objective_location") or pack.get("location") or "-")
+        subnode_name = str(destination.get("objective_subnode_name") or extra.get("objective_subnode_name") or "")
+        subnode_id = str(destination.get("objective_subnode_id") or extra.get("objective_subnode_id") or pack.get("subnode_id") or "")
+        subnode = subnode_name or subnode_id or "-"
+        lines = [
+            f"{_ui_text(self.config_data, 'quest_status_name')}: {quest.name}",
+            f"{_ui_text(self.config_data, 'quest_board_status')}: {quest.status}",
+            f"{_ui_text(self.config_data, 'quest_board_danger')}: {extra.get('danger_level') or extra.get('planned_danger_level') or '-'}",
+            f"{_ui_text(self.config_data, 'quest_status_destination')}: {location}",
+            f"{_ui_text(self.config_data, 'quest_status_subnode')}: {subnode}",
+        ]
+        remaining = self.engine.active_quest_remaining_time_label() if state.active_quest else ""
+        if remaining:
+            lines.append(f"{_ui_text(self.config_data, 'quest_status_deadline')}: {remaining}")
+        objective = str(extra.get("objective") or quest.overview or "").strip()
+        if objective:
+            lines.extend(["", f"{_ui_text(self.config_data, 'quest_board_objective')}:", objective])
+        lines.append("")
+        lines.append(f"{_ui_text(self.config_data, 'quest_status_todo')}:")
+        if entries:
+            for entry in entries:
+                lines.append(f"- {self._quest_entry_status_line(entry)}")
+        else:
+            lines.append(f"- {_ui_text(self.config_data, 'quest_status_no_entries')}")
+        return "\n".join(lines)
+
+    def _quest_entry_status_line(self, entry: dict[str, object]) -> str:
+        role = str(entry.get("role") or "")
+        kind = str(entry.get("kind") or "")
+        name = str(entry.get("name") or entry.get("display_alias") or role or kind or "-")
+        status = str(entry.get("status") or "waiting")
+        location = str(entry.get("location") or "")
+        subnode = str(entry.get("subnode_id") or "")
+        todo_map = {
+            "rescue_target": {
+                "waiting": "救出対象を見つけて保護する",
+                "found": "救出対象を保護する",
+                "escorting": "救出対象をギルドまで連れて帰る",
+                "delivered": "ギルドで報告する",
+            },
+            "blocker": {
+                "waiting": "妨害者を説得・無力化・討伐して解決する",
+                "neutralized": "救出対象を保護する",
+                "defeated": "救出対象を保護する",
+            },
+            "defeat_target": {
+                "waiting": "討伐対象を倒す",
+                "defeated": "ギルドで報告する",
+                "dead": "ギルドで報告する",
+            },
+            "delivery_item": {
+                "carrying": "配達先へ届ける",
+                "delivered": "ギルドで報告する",
+            },
+            "delivery_target": {
+                "waiting": "配達先に会う",
+                "received": "ギルドで報告する",
+                "delivered": "ギルドで報告する",
+            },
+            "retrieve_item": {
+                "waiting": "目的アイテムを採取・回収する",
+                "found": "目的アイテムを採取・回収する",
+                "retrieved": "ギルドで報告する",
+                "delivered": "完了済み",
+            },
+            "investigation_point": {
+                "waiting": "調査地点を調べる",
+                "found": "調査地点を調べる",
+                "investigated": "ギルドで報告する",
+                "delivered": "完了済み",
+            },
+            "procurement_requirement": {
+                "waiting": "指定品を用意してギルドで提出する",
+                "submitted": "ギルドで報告する",
+                "delivered": "完了済み",
+            },
+        }
+        todo = todo_map.get(role, {}).get(status) or todo_map.get(role, {}).get("waiting") or _ui_text(self.config_data, "quest_status_continue")
+        place = f" / {location}" if location else ""
+        if subnode:
+            place += f" / {subnode}"
+        return f"{name}: {todo} ({status}){place}"
 
     def _open_quest_board_window(self) -> None:
         if not self.engine.is_current_location_guild():
@@ -8016,6 +8131,7 @@ UI_TEXT["en"].update(
         "game_loot": "Loot",
         "game_world_map": "World Map",
         "game_subnode_map": "Area Map",
+        "game_quest_status": "Quest",
         "game_trade": "Trade",
         "game_craft": "Craft",
         "game_save": "Save",
@@ -8054,6 +8170,16 @@ UI_TEXT["en"].update(
         "quest_board_status": "Status",
         "quest_board_danger": "Danger",
         "quest_board_objective": "Objective",
+        "quest_status_title": "Active Quest",
+        "quest_status_empty": "No quest is currently active.",
+        "quest_status_missing": "The active quest record was not found.",
+        "quest_status_name": "Quest",
+        "quest_status_destination": "Destination",
+        "quest_status_subnode": "Target Place",
+        "quest_status_deadline": "Remaining Time",
+        "quest_status_todo": "To Do",
+        "quest_status_no_entries": "Objective details have not been created yet.",
+        "quest_status_continue": "Continue the quest objective.",
         "task_world_map_travel": "Traveling...",
         "task_subnode_map_travel": "Moving...",
         "task_accepting_quest": "Accepting quest...",
@@ -8268,6 +8394,7 @@ UI_TEXT["ja"].update(
         "game_loot": "漁る",
         "game_world_map": "世界地図",
         "game_subnode_map": "\u30b5\u30d6\u30de\u30c3\u30d7",
+        "game_quest_status": "依頼確認",
         "game_trade": "取引",
         "game_craft": "クラフト",
         "game_save": "保存",
@@ -8306,6 +8433,16 @@ UI_TEXT["ja"].update(
         "quest_board_status": "状態",
         "quest_board_danger": "危険度",
         "quest_board_objective": "目的",
+        "quest_status_title": "受注中の依頼",
+        "quest_status_empty": "現在受注中の依頼はありません。",
+        "quest_status_missing": "受注中の依頼データが見つかりません。",
+        "quest_status_name": "依頼",
+        "quest_status_destination": "向かう場所",
+        "quest_status_subnode": "目的サブノード",
+        "quest_status_deadline": "残り時間",
+        "quest_status_todo": "やるべきこと",
+        "quest_status_no_entries": "依頼目標の詳細はまだ作成されていません。",
+        "quest_status_continue": "依頼目標を進める",
         "task_world_map_travel": "移動中...",
         "task_subnode_map_travel": "\u79fb\u52d5\u4e2d...",
         "task_accepting_quest": "依頼を受注中...",
@@ -8681,6 +8818,7 @@ UI_TEXT["en"].update(
         "game_craft_help": "Combine materials or equipment to create or improve items.",
         "game_loot_help": "Open nearby containers or loot found in the current place.",
         "game_world_map_help": "View visited locations and travel along known routes.",
+        "game_quest_status_help": "Check the active quest destination, target place, and current objective.",
         "game_subnode_map_help": "View the internal map of the current town, facility, or dungeon.",
         "game_cg_help": "Generate a CG image from the latest log, visible characters, status effects, and current location.",
         "game_tutorial_help": "Open beginner guide pages for what to do next.",
@@ -8742,6 +8880,7 @@ UI_TEXT["ja"].update(
         "game_craft_help": "素材や装備を組み合わせて、アイテム作成や武具強化を行います。",
         "game_loot_help": "今いる場所の箱や落ちている物を確認します。",
         "game_world_map_help": "訪れた場所や知っている経路を確認し、既知の道を移動します。",
+        "game_quest_status_help": "受注中の依頼、向かう場所、目的サブノード、やるべきことを確認します。",
         "game_subnode_map_help": "街、施設、ダンジョン内部のマップを確認します。",
         "game_cg_help": "直近ログ、見えている人物、状態異常、現在地からCG画像を生成します。",
         "game_tutorial_help": "次に何をすればよいかを確認できる初心者向けガイドを開きます。",

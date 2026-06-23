@@ -1,5 +1,6 @@
 [
   {
+    "id": "magicrod_fire",
     "name": "火球の魔法杖",
     "category": "magicrod",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": ""
   },
   {
+    "id": "magicrod_heal",
     "name": "癒しの魔法杖",
     "category": "magicrod",
     "level": 0,
@@ -22,6 +24,7 @@
     "element": ""
   },
   {
+    "id": "magicrod_appraisal",
     "name": "鑑定の魔法杖",
     "category": "magicrod",
     "level": 0,

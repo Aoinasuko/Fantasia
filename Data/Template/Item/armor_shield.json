@@ -1,0 +1,110 @@
+[
+  {
+    "id": "armor_shield_small_wood",
+    "name": "木の小盾",
+    "category": "armor_shield",
+    "level": 0,
+    "value": 30,
+    "desc": "扱いやすい標準的な小盾。",
+    "use_effect": "None",
+    "power": 3,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "armor_shield_middle_wood",
+    "name": "木の盾",
+    "category": "armor_shield",
+    "level": 0,
+    "value": 40,
+    "desc": "扱いやすい標準的な盾。",
+    "use_effect": "None",
+    "power": 4,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "armor_shield_big_wood",
+    "name": "木の大盾",
+    "category": "armor_shield",
+    "level": 0,
+    "value": 50,
+    "desc": "扱いやすい標準的な大盾。",
+    "use_effect": "None",
+    "power": 5,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "armor_shield_small_iron",
+    "name": "鉄の小盾",
+    "category": "armor_shield",
+    "level": 10,
+    "value": 50,
+    "desc": "重いが頼れる金属の小盾。",
+    "use_effect": "None",
+    "power": 5,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "armor_shield_middle_iron",
+    "name": "鉄の盾",
+    "category": "armor_shield",
+    "level": 10,
+    "value": 70,
+    "desc": "重いが頼れる金属の盾。",
+    "use_effect": "None",
+    "power": 7,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "armor_shield_big_iron",
+    "name": "鉄の大盾",
+    "category": "armor_shield",
+    "level": 10,
+    "value": 90,
+    "desc": "重いが頼れる金属の大盾。",
+    "use_effect": "None",
+    "power": 9,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "armor_shield_small_diamond",
+    "name": "金剛石の小盾",
+    "category": "armor_shield",
+    "level": 20,
+    "value": 80,
+    "desc": "頑丈な小盾。",
+    "use_effect": "None",
+    "power": 8,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "armor_shield_middle_diamond",
+    "name": "金剛石の盾",
+    "category": "armor_shield",
+    "level": 20,
+    "value": 100,
+    "desc": "頑丈な盾。",
+    "use_effect": "None",
+    "power": 10,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "armor_shield_big_diamond",
+    "name": "金剛石の大盾",
+    "category": "armor_shield",
+    "level": 20,
+    "value": 120,
+    "desc": "頑丈な大盾。",
+    "use_effect": "None",
+    "power": 12,
+    "send_llm": "",
+    "element": ""
+  }
+]

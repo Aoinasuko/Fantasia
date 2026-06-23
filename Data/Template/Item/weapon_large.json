@@ -1,0 +1,26 @@
+[
+  {
+    "id": "weapon_large_sword_wood",
+    "name": "木の剣",
+    "category": "weapon_medium",
+    "level": 0,
+    "value": 50,
+    "desc": "両手で振るう重い木の剣。",
+    "use_effect": "None",
+    "power": 5,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "weapon_large_battleaxe_wood",
+    "name": "木の戦斧",
+    "category": "weapon_large",
+    "level": 0,
+    "value": 60,
+    "desc": "破壊力のある木の大型斧。",
+    "use_effect": "None",
+    "power": 6,
+    "send_llm": "",
+    "element": ""
+  }
+]

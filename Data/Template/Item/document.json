@@ -1,5 +1,6 @@
 [
   {
+    "id": "document_old_memo",
     "name": "古いメモ",
     "category": "document",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": ""
   },
   {
+    "id": "document_old_map",
     "name": "古い地図",
     "category": "document",
     "level": 0,
@@ -22,17 +24,7 @@
     "element": ""
   },
   {
-    "name": "依頼書の写し",
-    "category": "document",
-    "level": 0,
-    "value": 10,
-    "desc": "依頼の要点がまとめられた紙。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
-    "element": ""
-  },
-  {
+    "id": "document_travel_diary",
     "name": "旅人の日誌",
     "category": "document",
     "level": 0,
@@ -44,6 +36,7 @@
     "element": ""
   },
   {
+    "id": "document_treasure_map",
     "name": "宝の地図",
     "category": "document",
     "level": 0,

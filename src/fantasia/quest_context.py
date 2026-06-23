@@ -113,18 +113,21 @@ def _quest_ai_public_value(value: Any, *, key: str = "") -> Any:
     return _hide_internal_quest_tokens(str(value))
 
 def _quest_objective_entities_ai_view(pack: dict[str, Any]) -> dict[str, Any]:
-    def public_entries(group: str, prefix: str) -> list[dict[str, Any]]:
+    def public_entries() -> list[dict[str, Any]]:
         entries: list[dict[str, Any]] = []
-        for index, entry in enumerate(_as_list(pack.get(group)), start=1):
+        for index, entry in enumerate(_as_list(pack.get("entries")), start=1):
             if not isinstance(entry, dict):
                 continue
             role = str(entry.get("role") or "").strip()
-            label = str(entry.get("role_label") or entry.get("display_alias") or INTERNAL_QUEST_TOKEN_LABELS.get(role, role) or prefix)
+            kind = str(entry.get("kind") or "objective").strip()
+            label = str(entry.get("role_label") or entry.get("display_alias") or INTERNAL_QUEST_TOKEN_LABELS.get(role, role) or kind)
             entries.append(
                 _drop_empty(
                     {
-                        "ref": f"{prefix}_{index}",
+                        "ref": f"objective_{index}",
+                        "kind": kind,
                         "name": _hide_internal_quest_tokens(entry.get("name")),
+                        "description": _hide_internal_quest_tokens(entry.get("description")),
                         "display_alias": _hide_internal_quest_tokens(entry.get("display_alias") or label),
                         "role_label": _hide_internal_quest_tokens(label),
                         "role": INTERNAL_QUEST_TOKEN_LABELS.get(role, role),
@@ -143,10 +146,7 @@ def _quest_objective_entities_ai_view(pack: dict[str, Any]) -> dict[str, Any]:
             "location": pack.get("location"),
             "subnode_id": pack.get("subnode_id"),
             "status": pack.get("status"),
-            "npcs": public_entries("npcs", "objective_npc"),
-            "items": public_entries("items", "objective_item"),
-            "markers": public_entries("markers", "objective_marker"),
-            "requirements": public_entries("requirements", "objective_requirement"),
+            "entries": public_entries(),
             "flags": _quest_ai_public_value(pack.get("flags", {})),
         }
     )
@@ -167,4 +167,3 @@ def _hide_internal_quest_tokens(value: Any) -> str:
     for token, label in INTERNAL_QUEST_TOKEN_LABELS.items():
         text = re.sub(rf"\b{re.escape(token)}\b", label, text)
     return text
-

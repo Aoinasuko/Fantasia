@@ -1,5 +1,6 @@
 [
   {
+    "id": "scroll_food",
     "name": "食料の巻物",
     "category": "scroll",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": ""
   },
   {
+    "id": "scroll_spark",
     "name": "火花の巻物",
     "category": "scroll",
     "level": 0,
@@ -22,6 +24,7 @@
     "element": ""
   },
   {
+    "id": "scroll_unlock",
     "name": "解錠の巻物",
     "category": "scroll",
     "level": 0,
@@ -33,6 +36,7 @@
     "element": ""
   },
   {
+    "id": "scroll_protect",
     "name": "防護の巻物",
     "category": "scroll",
     "level": 0,

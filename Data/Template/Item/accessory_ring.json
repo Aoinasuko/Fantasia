@@ -1,0 +1,50 @@
+[
+  {
+    "id": "accessory_ring_wood",
+    "name": "木の指輪",
+    "category": "accessory_ring",
+    "level": 0,
+    "value": 10,
+    "desc": "簡素な木の指輪。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "accessory_ring_silver",
+    "name": "銀の指輪",
+    "category": "accessory_ring",
+    "level": 0,
+    "value": 30,
+    "desc": "簡素な銀の指輪。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "accessory_ring_gold",
+    "name": "金の指輪",
+    "category": "accessory_ring",
+    "level": 0,
+    "value": 50,
+    "desc": "簡素な金の指輪。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "accessory_ring_protect",
+    "name": "守りの指輪",
+    "category": "accessory_ring",
+    "level": 10,
+    "value": 100,
+    "desc": "小さな守護紋を刻んだ指輪。",
+    "use_effect": "None",
+    "power": 2,
+    "send_llm": "",
+    "element": ""
+  }
+]

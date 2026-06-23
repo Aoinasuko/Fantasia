@@ -1,5 +1,6 @@
 [
   {
+    "id": "treasure_coin",
     "name": "古貨幣",
     "category": "treasure",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": ""
   },
   {
+    "id": "treasure_cup",
     "name": "銀の杯",
     "category": "treasure",
     "level": 0,
@@ -22,6 +24,7 @@
     "element": ""
   },
   {
+    "id": "treasure_box",
     "name": "宝石細工の箱",
     "category": "treasure",
     "level": 0,
@@ -33,6 +36,7 @@
     "element": ""
   },
   {
+    "id": "treasure_crown",
     "name": "豪華な装飾の冠",
     "category": "treasure",
     "level": 10,
@@ -44,6 +48,7 @@
     "element": ""
   },
   {
+    "id": "treasure_rod",
     "name": "純金の杖",
     "category": "treasure",
     "level": 20,
@@ -55,6 +60,7 @@
     "element": ""
   },
   {
+    "id": "treasure_big_box",
     "name": "財宝の入った宝箱",
     "category": "treasure",
     "level": 30,

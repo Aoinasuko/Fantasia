@@ -3,9 +3,49 @@ from __future__ import annotations
 # Installed onto GameEngine by game._install_quest_modules().
 # Shared helpers are supplied from game.py at install time to avoid import cycles.
 
+from .items import ITEM_CATEGORY_IDS, choose_item_template
+
 QUEST_PLAN_DUNGEON_SUBTYPES = ("forest", "mountain", "ruin", "cave", "mine", "labyrinth", "crypt", "lair")
 
 QUEST_PLAN_TYPES = ("rescue", "retrieve", "defeat", "delivery", "investigate", "procure")
+
+QUEST_DELIVERY_ITEM_CATEGORIES = ("document", "medicine", "potion", "food", "tool", "material_common", "material_magical")
+QUEST_HARVEST_ITEM_CATEGORIES = ("material_plant",)
+QUEST_PROCUREMENT_ITEM_CATEGORIES = tuple(
+    category
+    for category in ITEM_CATEGORY_IDS
+    if not category.startswith("weapon_")
+    and not category.startswith("armor_")
+    and not category.startswith("accessory_")
+)
+
+
+def _quest_plan_item_categories(quest_type: str) -> tuple[str, ...]:
+    if quest_type == "delivery":
+        return QUEST_DELIVERY_ITEM_CATEGORIES
+    if quest_type == "procure":
+        return QUEST_PROCUREMENT_ITEM_CATEGORIES
+    if quest_type == "retrieve":
+        return QUEST_HARVEST_ITEM_CATEGORIES
+    return ()
+
+
+def _quest_generation_item_template(
+    world: WorldData,
+    settlement_name: str,
+    plan_index: int,
+    quest_type: str,
+    danger: int,
+) -> dict[str, Any]:
+    categories = _quest_plan_item_categories(quest_type)
+    if not categories:
+        return {}
+    return choose_item_template(
+        categories,
+        max_level=danger,
+        seed=f"quest-objective-item|{world.world_name}|{settlement_name}|{plan_index}|{quest_type}|{danger}",
+        context=settlement_name,
+    ) or {}
 
 
 def _quest_generation_plan(
@@ -27,6 +67,7 @@ def _quest_generation_plan(
         context=settlement_name,
         danger_level=danger,
     ) or {}
+    item_template = _quest_generation_item_template(world, settlement_name, plan_index, quest_type, danger)
     rescue_template = {}
     if quest_type == "rescue":
         rescue_template = choose_npc_template(
@@ -44,6 +85,11 @@ def _quest_generation_plan(
         "reward_loot_table_id": str(reward_table.get("id") or ""),
         "reward_loot_table_name_jp": str(reward_table.get("name_jp") or ""),
         "reward_loot_table_name_en": str(reward_table.get("name_en") or ""),
+        "objective_item_template_id": str(item_template.get("id") or ""),
+        "objective_item_template_name": str(item_template.get("name") or ""),
+        "objective_item_template_category": str(item_template.get("category") or ""),
+        "objective_item_template_desc": str(item_template.get("desc") or item_template.get("description") or ""),
+        "objective_item_template_level": _safe_int(item_template.get("level"), 0) if item_template else 0,
         "rescue_target_template_id": str(rescue_template.get("id") or ""),
         "rescue_target_template_name": str(rescue_template.get("name") or ""),
         "rescue_target_template_role": str(rescue_template.get("role") or ""),
@@ -67,6 +113,11 @@ def _apply_quest_generation_plan(item: dict[str, Any], plan: dict[str, Any]) -> 
     planned["reward_loot_table_id"] = str(plan.get("reward_loot_table_id") or "")
     planned["reward_loot_table_name_jp"] = str(plan.get("reward_loot_table_name_jp") or "")
     planned["reward_loot_table_name_en"] = str(plan.get("reward_loot_table_name_en") or "")
+    planned["objective_item_template_id"] = str(plan.get("objective_item_template_id") or "")
+    planned["objective_item_template_name"] = str(plan.get("objective_item_template_name") or "")
+    planned["objective_item_template_category"] = str(plan.get("objective_item_template_category") or "")
+    planned["objective_item_template_desc"] = str(plan.get("objective_item_template_desc") or "")
+    planned["objective_item_template_level"] = _safe_int(plan.get("objective_item_template_level"), 0)
     if planned["quest_type"] == "rescue" and str(plan.get("rescue_target_template_id") or "").strip():
         planned["target_npc_template_id"] = str(plan.get("rescue_target_template_id") or "")
         planned["rescue_target_template_id"] = str(plan.get("rescue_target_template_id") or "")
@@ -132,11 +183,13 @@ def _generate_settlement_quests(
                     "各クエストには quest_type を必ず含め、rescue/retrieve/defeat/delivery/investigate/procure のいずれかにしてください。"
                     "街道をふさぐ魔物や危険生物の排除、討伐、退治、狩猟は必ず quest_type=\"defeat\" です。"
                     "薬や食料など指定品をどこかから調達する依頼だけ quest_type=\"procure\" にしてください。"
-                    "報酬金、経験値、報酬アイテム、危険度、ダンジョン種別、救出対象NPCテンプレートはゲーム側で決定済みです。"
+                    "報酬金、経験値、報酬アイテム、危険度、ダンジョン種別、目的アイテムテンプレート、救出対象NPCテンプレートはゲーム側で決定済みです。"
                     "reward は返さないでください。"
                     "quest_plans の quest_plan_id ごとに1件ずつ、名称、概要、objective_subnode_name、objective_description、"
                     "救出対象NPC名または討伐対象NPC名だけを世界観に合わせて生成してください。"
-                    "quest_type, danger_level, dungeon_subtype, reward_loot_table_id, target_npc_template_id は変更しないでください。"
+                    "delivery/procure/retrieve では objective_item_template_name と objective_item_template_desc を必ず依頼名と概要に反映してください。"
+                    "retrieve は必ず植物採取依頼として扱い、指定された plant 素材を採取する内容にしてください。"
+                    "quest_type, danger_level, dungeon_subtype, reward_loot_table_id, objective_item_template_id, target_npc_template_id は変更しないでください。"
                 ),
             },
             {

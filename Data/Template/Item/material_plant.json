@@ -1,5 +1,6 @@
 [
   {
+    "id": "material_plant_harb",
     "name": "薬草",
     "category": "material_plant",
     "level": 0,
@@ -8,9 +9,10 @@
     "use_effect": "None",
     "power": 0,
     "send_llm": "",
-    "element": ""
+    "element": "回復薬の素材"
   },
   {
+    "id": "material_plant_smell_harb",
     "name": "香草",
     "category": "material_plant",
     "level": 0,
@@ -22,6 +24,7 @@
     "element": ""
   },
   {
+    "id": "material_plant_moon_harb",
     "name": "月光花",
     "category": "material_plant",
     "level": 0,
@@ -29,6 +32,54 @@
     "desc": "夜に淡く光る希少な花。",
     "use_effect": "None",
     "power": 0,
+    "send_llm": "",
+    "element": "媚薬の素材"
+  },
+  {
+    "id": "material_plant_sun_harb",
+    "name": "日光花",
+    "category": "material_plant",
+    "level": 0,
+    "value": 20,
+    "desc": "朝に力強く光る希少な花。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": "活力薬の素材"
+  },
+  {
+    "id": "material_plant_fairy_harb",
+    "name": "妖精草",
+    "category": "material_plant",
+    "level": 0,
+    "value": 30,
+    "desc": "妖精のように小さく生える、珍しい薬草。",
+    "use_effect": "None",
+    "power": 0,
+    "send_llm": "",
+    "element": "回復薬の素材"
+  },
+  {
+    "id": "material_plant_mini_mushroom",
+    "name": "ミニキノコ",
+    "category": "material_plant",
+    "level": 0,
+    "value": 5,
+    "desc": "料理に使える、小さなキノコ。",
+    "use_effect": "Hunger_Heal",
+    "power": 5,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "material_plant_big_mushroom",
+    "name": "ビックキノコ",
+    "category": "material_plant",
+    "level": 0,
+    "value": 10,
+    "desc": "料理に使える、大きなキノコ。",
+    "use_effect": "Hunger_Heal",
+    "power": 10,
     "send_llm": "",
     "element": ""
   }

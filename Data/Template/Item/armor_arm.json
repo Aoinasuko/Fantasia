@@ -1,0 +1,38 @@
+[
+  {
+    "id": "armor_arm_armor_leather",
+    "name": "革の手袋",
+    "category": "armor_arm",
+    "level": 0,
+    "value": 20,
+    "desc": "手を守る厚手の手袋。",
+    "use_effect": "None",
+    "power": 2,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "armor_arm_armor_iron",
+    "name": "鉄の籠手",
+    "category": "armor_arm",
+    "level": 10,
+    "value": 40,
+    "desc": "前腕まで覆う金属防具。",
+    "use_effect": "None",
+    "power": 4,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "armor_arm_armor_diamond",
+    "name": "金剛石の籠手",
+    "category": "armor_arm",
+    "level": 20,
+    "value": 60,
+    "desc": "最大限の防御を発揮する金剛石の籠手。",
+    "use_effect": "None",
+    "power": 6,
+    "send_llm": "",
+    "element": ""
+  }
+]

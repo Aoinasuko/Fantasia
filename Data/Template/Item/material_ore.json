@@ -1,5 +1,6 @@
 [
   {
+    "id": "material_ore_copper",
     "name": "銅鉱石",
     "category": "material_ore",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": "鉱石"
   },
   {
+    "id": "material_ore_iron",
     "name": "鉄鉱石",
     "category": "material_ore",
     "level": 0,
@@ -22,6 +24,7 @@
     "element": "鉱石"
   },
   {
+    "id": "material_ore_gold",
     "name": "金鉱石",
     "category": "material_ore",
     "level": 0,
@@ -33,6 +36,7 @@
     "element": "鉱石"
   },
   {
+    "id": "material_ore_silver",
     "name": "銀鉱石",
     "category": "material_ore",
     "level": 0,
@@ -44,6 +48,7 @@
     "element": "鉱石"
   },
   {
+    "id": "material_ore_obsidian",
     "name": "黒曜石片",
     "category": "material_ore",
     "level": 0,
@@ -55,6 +60,7 @@
     "element": "鉱石"
   },
   {
+    "id": "material_ore_diamond",
     "name": "金剛石片",
     "category": "material_ore",
     "level": 0,

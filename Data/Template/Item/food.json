@@ -1,5 +1,6 @@
 [
   {
+    "id": "food_eggplant",
     "name": "ナス",
     "category": "food",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": "野菜"
   },
   {
+    "id": "food_tomato",
     "name": "トマト",
     "category": "food",
     "level": 0,
@@ -22,6 +24,7 @@
     "element": "野菜"
   },
   {
+    "id": "food_lettuce",
     "name": "レタス",
     "category": "food",
     "level": 0,
@@ -33,6 +36,7 @@
     "element": "野菜"
   },
   {
+    "id": "food_pepper",
     "name": "トウガラシ",
     "category": "food",
     "level": 0,
@@ -44,6 +48,7 @@
     "element": "野菜、香辛料"
   },
   {
+    "id": "food_raw_meat",
     "name": "生の獣肉",
     "category": "food",
     "level": 0,
@@ -55,6 +60,7 @@
     "element": "肉"
   },
   {
+    "id": "food_grilled_meat",
     "name": "焼いた獣肉",
     "category": "food",
     "level": 0,
@@ -66,6 +72,7 @@
     "element": "肉"
   },
   {
+    "id": "food_jerky",
     "name": "獣肉のジャーキー",
     "category": "food",
     "level": 0,
@@ -77,6 +84,7 @@
     "element": "肉、保存食"
   },
   {
+    "id": "food_hardtack",
     "name": "乾パン",
     "category": "food",
     "level": 0,
@@ -88,6 +96,7 @@
     "element": "保存食"
   },
   {
+    "id": "food_preserved_food",
     "name": "豪華な保存食",
     "category": "food",
     "level": 0,

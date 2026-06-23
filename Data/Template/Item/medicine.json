@@ -1,5 +1,6 @@
 [
   {
+    "id": "medicine_bleed",
     "name": "止血薬",
     "category": "medicine",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": ""
   },
   {
+    "id": "medicine_poison",
     "name": "解毒薬",
     "category": "medicine",
     "level": 0,
@@ -22,6 +24,7 @@
     "element": ""
   },
   {
+    "id": "medicine_calm",
     "name": "鎮静薬",
     "category": "medicine",
     "level": 0,

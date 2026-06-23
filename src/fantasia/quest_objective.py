@@ -427,8 +427,11 @@ def _apply_quest_encounter_outcome(self, encounter: dict[str, Any], outcome: dic
         return []
     lines: list[str] = []
     pack = self._quest_objective_pack(quest)
-    for entry in pack.get("npcs", []):
+    for entry in pack.get("entries", []):
         if not isinstance(entry, dict) or str(entry.get("uuid") or "") != opponent_uuid:
+            if not isinstance(entry, dict) or _quest_entry_character_uuid(entry) != opponent_uuid:
+                continue
+        if str(entry.get("kind") or "") != "npc":
             continue
         role = str(entry.get("role") or "")
         if role == "defeat_target":
@@ -488,20 +491,74 @@ def _initialize_quest_state(
 def _quest_objective_pack(self, quest: QuestData) -> dict[str, Any]:
     raw = quest.extra.get("objective_entities")
     if not isinstance(raw, dict):
-        raw = {"version": 3, "npcs": [], "items": [], "markers": [], "requirements": [], "flags": {}}
+        raw = {"version": 4, "entries": [], "flags": {}}
         quest.extra["objective_entities"] = raw
-    raw.setdefault("version", 3)
-    if not isinstance(raw.get("npcs"), list):
-        raw["npcs"] = []
-    if not isinstance(raw.get("items"), list):
-        raw["items"] = []
-    if not isinstance(raw.get("markers"), list):
-        raw["markers"] = []
-    if not isinstance(raw.get("requirements"), list):
-        raw["requirements"] = []
+    raw["version"] = 4
+    if not isinstance(raw.get("entries"), list):
+        raw["entries"] = []
     if not isinstance(raw.get("flags"), dict):
         raw["flags"] = {}
     return raw
+
+def _quest_objective_entries(self, quest: QuestData) -> list[dict[str, Any]]:
+    pack = self._quest_objective_pack(quest)
+    return [entry for entry in pack.get("entries", []) if isinstance(entry, dict)]
+
+def _quest_entry_entity_ref(entry: dict[str, Any]) -> dict[str, Any]:
+    ref = entry.get("entity_ref")
+    if not isinstance(ref, dict):
+        ref = {}
+        entry["entity_ref"] = ref
+    return ref
+
+def _quest_entry_character_uuid(entry: dict[str, Any]) -> str:
+    ref = _quest_entry_entity_ref(entry)
+    return str(ref.get("character_uuid") or entry.get("uuid") or "").strip()
+
+def _quest_entry_item_uuid(entry: dict[str, Any]) -> str:
+    ref = _quest_entry_entity_ref(entry)
+    return str(ref.get("item_uuid") or entry.get("item_uuid") or "").strip()
+
+def _quest_entry_marker_uuid(entry: dict[str, Any]) -> str:
+    ref = _quest_entry_entity_ref(entry)
+    return str(ref.get("marker_uuid") or ref.get("requirement_uuid") or entry.get("uuid") or "").strip()
+
+def _quest_entry_template_id(entry: dict[str, Any]) -> str:
+    return str(entry.get("template_id") or entry.get("item_template_id") or "").strip()
+
+def _quest_objective_entry(raw: dict[str, Any], *, kind: str = "", role: str = "") -> dict[str, Any]:
+    entry = dict(raw)
+    kind = str(kind or entry.get("kind") or "").strip()
+    role = str(role or entry.get("role") or "").strip()
+    ref = dict(entry.get("entity_ref") if isinstance(entry.get("entity_ref"), dict) else {})
+    if kind == "npc":
+        character_uuid = str(ref.get("character_uuid") or entry.get("uuid") or "").strip()
+        if character_uuid:
+            ref["character_uuid"] = character_uuid
+    elif kind == "item":
+        item_uuid = str(ref.get("item_uuid") or entry.get("item_uuid") or "").strip()
+        if item_uuid:
+            ref["item_uuid"] = item_uuid
+    elif kind == "marker":
+        marker_uuid = str(ref.get("marker_uuid") or entry.get("uuid") or uuid4().hex).strip()
+        ref["marker_uuid"] = marker_uuid
+    elif kind == "requirement":
+        requirement_uuid = str(ref.get("requirement_uuid") or entry.get("uuid") or uuid4().hex).strip()
+        ref["requirement_uuid"] = requirement_uuid
+    entry.pop("uuid", None)
+    entry.pop("item_uuid", None)
+    entry["id"] = str(entry.get("id") or f"{role or kind}_{uuid4().hex[:8]}")
+    entry["kind"] = kind
+    entry["role"] = role
+    entry["entity_ref"] = ref
+    entry.setdefault("status", "waiting")
+    entry.setdefault("requires_report", True)
+    return entry
+
+def _append_quest_objective_entry(pack: dict[str, Any], entry: dict[str, Any]) -> dict[str, Any]:
+    normalised = _quest_objective_entry(entry)
+    pack.setdefault("entries", []).append(normalised)
+    return normalised
 
 def _ensure_quest_objective_entities(
     self,
@@ -510,7 +567,7 @@ def _ensure_quest_objective_entities(
     response: dict[str, Any] | None = None,
 ) -> list[str]:
     pack = self._quest_objective_pack(quest)
-    if pack.get("npcs") or pack.get("items") or pack.get("markers") or pack.get("requirements"):
+    if pack.get("entries"):
         return []
     quest_type = str(quest.extra.get("quest_type") or _quest_type(quest, response)).strip().lower()
     if quest_type not in QUEST_TYPES:
@@ -533,37 +590,37 @@ def _ensure_quest_objective_entities(
     pack["flags"] = dict(quest.extra.get("quest_flags") if isinstance(quest.extra.get("quest_flags"), dict) else {})
     if quest_type == "rescue":
         entry = self._create_quest_objective_npc(quest, location_name, subnode_id, response, objective_role="rescue_target")
-        pack["npcs"].append(entry)
+        _append_quest_objective_entry(pack, entry)
         lines = [f"> [Quest] 救出対象を配置しました: {entry.get('name')}"]
         if _quest_requires_captor(quest, response):
             blocker = self._create_quest_objective_npc(quest, location_name, subnode_id, response, objective_role="blocker")
-            pack["npcs"].append(blocker)
+            _append_quest_objective_entry(pack, blocker)
             pack["flags"]["blocker_required"] = True
             lines.append(f"> [Quest] 妨害者を配置しました: {blocker.get('name')}")
         return lines
     if quest_type == "defeat":
         entry = self._create_quest_objective_npc(quest, location_name, subnode_id, response, objective_role="defeat_target")
-        pack["npcs"].append(entry)
+        _append_quest_objective_entry(pack, entry)
         return [f"> [Quest] 討伐対象を配置しました: {entry.get('name')}"]
     if quest_type == "delivery":
         target = self._create_quest_objective_npc(quest, location_name, subnode_id, response, objective_role="delivery_target")
-        pack["npcs"].append(target)
+        _append_quest_objective_entry(pack, target)
         item = self._create_quest_delivery_item(quest, response)
-        pack["items"].append(item)
+        _append_quest_objective_entry(pack, item)
         return [
             f"> [Quest] 配達先を配置しました: {target.get('name')}",
             f"> [Quest] 配達品を受け取りました: {item.get('name')}",
         ]
     if quest_type == "investigate":
         marker = self._create_quest_investigation_marker(quest, location_name, subnode_id, response)
-        pack["markers"].append(marker)
+        _append_quest_objective_entry(pack, marker)
         return [f"> [Quest] 調査地点を設定しました: {marker.get('name')}"]
     if quest_type == "procure":
         requirement = self._create_quest_procurement_requirement(quest, response)
-        pack["requirements"].append(requirement)
+        _append_quest_objective_entry(pack, requirement)
         return [f"> [Quest] 調達条件を設定しました: {requirement.get('name')}"]
     entry = self._create_quest_objective_item(quest, location_name, subnode_id, response, objective_role="retrieve_item")
-    pack["items"].append(entry)
+    _append_quest_objective_entry(pack, entry)
     return [f"> [Quest] 回収品を配置しました: {entry.get('name')}"]
 
 def _quest_objective_npc_design(
@@ -593,13 +650,85 @@ def _create_quest_objective_npc(
     *,
     objective_role: str = "rescue_target",
 ) -> dict[str, Any]:
-    return npc_generate.create_quest_objective_npc(
+    entry = npc_generate.create_quest_objective_npc(
         self,
         quest,
         location_name,
         subnode_id,
         response,
         objective_role=objective_role,
+    )
+    return _quest_objective_entry(entry, kind="npc", role=objective_role)
+
+def _quest_objective_item_template_id(quest: QuestData, response: dict[str, Any] | None = None) -> str:
+    response = response or {}
+    extra = quest.extra if isinstance(quest.extra, dict) else {}
+    return str(
+        response.get("objective_item_template_id")
+        or response.get("item_template_id")
+        or response.get("delivery_item_template_id")
+        or response.get("procurement_item_template_id")
+        or extra.get("objective_item_template_id")
+        or extra.get("item_template_id")
+        or ""
+    ).strip()
+
+def _quest_template_item(
+    quest: QuestData,
+    response: dict[str, Any] | None,
+    *,
+    source: str,
+    fallback_category: str,
+) -> dict[str, Any]:
+    response = response or {}
+    template_id = _quest_objective_item_template_id(quest, response)
+    if template_id:
+        return make_item_from_template_id(
+            template_id,
+            quantity=1,
+            rarity=str(response.get("objective_item_rarity") or response.get("delivery_item_rarity") or "common"),
+            source=source,
+        )
+    return normalise_item(
+        {
+            "name": _quest_objective_item_name(quest, response) if source != "quest_delivery" else _quest_delivery_item_name(quest, response),
+            "category": _quest_objective_item_category(quest, response),
+            "description": str(response.get("objective_item_description") or response.get("delivery_item_description") or response.get("objective") or quest.overview),
+            "quantity": 1,
+            "rarity": str(response.get("objective_item_rarity") or response.get("delivery_item_rarity") or "common"),
+            "tradable": False,
+            "stackable": False,
+            "source": source,
+        },
+        source=source,
+        fallback_category=fallback_category,
+    )
+
+def _quest_item_entry_from_item(
+    quest: QuestData,
+    item: dict[str, Any],
+    *,
+    location_name: str,
+    subnode_id: str,
+    role: str,
+    status: str,
+) -> dict[str, Any]:
+    item_uuid = str(item.get("item_uuid") or "")
+    return _quest_objective_entry(
+        {
+            "kind": "item",
+            "entity_ref": {"item_uuid": item_uuid},
+            "template_id": str(item.get("template_id") or ""),
+            "name": str(item.get("name") or ""),
+            "description": str(item.get("description") or ""),
+            "category": str(item.get("category") or ""),
+            "location": location_name,
+            "subnode_id": subnode_id,
+            "role": role,
+            "status": status,
+        },
+        kind="item",
+        role=role,
     )
 
 def _create_quest_objective_item(
@@ -612,20 +741,7 @@ def _create_quest_objective_item(
     objective_role: str = "retrieve_item",
 ) -> dict[str, Any]:
     response = response or {}
-    item = normalise_item(
-        {
-            "name": _quest_objective_item_name(quest, response),
-            "category": _quest_objective_item_category(quest, response),
-            "description": str(response.get("objective_item_description") or response.get("objective") or quest.overview),
-            "quantity": 1,
-            "rarity": str(response.get("objective_item_rarity") or "common"),
-            "tradable": False,
-            "stackable": False,
-            "source": "quest_objective",
-        },
-        source="quest_objective",
-        fallback_category="relic",
-    )
+    item = _quest_template_item(quest, response, source="quest_objective", fallback_category="relic")
     item["quantity"] = 1
     item["stackable"] = False
     item["tradable"] = False
@@ -637,32 +753,11 @@ def _create_quest_objective_item(
     item["quest_subnode_id"] = subnode_id
     inventory = self._location_inventory(location_name)
     inventory.append(item)
-    return {
-        "kind": "item",
-        "item_uuid": str(item.get("item_uuid") or ""),
-        "name": str(item.get("name") or ""),
-        "location": location_name,
-        "subnode_id": subnode_id,
-        "role": objective_role,
-        "status": "waiting",
-    }
+    return _quest_item_entry_from_item(quest, item, location_name=location_name, subnode_id=subnode_id, role=objective_role, status="waiting")
 
 def _create_quest_delivery_item(self, quest: QuestData, response: dict[str, Any] | None = None) -> dict[str, Any]:
     response = response or {}
-    item = normalise_item(
-        {
-            "name": _quest_delivery_item_name(quest, response),
-            "category": _quest_objective_item_category(quest, response),
-            "description": str(response.get("delivery_item_description") or response.get("objective") or quest.overview),
-            "quantity": 1,
-            "rarity": str(response.get("delivery_item_rarity") or "common"),
-            "tradable": False,
-            "stackable": False,
-            "source": "quest_delivery",
-        },
-        source="quest_delivery",
-        fallback_category="document",
-    )
+    item = _quest_template_item(quest, response, source="quest_delivery", fallback_category="document")
     item["quantity"] = 1
     item["stackable"] = False
     item["tradable"] = False
@@ -673,16 +768,15 @@ def _create_quest_delivery_item(self, quest: QuestData, response: dict[str, Any]
     added = add_item_stack(self._player_inventory(), item, source="quest_delivery")
     if added:
         self._sync_player_inventory()
-    item_uuid = str((added or item).get("item_uuid") or "")
-    return {
-        "kind": "item",
-        "item_uuid": item_uuid,
-        "name": str(item.get("name") or ""),
-        "location": quest.extra.get("origin_location") or self._quest_origin_location(quest),
-        "subnode_id": quest.extra.get("origin_subnode_id") or "",
-        "role": "delivery_item",
-        "status": "carrying",
-    }
+    item_entry = dict(added or item)
+    return _quest_item_entry_from_item(
+        quest,
+        item_entry,
+        location_name=quest.extra.get("origin_location") or self._quest_origin_location(quest),
+        subnode_id=quest.extra.get("origin_subnode_id") or "",
+        role="delivery_item",
+        status="carrying",
+    )
 
 def _create_quest_investigation_marker(
     self,
@@ -692,16 +786,16 @@ def _create_quest_investigation_marker(
     response: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     response = response or {}
-    return {
+    return _quest_objective_entry({
         "kind": "marker",
-        "uuid": uuid4().hex,
+        "entity_ref": {"marker_uuid": uuid4().hex},
         "name": _quest_investigation_point_name(quest, response),
         "description": str(response.get("investigation_description") or response.get("objective") or quest.overview),
         "location": location_name,
         "subnode_id": subnode_id,
         "role": "investigation_point",
         "status": "waiting",
-    }
+    }, kind="marker", role="investigation_point")
 
 def _create_quest_procurement_requirement(
     self,
@@ -709,20 +803,27 @@ def _create_quest_procurement_requirement(
     response: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     response = response or {}
-    return {
+    template_id = _quest_objective_item_template_id(quest, response)
+    template = item_template_by_id(template_id) if template_id else None
+    name = str((template or {}).get("name") or _quest_procurement_requirement_name(quest, response))
+    description = str((template or {}).get("desc") or (template or {}).get("description") or _quest_procurement_requirement_text(quest, response))
+    category = str((template or {}).get("category") or "")
+    return _quest_objective_entry({
         "kind": "requirement",
-        "uuid": uuid4().hex,
-        "name": _quest_procurement_requirement_name(quest, response),
-        "description": _quest_procurement_requirement_text(quest, response),
+        "entity_ref": {"requirement_uuid": uuid4().hex},
+        "template_id": template_id,
+        "name": name,
+        "description": description,
+        "category": category,
         "role": "procurement_requirement",
         "status": "waiting",
         "accepted_item_uuid": "",
         "accepted_item_name": "",
         "checker_reason": "",
-    }
+    }, kind="requirement", role="procurement_requirement")
 
 def _quest_objective_character(self, entry: dict[str, Any]) -> Character | None:
-    target_uuid = str(entry.get("uuid") or "").strip()
+    target_uuid = _quest_entry_character_uuid(entry)
     if not target_uuid:
         return None
     for character in self.state.world_data.characters.values():
@@ -781,6 +882,7 @@ def _quest_procurement_candidates(self, action: str) -> list[dict[str, Any]]:
             candidates.append(
                 {
                     "item_uuid": item_uuid,
+                    "template_id": str(single.get("template_id") or ""),
                     "name": name,
                     "category": category,
                     "description": _short_text(description, 240),
@@ -801,6 +903,21 @@ def _quest_procurement_checker(
     candidates = self._quest_procurement_candidates(action)
     if not candidates:
         return {"accepted": False, "item_uuid": "", "reason": "no player inventory candidate"}
+    required_template_id = _quest_entry_template_id(requirement)
+    if required_template_id:
+        for candidate in candidates:
+            if str(candidate.get("template_id") or "") == required_template_id:
+                return {
+                    "accepted": True,
+                    "item_uuid": str(candidate.get("item_uuid") or ""),
+                    "item_name": str(candidate.get("name") or requirement.get("name") or ""),
+                    "reason": "template_id matched",
+                }
+        return {
+            "accepted": False,
+            "item_uuid": "",
+            "reason": f"required item template not found: {requirement.get('name') or required_template_id}",
+        }
     messages = [
         {
             "role": "system",
@@ -882,11 +999,9 @@ def _set_quest_flag(self, quest: QuestData, key: str, value: Any = True) -> None
     self._quest_objective_pack(quest)["flags"] = flags
 
 def _quest_entries_by_role(self, quest: QuestData, role: str, group: str = "npcs") -> list[dict[str, Any]]:
-    pack = self._quest_objective_pack(quest)
-    entries = pack.get(group, [])
     return [
         entry
-        for entry in entries
+        for entry in self._quest_objective_entries(quest)
         if isinstance(entry, dict) and str(entry.get("role") or "").strip() == role
     ]
 
@@ -901,7 +1016,7 @@ def _refresh_quest_objective_state(self, quest: QuestData) -> None:
     quest_type = str(quest.extra.get("quest_type") or pack.get("quest_type") or "").strip().lower()
     if quest_type == "retrieve":
         for entry in self._quest_entries_by_role(quest, "retrieve_item", "items"):
-            item_uuid = str(entry.get("item_uuid") or "")
+            item_uuid = _quest_entry_item_uuid(entry)
             if self._quest_objective_item_in_player_inventory(item_uuid):
                 entry["status"] = "retrieved"
                 pack["status"] = "retrieved"
@@ -1002,7 +1117,7 @@ def _apply_quest_objective_action(self, quest: QuestData, action: str, location:
                     if str(entry.get("status") or "") == "delivered":
                         delivered_any = True
                         continue
-                    item_uuid = str(entry.get("item_uuid") or "")
+                    item_uuid = _quest_entry_item_uuid(entry)
                     removed = self._remove_player_item_by_uuid(item_uuid, source="quest_delivery", reason="delivered")
                     if removed:
                         entry["status"] = "delivered"
@@ -1022,7 +1137,7 @@ def _apply_quest_objective_action(self, quest: QuestData, action: str, location:
             for entry in self._quest_entries_by_role(quest, "retrieve_item", "items"):
                 if str(entry.get("status") or "") not in {"waiting", "found"}:
                     continue
-                item_uuid = str(entry.get("item_uuid") or "")
+                item_uuid = _quest_entry_item_uuid(entry)
                 if self._quest_objective_item_in_player_inventory(item_uuid):
                     entry["status"] = "retrieved"
                     pack["status"] = "retrieved"
@@ -1071,8 +1186,8 @@ def _sync_quest_objective_escorts(self, location: str, *, subnode_id: str = "") 
     subnode_id = subnode_id or self._runtime_subnode_for_presence(location)
     delivered_any = False
     at_report_location = self.is_current_location_guild() and self._quest_report_location_matches(quest, location)
-    for entry in pack.get("npcs", []):
-        if not isinstance(entry, dict) or str(entry.get("status") or "") != "escorting":
+    for entry in pack.get("entries", []):
+        if not isinstance(entry, dict) or str(entry.get("kind") or "") != "npc" or str(entry.get("status") or "") != "escorting":
             continue
         character = self._quest_objective_character(entry)
         if character and not _character_state_is_dead(character):
@@ -1098,7 +1213,7 @@ def _quest_objective_completion_allowed(
     response: dict[str, Any] | None = None,
 ) -> bool:
     pack = self._quest_objective_pack(quest)
-    has_objectives = bool(pack.get("npcs") or pack.get("items") or pack.get("markers") or pack.get("requirements"))
+    has_objectives = bool(pack.get("entries"))
     if not has_objectives:
         return False
     if not self._quest_objectives_returned(quest, location):
@@ -1132,7 +1247,7 @@ def _quest_objectives_returned(self, quest: QuestData, location: str) -> bool:
         if not item_entries:
             return False
         for entry in item_entries:
-            item_uuid = str(entry.get("item_uuid") or "")
+            item_uuid = _quest_entry_item_uuid(entry)
             if str(entry.get("status") or "") == "delivered":
                 continue
             if not self._quest_objective_item_in_player_inventory(item_uuid):
@@ -1241,8 +1356,11 @@ def _complete_quest_objectives(self, quest: QuestData, *, source: str) -> dict[s
     result: dict[str, Any] = {"npcs": [], "items": []}
     origin = str(quest.extra.get("origin_location") or self._quest_origin_location(quest))
     current_subnode = self._runtime_subnode_for_presence(origin) if origin == self.state.current_location else ""
-    for entry in pack.get("npcs", []):
+    for entry in pack.get("entries", []):
         if not isinstance(entry, dict):
+            continue
+        kind = str(entry.get("kind") or "")
+        if kind != "npc":
             continue
         character = self._quest_objective_character(entry)
         if character and not _character_state_is_dead(character):
@@ -1257,25 +1375,26 @@ def _complete_quest_objectives(self, quest: QuestData, *, source: str) -> dict[s
             self._set_character_presence(character, origin or self.state.current_location, "present", subnode_id=current_subnode)
             entry["status"] = "delivered"
             result["npcs"].append({"uuid": character.uuid, "name": character.name, "status": "delivered"})
-    for entry in pack.get("items", []):
+    for entry in pack.get("entries", []):
         if not isinstance(entry, dict):
             continue
-        item_uuid = str(entry.get("item_uuid") or "")
-        if str(entry.get("status") or "") == "submitted":
+        kind = str(entry.get("kind") or "")
+        if kind == "npc":
+            continue
+        if kind in {"marker", "requirement"}:
+            if str(entry.get("status") or "") in {"investigated", "reported", "submitted", "delivered"}:
+                entry["status"] = "delivered"
+            continue
+        if kind != "item":
+            continue
+        item_uuid = _quest_entry_item_uuid(entry)
+        if str(entry.get("status") or "") in {"submitted", "delivered"}:
             entry["status"] = "delivered"
             result["items"].append({"item_uuid": item_uuid, "name": entry.get("name"), "delivered": True})
             continue
         removed = self._remove_player_item_by_uuid(item_uuid, source=source, reason="quest_delivered")
         entry["status"] = "delivered" if removed else str(entry.get("status") or "")
         result["items"].append({"item_uuid": item_uuid, "name": entry.get("name"), "delivered": bool(removed)})
-    for entry in pack.get("markers", []):
-        if not isinstance(entry, dict):
-            continue
-        entry["status"] = "delivered" if str(entry.get("status") or "") in {"investigated", "reported", "delivered"} else str(entry.get("status") or "")
-    for entry in pack.get("requirements", []):
-        if not isinstance(entry, dict):
-            continue
-        entry["status"] = "delivered" if str(entry.get("status") or "") in {"submitted", "delivered"} else str(entry.get("status") or "")
     pack["status"] = "delivered"
     self._sync_player_inventory()
     return result
@@ -1283,9 +1402,7 @@ def _complete_quest_objectives(self, quest: QuestData, *, source: str) -> dict[s
 def _close_quest_objectives(self, quest: QuestData, status: str, *, source: str) -> dict[str, Any]:
     pack = self._quest_objective_pack(quest)
     pack["status"] = status
-    for group in ("npcs", "items", "markers", "requirements"):
-        for entry in pack.get(group, []):
-            if isinstance(entry, dict) and str(entry.get("status") or "") not in {"delivered", "lost"}:
-                entry["status"] = status
+    for entry in pack.get("entries", []):
+        if isinstance(entry, dict) and str(entry.get("status") or "") not in {"delivered", "lost"}:
+            entry["status"] = status
     return {"status": status, "source": source}
-

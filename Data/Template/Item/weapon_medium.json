@@ -1,0 +1,26 @@
+[
+  {
+    "id": "weapon_medium_sword_wood",
+    "name": "木の剣",
+    "category": "weapon_medium",
+    "level": 0,
+    "value": 30,
+    "desc": "標準的な木の片手剣。",
+    "use_effect": "None",
+    "power": 3,
+    "send_llm": "",
+    "element": ""
+  },
+  {
+    "id": "weapon_medium_hammar_wood",
+    "name": "木の戦槌",
+    "category": "weapon_medium",
+    "level": 0,
+    "value": 40,
+    "desc": "鎧越しに衝撃を通す鈍器。",
+    "use_effect": "None",
+    "power": 4,
+    "send_llm": "",
+    "element": ""
+  }
+]

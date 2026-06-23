@@ -1,5 +1,6 @@
 [
   {
+    "id": "relic_statue",
     "name": "祈りの小像",
     "category": "relic",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": ""
   },
   {
+    "id": "relic_bracelet",
     "name": "古代の腕輪",
     "category": "relic",
     "level": 0,
@@ -22,6 +24,7 @@
     "element": ""
   },
   {
+    "id": "relic_crest",
     "name": "失われた紋章",
     "category": "relic",
     "level": 0,

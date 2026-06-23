@@ -1,5 +1,6 @@
 [
   {
+    "id": "material_magical_magic_dust",
     "name": "魔力粉",
     "category": "material_magical",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": ""
   },
   {
+    "id": "material_magical_element_water",
     "name": "精霊の雫",
     "category": "material_magical",
     "level": 0,
@@ -22,6 +24,7 @@
     "element": ""
   },
   {
+    "id": "material_magical_star_crystal",
     "name": "星屑結晶",
     "category": "material_magical",
     "level": 0,

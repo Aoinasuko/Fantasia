@@ -1,5 +1,6 @@
 [
   {
+    "id": "material_liquid_oil",
     "name": "澄んだ油",
     "category": "material_liquid",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": ""
   },
   {
+    "id": "material_liquid_herb_extracts",
     "name": "薬草エキス",
     "category": "material_liquid",
     "level": 0,
@@ -19,9 +21,10 @@
     "use_effect": "None",
     "power": 0,
     "send_llm": "",
-    "element": ""
+    "element": "回復薬の素材"
   },
   {
+    "id": "material_liquid_magic_ink",
     "name": "魔力インク",
     "category": "material_liquid",
     "level": 0,

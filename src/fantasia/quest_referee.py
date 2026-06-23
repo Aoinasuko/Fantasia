@@ -237,12 +237,7 @@ def _resolve_active_quest_action(
     finished = False
     finish_status = ""
     objective_pack = self._quest_objective_pack(quest)
-    has_objective_entities = bool(
-        objective_pack.get("npcs")
-        or objective_pack.get("items")
-        or objective_pack.get("markers")
-        or objective_pack.get("requirements")
-    )
+    has_objective_entities = bool(objective_pack.get("entries"))
     objective_response = event_tools or referee_tools
     if has_objective_entities and not finished and self._quest_objective_completion_allowed(quest, action, location, objective_response):
         if _quest_completion_report_action(action):

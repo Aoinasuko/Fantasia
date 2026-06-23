@@ -1,5 +1,6 @@
 [
   {
+    "id": "drink_dirty_water",
     "name": "汚い水",
     "category": "drink",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": "水"
   },
   {
+    "id": "drink_clear_water",
     "name": "きれいな水",
     "category": "drink",
     "level": 0,
@@ -22,6 +24,7 @@
     "element": "水"
   },
   {
+    "id": "drink_harb_tea",
     "name": "薬草茶",
     "category": "drink",
     "level": 0,
@@ -33,6 +36,7 @@
     "element": ""
   },
   {
+    "id": "drink_small_beer",
     "name": "小瓶のエール",
     "category": "drink",
     "level": 0,

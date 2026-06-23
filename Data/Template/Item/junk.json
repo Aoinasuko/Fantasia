@@ -1,5 +1,6 @@
 [
   {
+    "id": "junk_nail",
     "name": "錆びた釘",
     "category": "junk",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": ""
   },
   {
+    "id": "junk_shards",
     "name": "割れた陶片",
     "category": "junk",
     "level": 0,
@@ -22,6 +24,7 @@
     "element": ""
   },
   {
+    "id": "junk_cog",
     "name": "壊れた歯車",
     "category": "junk",
     "level": 0,
@@ -33,88 +36,48 @@
     "element": ""
   },
   {
-    "name": "折れた短剣",
+    "id": "junk_broken_weapon",
+    "name": "壊れた武器",
     "category": "junk",
     "level": 0,
     "value": 10,
-    "desc": "壊れた短剣。修理すれば使えそうだ。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
-    "element": "短剣の素材"
-  },
-  {
-    "name": "折れた剣",
-    "category": "junk",
-    "level": 0,
-    "value": 10,
-    "desc": "壊れた剣。修理すれば使えそうだ。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
-    "element": "剣の素材"
-  },
-  {
-    "name": "折れた槌",
-    "category": "junk",
-    "level": 0,
-    "value": 10,
-    "desc": "壊れた槌。修理すれば使えそうだ。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
-    "element": "槌の素材"
-  },
-  {
-    "name": "壊れた弓",
-    "category": "junk",
-    "level": 0,
-    "value": 10,
-    "desc": "壊れた弓。修理すれば使えそうだ。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
-    "element": "弓の素材"
-  },
-  {
-    "name": "壊れた武器の一部",
-    "category": "junk",
-    "level": 0,
-    "value": 10,
-    "desc": "元の武器が何であるかわからないほどに壊れた武器の一部。組み合わせれば新しい武器にできるかもしれない。",
+    "desc": "壊れた武器。修理すれば使えそうだ。",
     "use_effect": "None",
     "power": 0,
     "send_llm": "",
     "element": "武器の素材"
   },
   {
-    "name": "壊れた防具の一部",
+    "id": "junk_broken_armor",
+    "name": "壊れた防具",
     "category": "junk",
     "level": 0,
-    "value": 15,
-    "desc": "防具の一部。修理すれば使えそうだ。",
+    "value": 10,
+    "desc": "壊れた防具。修理すれば使えそうだ。",
     "use_effect": "None",
     "power": 0,
     "send_llm": "",
     "element": "防具の素材"
   },
   {
-    "name": "壊れた護符の一部",
+    "id": "junk_broken_amulet",
+    "name": "壊れた護符",
     "category": "junk",
     "level": 0,
     "value": 15,
-    "desc": "護符の一部。修理すれば使えそうだ。",
+    "desc": "壊れた護符。修理すれば使えそうだ。",
     "use_effect": "None",
     "power": 0,
     "send_llm": "",
     "element": "護符の素材"
   },
   {
-    "name": "壊れた指輪の一部",
+    "id": "junk_broken_ring",
+    "name": "壊れた指輪",
     "category": "junk",
     "level": 0,
     "value": 15,
-    "desc": "指輪の一部。修理すれば使えそうだ。",
+    "desc": "壊れた指輪。修理すれば使えそうだ。",
     "use_effect": "None",
     "power": 0,
     "send_llm": "",

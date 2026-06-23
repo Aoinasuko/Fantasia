@@ -1,5 +1,6 @@
 [
   {
+    "id": "tool_rope",
     "name": "ロープ",
     "category": "tool",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": ""
   },
   {
+    "id": "tool_lantan",
     "name": "ランタン",
     "category": "tool",
     "level": 0,
@@ -22,6 +24,7 @@
     "element": ""
   },
   {
+    "id": "tool_pickaxe",
     "name": "つるはし",
     "category": "tool",
     "level": 0,
@@ -33,6 +36,7 @@
     "element": ""
   },
   {
+    "id": "tool_axe",
     "name": "伐採用斧",
     "category": "tool",
     "level": 0,
@@ -44,6 +48,7 @@
     "element": ""
   },
   {
+    "id": "tool_knife",
     "name": "探索用ナイフ",
     "category": "tool",
     "level": 0,

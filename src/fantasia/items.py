@@ -306,11 +306,13 @@ def _normalise_item_template(raw: Any, source_path: Path) -> dict[str, Any] | No
     name = str(raw.get("name") or "").strip()
     if not category or not name:
         return None
+    template_id = str(raw.get("id") or "").strip() or f"{category}:{name}"
     value = _template_int(raw.get("value"), CATEGORY_BASE_VALUE.get(category, 5))
     level = max(0, _template_int(raw.get("level"), 0))
     power = max(0, _template_int(raw.get("power"), 0))
     desc = str(raw.get("desc") or raw.get("description") or "").strip()
     return {
+        "id": template_id,
         "name": name,
         "category": category,
         "level": level,
@@ -349,6 +351,19 @@ def _load_item_templates() -> dict[str, list[dict[str, Any]]]:
 
 
 ITEM_TEMPLATES = _load_item_templates()
+
+
+def _item_templates_by_id() -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for templates in ITEM_TEMPLATES.values():
+        for template in templates:
+            template_id = str(template.get("id") or "").strip()
+            if template_id:
+                result[template_id] = template
+    return result
+
+
+ITEM_TEMPLATES_BY_ID = _item_templates_by_id()
 
 ITEM_CONTAINER_KEYS = {
     "item",
@@ -415,6 +430,77 @@ def generate_reward_item(category: str, context: str = "", danger_level: int = 0
     return _random_item([(category_id, 1)], rng, source="quest_reward", context=context, danger_level=danger_level)
 
 
+def item_template_by_id(template_id: Any) -> dict[str, Any] | None:
+    template = ITEM_TEMPLATES_BY_ID.get(str(template_id or "").strip())
+    return deepcopy(template) if template else None
+
+
+def item_template_candidates(
+    categories: list[str] | tuple[str, ...] | None = None,
+    *,
+    max_level: int | None = None,
+) -> list[dict[str, Any]]:
+    category_ids = [normalise_category(category) for category in (categories or ITEM_CATEGORY_IDS)]
+    category_ids = [category for category in category_ids if category]
+    level_cap = None if max_level is None else max(0, _safe_int(max_level, 0))
+    result: list[dict[str, Any]] = []
+    for category in category_ids:
+        for template in ITEM_TEMPLATES.get(category, []):
+            if level_cap is not None and _safe_int(template.get("level"), 0) > level_cap:
+                continue
+            result.append(deepcopy(template))
+    return result
+
+
+def choose_item_template(
+    categories: list[str] | tuple[str, ...] | None = None,
+    *,
+    max_level: int | None = None,
+    seed: str = "",
+    context: str = "",
+) -> dict[str, Any] | None:
+    candidates = item_template_candidates(categories, max_level=max_level)
+    if not candidates:
+        return None
+    rng = random.Random(f"item-template|{context}|{max_level}|{seed}")
+    return deepcopy(candidates[rng.randrange(len(candidates))])
+
+
+def make_item_from_template_id(
+    template_id: Any,
+    *,
+    quantity: int = 1,
+    rarity: str = "common",
+    source: str = "",
+    description: str | None = None,
+    value: int | None = None,
+) -> dict[str, Any]:
+    template = item_template_by_id(template_id)
+    if not template:
+        return make_item("junk", name=str(template_id or "unknown item"), quantity=quantity, rarity=rarity, source=source)
+    item = make_item(
+        str(template.get("category") or "junk"),
+        name=str(template.get("name") or ""),
+        description=description or str(template.get("desc") or template.get("description") or ""),
+        quantity=quantity,
+        value=value,
+        rarity=rarity,
+        source=source,
+    )
+    item["template_id"] = str(template.get("id") or template_id)
+    item["template_source"] = str(template.get("source_path") or "")
+    item["level"] = max(0, _safe_int(template.get("level"), 0))
+    item["use_effect"] = _template_use_effect(template.get("use_effect"))
+    item["power"] = _template_power(template, str(item.get("rarity") or rarity))
+    if item["power"] <= 0:
+        item["power"] = max(0, _safe_int(template.get("power"), 0))
+    item["send_llm"] = str(template.get("send_llm") or "")
+    item["element"] = str(template.get("element") or "")
+    if str(item.get("category") or "") not in EQUIPMENT_CATEGORIES:
+        item["effects"] = _template_effects(item, str(item.get("rarity") or rarity))
+    return item
+
+
 def make_item(
     category: str,
     *,
@@ -452,7 +538,7 @@ def make_item(
         "rarity_color": RARITY_COLORS.get(rarity, "white"),
         "description": str(description or template_description),
         "source": source,
-        "template_id": f"{category}:{item_name}",
+        "template_id": str(template.get("id") or f"{category}:{item_name}"),
         "template_source": str(template.get("source_path") or ""),
         "level": max(0, _safe_int(template.get("level"), 0)),
         "use_effect": _template_use_effect(template.get("use_effect")),
@@ -1073,6 +1159,7 @@ def _item_value_with_rarity(base_value: int, rarity: str, rng: random.Random | N
 
 def _fallback_template(category: str, name: str | None = None) -> dict[str, Any]:
     return {
+        "id": f"{category}:{name or CATEGORY_LABELS.get(category, category)}",
         "name": name or CATEGORY_LABELS.get(category, category),
         "category": category,
         "level": 0,

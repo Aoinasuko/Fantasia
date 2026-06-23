@@ -1,5 +1,6 @@
 [
   {
+    "id": "material_metal_copper",
     "name": "銅インゴット",
     "category": "material_metal",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": "金属インゴット"
   },
   {
+    "id": "material_metal_iron",
     "name": "鉄インゴット",
     "category": "material_metal",
     "level": 0,
@@ -22,6 +24,7 @@
     "element": "金属インゴット"
   },
   {
+    "id": "material_metal_gold",
     "name": "金インゴット",
     "category": "material_metal",
     "level": 0,
@@ -33,6 +36,7 @@
     "element": "金属インゴット"
   },
   {
+    "id": "material_metal_silver",
     "name": "銀インゴット",
     "category": "material_metal",
     "level": 0,
@@ -44,6 +48,7 @@
     "element": "金属インゴット"
   },
   {
+    "id": "material_metal_fragment",
     "name": "強化金属片",
     "category": "material_metal",
     "level": 0,

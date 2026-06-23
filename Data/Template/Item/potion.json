@@ -1,5 +1,6 @@
 [
   {
+    "id": "potion_hp_mini",
     "name": "軽傷治癒のポーション",
     "category": "potion",
     "level": 0,
@@ -11,6 +12,7 @@
     "element": "回復薬"
   },
   {
+    "id": "potion_hp_middle",
     "name": "重症治癒のポーション",
     "category": "potion",
     "level": 5,
@@ -22,6 +24,7 @@
     "element": "回復薬"
   },
   {
+    "id": "potion_hp_big",
     "name": "致命傷治癒のポーション",
     "category": "potion",
     "level": 15,
@@ -33,6 +36,7 @@
     "element": "回復薬"
   },
   {
+    "id": "potion_hp_mini",
     "name": "軽活力のポーション",
     "category": "potion",
     "level": 0,
@@ -44,6 +48,7 @@
     "element": "回復薬"
   },
   {
+    "id": "potion_hp_middle",
     "name": "活力のポーション",
     "category": "potion",
     "level": 5,
@@ -55,6 +60,7 @@
     "element": "回復薬"
   },
   {
+    "id": "potion_hp_big",
     "name": "超活力のポーション",
     "category": "potion",
     "level": 15,
@@ -66,6 +72,7 @@
     "element": "回復薬"
   },
   {
+    "id": "potion_power",
     "name": "怪力のポーション",
     "category": "potion",
     "level": 0,
@@ -77,6 +84,7 @@
     "element": ""
   },
   {
+    "id": "potion_defence",
     "name": "鉄壁のポーション",
     "category": "potion",
     "level": 0,
@@ -88,6 +96,7 @@
     "element": ""
   },
   {
+    "id": "potion_amplification",
     "name": "増幅のポーション",
     "category": "potion",
     "level": 0,
