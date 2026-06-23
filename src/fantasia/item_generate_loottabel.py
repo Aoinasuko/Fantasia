@@ -8,7 +8,7 @@ from typing import Any
 
 from .item_enchant import ensure_equipment_enchants
 from .items import RARITY_ORDER, generate_reward_item, normalise_item, normalise_rarity
-from .paths import LOOT_TABEL_TEMPLATE_DIR, ROOT
+from .paths import LOOT_TABEL_TEMPLATE_DIR
 
 
 LOOT_TABEL_LOAD_ERRORS: list[str] = []
@@ -189,7 +189,7 @@ def _load_loot_tabels() -> dict[str, dict[str, Any]]:
 
 def _template_dirs() -> list[Path]:
     result: list[Path] = []
-    for candidate in (LOOT_TABEL_TEMPLATE_DIR, ROOT / "Data" / "Template" / "LootTabel"):
+    for candidate in (LOOT_TABEL_TEMPLATE_DIR,):
         if candidate.exists() and candidate not in result:
             result.append(candidate)
     return result

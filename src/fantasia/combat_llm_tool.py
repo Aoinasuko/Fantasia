@@ -89,7 +89,9 @@ def combat_enemy_tool_instruction() -> str:
         "For each possible combat tool, return confidence from 0.0 to 1.0. The game executes only "
         "tools with confidence exactly 1.0. When the player is surrendering, set exactly one of "
         "accept_player_surrender, capture_player, or reject_player_surrender to confidence 1.0 "
-        "before any attack. Do not set HP/SP/resource deltas; the game calculates them locally."
+        "before any attack. Normal attacks and hostile single-target skills choose their target "
+        "locally at random from the player side. For status_attack or other special actions, choose "
+        "target_name from player_side_targets. Do not set HP/SP/resource deltas; the game calculates them locally."
     )
 
 

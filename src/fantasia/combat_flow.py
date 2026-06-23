@@ -786,6 +786,27 @@ def _is_player_side_actor(engine: Any, actor: Character) -> bool:
     return any(companion.uuid == actor.uuid for companion in engine._party_companions())
 
 
+def _random_enemy_single_target(engine: Any) -> Character | None:
+    targets = _ally_targets(engine)
+    return random.choice(targets) if targets else None
+
+
+def _enemy_special_target_from_decision(engine: Any, decision: dict[str, Any]) -> Character | None:
+    target_name = str(decision.get("target_name") or decision.get("target") or decision.get("player_side_target") or "").strip()
+    target = _match_character_by_text(_ally_targets(engine), target_name)
+    if isinstance(target, Character):
+        return target
+    player = engine.player_character()
+    return player if isinstance(player, Character) else None
+
+
+def _enemy_skill_has_hostile_single_effect(effects: Any) -> bool:
+    return any(
+        combat_effect_type(effect) in {"damage_hp_single", "absorption_single", "damage_sp_single", "effect_enemy_single"}
+        for effect in as_list(effects)
+    )
+
+
 def _resolve_enemy_turn(
     engine: Any,
     action: str,
@@ -884,11 +905,11 @@ def _resolve_enemy_turn(
             return {**decision, **response}, lines
     if action_type == "status_attack":
         attack_name, element = _enemy_attack_from_decision(opponent, decision)
-        response = _resolve_enemy_attack(engine, encounter, opponent, attack_name, element)
+        target = _enemy_special_target_from_decision(engine, decision)
+        response = _resolve_enemy_attack(engine, encounter, opponent, attack_name, element, target=target)
         buff_type = str(decision.get("buff_type") or decision.get("status_type") or "restraint").strip()
-        player = engine.player_character()
         combat_result = response.get("game_combat_result") if isinstance(response, dict) else {}
-        if isinstance(player, Character) and isinstance(combat_result, dict) and bool(combat_result.get("hit")):
+        if isinstance(target, Character) and isinstance(combat_result, dict) and bool(combat_result.get("hit")):
             buff = normalise_combat_buff(
                 {
                     "name": str(decision.get("status_name") or f"{attack_name}の影響"),
@@ -899,9 +920,9 @@ def _resolve_enemy_turn(
                 }
             )
             if buff:
-                player.status_effects.append(buff)
-                engine.state.status_effects = player.status_effects
-                lines.append(f"> [状態] {player.name}: {buff['name']}が付与された。")
+                target.status_effects.append(buff)
+                _sync_combat_character_state(engine, encounter, target)
+                lines.append(f"> [状態] {target.name}: {buff['name']}が付与された。")
         return {**decision, **response}, lines
     if action_type == "free_action":
         decision.setdefault("narration", f"{opponent.name}は様子をうかがっている。")
@@ -911,30 +932,41 @@ def _resolve_enemy_turn(
     return {**decision, **response}, lines
 
 
-def _resolve_enemy_attack(engine: Any, encounter: dict[str, Any], opponent: Character, attack_name: str, element: str) -> dict[str, Any]:
-    player = engine.player_character()
-    if not isinstance(player, Character):
+def _resolve_enemy_attack(
+    engine: Any,
+    encounter: dict[str, Any],
+    opponent: Character,
+    attack_name: str,
+    element: str,
+    *,
+    target: Character | None = None,
+) -> dict[str, Any]:
+    target = target if isinstance(target, Character) else _random_enemy_single_target(engine)
+    if not isinstance(target, Character):
         return {"narration": f"{opponent.name}は攻撃の機を逃した。"}
-    hit_roll = opposed_ability_roll(opponent, player, "dex")
+    hit_roll = opposed_ability_roll(opponent, target, "dex")
     if not hit_roll.get("success"):
-        calc = {"type": "enemy_attack", "hit": False, "element": element, "hit_roll": hit_roll, "damage": 0}
+        calc = {"type": "enemy_attack", "hit": False, "target": target.name, "target_uuid": target.uuid, "element": element, "hit_roll": hit_roll, "damage": 0}
         narration = _narrate_combat_event(
             engine,
-            {"event": "enemy_attack_miss", "actor": opponent.name, "target": player.name, "action": attack_name, "result": calc},
-            f"{opponent.name}の{attack_name}は、あなたに届かなかった。",
+            {"event": "enemy_attack_miss", "actor": opponent.name, "target": target.name, "action": attack_name, "result": calc},
+            f"{opponent.name}の{attack_name}は、{target.name}に届かなかった。",
         )
         return {"narration": narration, "game_combat_result": calc}
     attack = _attack_value(engine, opponent, encounter)
-    defense = _defense_value(engine, player, encounter)
+    defense = _defense_value(engine, target, encounter)
     attrs = effective_attributes(opponent)
     strength_factor = max(0.5, attrs.get("str", 10) / 10.0)
-    multiplier = damage_multiplier_for_element(player, element, engine.player_equipment_summary())
+    multiplier = damage_multiplier_for_element(target, element, _equipment_summary_for(engine, target))
     base = max(1, attack - defense)
     damage = 0 if multiplier <= 0 else max(1, int(round(base * strength_factor * multiplier)))
-    event = engine._apply_player_hp_delta(-damage, source="enemy_attack", reason=opponent.name, encounter=encounter)
+    event = _apply_character_hp_delta(engine, encounter, target, -damage, source="enemy_attack", reason=opponent.name)
+    _append_resource_event_lines(encounter, event)
     calc = {
         "type": "enemy_attack",
         "hit": True,
+        "target": target.name,
+        "target_uuid": target.uuid,
         "element": element,
         "attack": attack,
         "defense": defense,
@@ -950,8 +982,8 @@ def _resolve_enemy_attack(engine: Any, encounter: dict[str, Any], opponent: Char
     }
     narration = _narrate_combat_event(
         engine,
-        {"event": "enemy_attack_hit", "actor": opponent.name, "target": player.name, "action": attack_name, "result": calc},
-        f"{opponent.name}の{attack_name}があなたに命中した。",
+        {"event": "enemy_attack_hit", "actor": opponent.name, "target": target.name, "action": attack_name, "result": calc},
+        f"{opponent.name}の{attack_name}が{target.name}に命中した。",
     )
     return {"narration": narration, "game_combat_result": calc}
 
@@ -962,10 +994,30 @@ def _resolve_enemy_skill(engine: Any, encounter: dict[str, Any], opponent: Chara
         return {"narration": f"{opponent.name}は{skill.get('name')}を使おうとしたが、狙いを定められなかった。"}
     effects = as_list(skill.get("type"))
     hp_damage_effect_count = _skill_hp_damage_effect_count(effects)
+    random_single_target = _random_enemy_single_target(engine) if _enemy_skill_has_hostile_single_effect(effects) else None
     results: list[dict[str, Any]] = []
     for effect in effects:
         effect_type = combat_effect_type(effect)
-        if effect_type in {"damage_hp_single", "damage_hp_party", "absorption_single", "absorption_party"}:
+        if effect_type in {"damage_hp_single", "absorption_single"}:
+            target = random_single_target if isinstance(random_single_target, Character) else player
+            amount, calculation = _skill_hp_damage_amount(
+                engine,
+                encounter,
+                opponent,
+                target,
+                skill,
+                effect,
+                equipment_summary=_equipment_summary_for(engine, target),
+                effect_count=hp_damage_effect_count,
+            )
+            event = _apply_character_hp_delta(engine, encounter, target, -amount, source="enemy_skill", reason=str(skill.get("name") or ""))
+            _append_resource_event_lines(encounter, event)
+            results.append({"type": effect_type, "target": target.name, "target_uuid": target.uuid, "amount": amount, "old_hp": event.get("old_hp"), "new_hp": event.get("new_hp"), **calculation})
+            if effect_type.startswith("absorption"):
+                heal_event = _apply_character_hp_delta(engine, encounter, opponent, max(1, amount // 2), source="enemy_skill", reason=str(skill.get("name") or ""))
+                _append_resource_event_lines(encounter, heal_event)
+                results.append({"type": "absorb_heal", "target": opponent.name, "amount": heal_event.get("actual_delta", 0), "old_hp": heal_event.get("old_hp"), "new_hp": heal_event.get("new_hp")})
+        elif effect_type in {"damage_hp_party", "absorption_party"}:
             amount, calculation = _skill_hp_damage_amount(
                 engine,
                 encounter,
@@ -977,12 +1029,21 @@ def _resolve_enemy_skill(engine: Any, encounter: dict[str, Any], opponent: Chara
                 effect_count=hp_damage_effect_count,
             )
             event = engine._apply_player_hp_delta(-amount, source="enemy_skill", reason=str(skill.get("name") or ""), encounter=encounter)
+            _append_resource_event_lines(encounter, event)
             results.append({"type": effect_type, "target": player.name, "amount": amount, "old_hp": event.get("old_hp"), "new_hp": event.get("new_hp"), **calculation})
             if effect_type.startswith("absorption"):
                 heal_event = _apply_character_hp_delta(engine, encounter, opponent, max(1, amount // 2), source="enemy_skill", reason=str(skill.get("name") or ""))
+                _append_resource_event_lines(encounter, heal_event)
                 results.append({"type": "absorb_heal", "target": opponent.name, "amount": heal_event.get("actual_delta", 0), "old_hp": heal_event.get("old_hp"), "new_hp": heal_event.get("new_hp")})
-        elif effect_type in {"damage_sp_single", "damage_sp_party"}:
+        elif effect_type == "damage_sp_single":
+            target = random_single_target if isinstance(random_single_target, Character) else player
+            amount = _skill_amount(opponent, target, skill, equipment_summary=_equipment_summary_for(engine, target))
+            event = _apply_character_sp_delta(engine, encounter, target, -amount, source="enemy_skill", reason=str(skill.get("name") or ""))
+            _append_resource_event_lines(encounter, event)
+            results.append({"type": effect_type, "target": target.name, "target_uuid": target.uuid, "amount": abs(safe_int(event.get("actual_delta"), 0)), "old_sp": event.get("old_sp"), "new_sp": event.get("new_sp")})
+        elif effect_type == "damage_sp_party":
             event = engine._apply_player_sp_delta(-_skill_amount(opponent, player, skill, equipment_summary=engine.player_equipment_summary()), source="enemy_skill", reason=str(skill.get("name") or ""), encounter=encounter)
+            _append_resource_event_lines(encounter, event)
             results.append({"type": effect_type, "target": player.name, "amount": abs(safe_int(event.get("actual_delta"), 0)), "old_sp": event.get("old_sp"), "new_sp": event.get("new_sp")})
         elif effect_type == "heal_single":
             results.append(_apply_skill_hp_heal(engine, encounter, opponent, opponent, skill, effect, source="enemy_skill"))
@@ -990,7 +1051,9 @@ def _resolve_enemy_skill(engine: Any, encounter: dict[str, Any], opponent: Chara
             for item in _same_side_targets(engine, encounter, opponent):
                 results.append(_apply_skill_hp_heal(engine, encounter, opponent, item, skill, effect, source="enemy_skill"))
         elif effect_type in {"effect_enemy_single", "effect_enemy_party"}:
-            results.append(_apply_skill_buff(player, skill, effect))
+            target = random_single_target if effect_type.endswith("_single") and isinstance(random_single_target, Character) else player
+            results.append(_apply_skill_buff(target, skill, effect))
+            _sync_combat_character_state(engine, encounter, target)
         elif effect_type == "effect_self":
             results.append(_apply_skill_buff(opponent, skill, effect))
         elif effect_type in {"effect_ally_single", "effect_ally_party"}:
@@ -1058,6 +1121,7 @@ def _combat_enemy_action(
         "attacks": opponent.extra.get("combat_attacks") or opponent.extra.get("attacks") or [],
         "skills": opponent.skills,
         "player": engine._encounter_player_payload(encounter),
+        "player_side_targets": [_combat_character_payload(character) for character in _ally_targets(engine)],
         "player_result": player_response.get("game_combat_result") or player_response,
         "player_status": encounter.get("player_status"),
         "player_surrender_resolution_required": _player_surrender_resolution_pending(encounter, player_response),
@@ -1227,6 +1291,57 @@ def _apply_character_hp_delta(
         "actual_delta": actual_delta,
         "lines": [f"> [HP] {target.name}: {old_hp}/{max_hp} -> {new_hp}/{max_hp} ({sign})"],
     }
+
+
+def _apply_character_sp_delta(
+    engine: Any,
+    encounter: dict[str, Any],
+    target: Character,
+    delta: int,
+    *,
+    source: str,
+    reason: str = "",
+) -> dict[str, Any]:
+    if target.flags.get("is_player") or target.uuid == engine.state.player_uuid:
+        return engine._apply_player_sp_delta(delta, source=source, reason=reason, encounter=encounter)
+    old_sp = max(0, min(max(1, safe_int(target.max_sp, 1)), safe_int(target.current_sp, target.max_sp or 1)))
+    max_sp = max(1, safe_int(target.max_sp, old_sp or 1))
+    new_sp = max(0, min(max_sp, old_sp + int(delta)))
+    actual_delta = new_sp - old_sp
+    target.current_sp = new_sp
+    target.max_sp = max_sp
+    target.extra["current_sp"] = new_sp
+    target.extra["max_sp"] = max_sp
+    _sync_combat_character_state(engine, encounter, target)
+    sign = f"+{actual_delta}" if actual_delta > 0 else str(actual_delta)
+    return {
+        "changed": actual_delta != 0,
+        "old_sp": old_sp,
+        "new_sp": new_sp,
+        "max_sp": max_sp,
+        "actual_delta": actual_delta,
+        "lines": [f"> [SP] {target.name}: {old_sp}/{max_sp} -> {new_sp}/{max_sp} ({sign})"],
+    }
+
+
+def _sync_combat_character_state(engine: Any, encounter: dict[str, Any], target: Character) -> None:
+    if target.flags.get("is_player") or target.uuid == engine.state.player_uuid:
+        engine.state.status_effects = target.status_effects
+        return
+    if _is_player_side_actor(engine, target):
+        engine._sync_companion_party_entry(target)
+    else:
+        engine._sync_encounter_opponent_entry(encounter, target)
+        engine._sync_companion_party_entry(target)
+
+
+def _append_resource_event_lines(encounter: dict[str, Any], event: dict[str, Any]) -> None:
+    for line in event.get("lines", []):
+        if str(line).strip():
+            encounter.setdefault("pending_resource_lines", []).append(str(line))
+    line = event.get("line")
+    if str(line or "").strip():
+        encounter.setdefault("pending_resource_lines", []).append(str(line))
 
 
 def _attack_value(engine: Any, actor: Character, encounter: dict[str, Any]) -> int:

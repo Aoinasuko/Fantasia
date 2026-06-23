@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from .item_generate_loottabel import generate_loot_table_items
 from .namelist import claim_name_from_namelist
-from .paths import LOCATION_LOCAL_TEMPLATE_DIR, LOCATION_WORLD_TEMPLATE_DIR, ROOT
+from .paths import LOCATION_LOCAL_TEMPLATE_DIR, LOCATION_WORLD_TEMPLATE_DIR
 from .world_generation import (
     DEFAULT_SUBNODE_ID,
     DUNGEON_DEEPEST_SUBNODE_ID,
@@ -957,7 +957,7 @@ class TemplateWorldGenerator:
 
 def _load_world_templates() -> list[dict[str, Any]]:
     templates: list[dict[str, Any]] = []
-    for directory in _template_dirs(LOCATION_WORLD_TEMPLATE_DIR, "Location_World"):
+    for directory in _template_dirs(LOCATION_WORLD_TEMPLATE_DIR):
         for path in sorted(directory.glob("*.json")):
             for raw in _load_json_array(path):
                 if not isinstance(raw, dict):
@@ -975,7 +975,7 @@ def _load_world_templates() -> list[dict[str, Any]]:
 
 def _load_local_templates() -> list[dict[str, Any]]:
     templates: list[dict[str, Any]] = []
-    for directory in _template_dirs(LOCATION_LOCAL_TEMPLATE_DIR, "Location_Local"):
+    for directory in _template_dirs(LOCATION_LOCAL_TEMPLATE_DIR):
         for path in sorted(directory.glob("*.json")):
             file_category = _local_category_from_filename(path.name)
             for raw in _load_json_array(path):
@@ -988,9 +988,9 @@ def _load_local_templates() -> list[dict[str, Any]]:
     return templates
 
 
-def _template_dirs(primary: Path, folder_name: str) -> list[Path]:
+def _template_dirs(primary: Path) -> list[Path]:
     result: list[Path] = []
-    for candidate in (primary, ROOT / "Data" / "Template" / folder_name):
+    for candidate in (primary,):
         if candidate.exists() and candidate not in result:
             result.append(candidate)
     return result
