@@ -1034,6 +1034,20 @@ def _refresh_quest_objective_state(self, quest: QuestData) -> None:
     elif quest_type == "rescue":
         if self._quest_blockers_resolved(quest):
             self._set_quest_flag(quest, "blocker_resolved", True)
+        current_location = self.state.current_location or self.state.world_data.starting_location
+        at_report_location = self.is_current_location_guild() and self._quest_report_location_matches(quest, current_location)
+        for entry in self._quest_entries_by_role(quest, "rescue_target", "npcs"):
+            character = self._quest_objective_character(entry)
+            if not character or _character_state_is_dead(character):
+                continue
+            if str(entry.get("status") or "") in {"delivered", "reported"}:
+                continue
+            if _quest_character_is_escorted(self, character):
+                _mark_quest_rescue_blockers_resolved_from_escort(self, quest, pack, source="quest_objective_refresh")
+                if at_report_location:
+                    _deliver_quest_rescue_target(self, quest, pack, entry, character, current_location, source="quest_objective_refresh")
+                else:
+                    _mark_quest_rescue_entry_escorting(self, quest, pack, entry, character, source="quest_objective_refresh")
     elif quest_type == "investigate":
         for entry in self._quest_entries_by_role(quest, "investigation_point", "markers"):
             if str(entry.get("status") or "") in {"investigated", "reported", "delivered"}:
@@ -1097,13 +1111,7 @@ def _apply_quest_objective_action(self, quest: QuestData, action: str, location:
                 if not character or _character_state_is_dead(character):
                     entry["status"] = "lost"
                     continue
-                entry["status"] = "escorting"
-                pack["status"] = "escorting"
-                quest.extra["quest_stage"] = "return_to_guild"
-                self._set_quest_flag(quest, "objective_found", True)
-                self._set_quest_flag(quest, "objective_rescued", True)
-                character.flags["quest_escort"] = True
-                character.extra["quest_escort"] = {"quest": quest.name, "origin_location": quest.extra.get("origin_location") or self._quest_origin_location(quest)}
+                _mark_quest_rescue_entry_escorting(self, quest, pack, entry, character, source="quest_objective_action")
                 self._set_character_presence(character, location, "escorted", subnode_id=self._current_subnode_id(location))
                 lines.append(f"> [Quest] 救出対象を保護しました: {character.name}")
     elif quest_type == "delivery":
@@ -1180,6 +1188,7 @@ def _sync_quest_objective_escorts(self, location: str, *, subnode_id: str = "") 
     quest = self._find_quest_by_name(self.state.active_quest) if self.state.active_quest else None
     if not quest:
         return
+    self._refresh_quest_objective_state(quest)
     pack = self._quest_objective_pack(quest)
     if str(pack.get("status") or "") not in {"escorting", "retrieved"}:
         return
@@ -1192,10 +1201,7 @@ def _sync_quest_objective_escorts(self, location: str, *, subnode_id: str = "") 
         character = self._quest_objective_character(entry)
         if character and not _character_state_is_dead(character):
             if at_report_location:
-                entry["status"] = "delivered"
-                character.flags.pop("quest_escort", None)
-                character.extra.pop("quest_escort", None)
-                self._set_character_presence(character, location, "present", subnode_id=subnode_id)
+                _deliver_quest_rescue_target(self, quest, pack, entry, character, location, subnode_id=subnode_id, source="quest_objective_escort_sync")
                 delivered_any = True
             else:
                 self._set_character_presence(character, location, "escorted", subnode_id=subnode_id)
@@ -1204,6 +1210,127 @@ def _sync_quest_objective_escorts(self, location: str, *, subnode_id: str = "") 
         quest.extra["quest_stage"] = QUEST_REPORT_STAGE
         self._set_quest_flag(quest, "objective_rescued", True)
         self._set_quest_flag(quest, "ready_to_report", True)
+
+def _mark_quest_rescue_target_escorting(self, character: Character, *, source: str = "") -> list[str]:
+    if character is None or character.flags.get("is_player") or _character_state_is_dead(character):
+        return []
+    quest = self._find_quest_by_name(self.state.active_quest) if self.state.active_quest else None
+    if not quest:
+        return []
+    pack = self._quest_objective_pack(quest)
+    if str(quest.extra.get("quest_type") or pack.get("quest_type") or "").strip().lower() != "rescue":
+        return []
+    _mark_quest_rescue_blockers_resolved_from_escort(self, quest, pack, source=source or "npc_join_party")
+    lines: list[str] = []
+    for entry in self._quest_entries_by_role(quest, "rescue_target", "npcs"):
+        target = self._quest_objective_character(entry)
+        if target is None or str(target.uuid) != str(character.uuid):
+            continue
+        previous = str(entry.get("status") or "")
+        _mark_quest_rescue_entry_escorting(self, quest, pack, entry, character, source=source or "npc_join_party")
+        if previous not in {"escorting", "delivered", "reported"}:
+            lines.append(f"> [Quest] 救出対象を保護しました: {character.name}")
+    return lines
+
+def _quest_character_is_escorted(self, character: Character) -> bool:
+    if character is None or _character_state_is_dead(character):
+        return False
+    if str(character.state or "").strip().lower() in {"party", "companion", "escorted"}:
+        return True
+    if _as_bool(character.flags.get("quest_escort")) or _as_bool(character.extra.get("quest_escort")):
+        return True
+    uuid = str(character.uuid or "").strip()
+    name = str(character.name or "").strip()
+    if uuid and uuid in {str(item or "").strip() for item in self.state.party_uuids[1:]}:
+        return True
+    for item in self.state.party[1:]:
+        if not isinstance(item, dict):
+            continue
+        if uuid and str(item.get("uuid") or "").strip() == uuid:
+            return True
+        if name and str(item.get("name") or item.get("character_name") or "").strip() == name:
+            return True
+    return False
+
+def _mark_quest_rescue_entry_escorting(
+    self,
+    quest: QuestData,
+    pack: dict[str, Any],
+    entry: dict[str, Any],
+    character: Character,
+    *,
+    source: str,
+) -> None:
+    entry["status"] = "escorting"
+    entry["escort_source"] = source
+    pack["status"] = "escorting"
+    quest.extra["quest_stage"] = "return_to_guild"
+    self._set_quest_flag(quest, "objective_found", True)
+    self._set_quest_flag(quest, "objective_rescued", True)
+    character.flags["quest_escort"] = True
+    character.extra["quest_escort"] = {
+        "quest": quest.name,
+        "origin_location": quest.extra.get("origin_location") or self._quest_origin_location(quest),
+    }
+
+def _mark_quest_rescue_blockers_resolved_from_escort(
+    self,
+    quest: QuestData,
+    pack: dict[str, Any],
+    *,
+    source: str,
+) -> None:
+    changed = False
+    for blocker in self._quest_entries_by_role(quest, "blocker", "npcs"):
+        if str(blocker.get("status") or "") in {"neutralized", "defeated", "dead", "delivered"}:
+            continue
+        blocker["status"] = "neutralized"
+        blocker["neutralized_source"] = source
+        changed = True
+    if changed or self._quest_blockers_resolved(quest):
+        self._set_quest_flag(quest, "blocker_resolved", True)
+        pack.setdefault("flags", self._quest_flags(quest))["blocker_resolved"] = True
+
+def _remove_quest_character_from_party_records(self, character: Character) -> None:
+    uuid = str(character.uuid or "").strip()
+    name = str(character.name or "").strip()
+    if uuid:
+        self.state.party_uuids = [item for item in self.state.party_uuids if str(item or "").strip() != uuid]
+    self.state.party = [
+        item
+        for item in self.state.party
+        if _party_entry_is_player(item, self.state.player_name)
+        or not (
+            isinstance(item, dict)
+            and (
+                (uuid and str(item.get("uuid") or "").strip() == uuid)
+                or (name and str(item.get("name") or item.get("character_name") or "").strip() == name)
+            )
+        )
+    ]
+
+def _deliver_quest_rescue_target(
+    self,
+    quest: QuestData,
+    pack: dict[str, Any],
+    entry: dict[str, Any],
+    character: Character,
+    location: str,
+    *,
+    subnode_id: str = "",
+    source: str,
+) -> None:
+    _remove_quest_character_from_party_records(self, character)
+    character.flags.pop("quest_escort", None)
+    character.extra.pop("quest_escort", None)
+    character.extra.pop("party_waiting", None)
+    self._set_character_presence(character, location, "present", subnode_id=subnode_id or self._runtime_subnode_for_presence(location))
+    entry["status"] = "delivered"
+    entry["delivered_source"] = source
+    pack["status"] = QUEST_REPORT_STAGE
+    quest.extra["quest_stage"] = QUEST_REPORT_STAGE
+    self._set_quest_flag(quest, "objective_rescued", True)
+    self._set_quest_flag(quest, "ready_to_report", True)
 
 def _quest_objective_completion_allowed(
     self,

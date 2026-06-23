@@ -9353,6 +9353,9 @@ class GameEngine:
             if existing.name == character.name or existing.uuid == character.uuid:
                 self._set_character_presence(existing, self.state.current_location or existing.location or self.state.world_data.starting_location, "party")
                 self._sync_companion_party_entry(existing)
+                sync_rescue = getattr(self, "_mark_quest_rescue_target_escorting", None)
+                if callable(sync_rescue):
+                    sync_rescue(existing, source=source)
                 return []
         if len(companions) >= PARTY_COMPANION_LIMIT:
             return [f"> [Party] Party is full. Dismiss a companion before inviting {character.name}."]
@@ -9374,8 +9377,10 @@ class GameEngine:
             "day": self.state.day,
         }
         self.state.world_data.extra.setdefault("party_events", []).append({**event, "action": "join"})
+        sync_rescue = getattr(self, "_mark_quest_rescue_target_escorting", None)
+        rescue_lines = sync_rescue(character, source=source) if callable(sync_rescue) else []
         reason_text = f" {reason}" if reason else ""
-        return [f"> [Party] {character.name} joined the party.{reason_text}"]
+        return [f"> [Party] {character.name} joined the party.{reason_text}", *rescue_lines]
 
     def _remove_party_companion(
         self,
@@ -21644,6 +21649,7 @@ def _install_quest_modules() -> None:
             "_refresh_quest_objective_state",
             "_apply_quest_objective_action",
             "_sync_quest_objective_escorts",
+            "_mark_quest_rescue_target_escorting",
             "_quest_objective_completion_allowed",
             "_quest_objectives_returned",
             "_quest_report_location_matches",
