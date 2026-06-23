@@ -76,6 +76,8 @@ QUEST_REPORT_CHOICE_LABEL = "依頼達成を報告する"
 
 QUEST_ABANDON_CHOICE_LABEL = "現在の依頼を放棄する"
 
+QUEST_RESCUE_PROTECT_CHOICE_LABEL = "\u6551\u52a9\u5bfe\u8c61\u3092\u4fdd\u8b77\u3059\u308b"
+
 QUEST_DEADLINE_HOURS = 48
 
 QUEST_TYPES = {"rescue", "retrieve", "defeat", "delivery", "investigate", "procure"}

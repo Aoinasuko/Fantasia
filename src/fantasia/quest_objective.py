@@ -1184,6 +1184,326 @@ def _apply_quest_objective_action(self, quest: QuestData, action: str, location:
                 lines.append(f"> [Quest] 調査を完了しました: {entry.get('name')}")
     return lines
 
+def _quest_progress_tool_action(response: dict[str, Any], quest: QuestData) -> str:
+    raw = ""
+    for key in ("quest_action", "progress_type", "objective_action", "kind", "type"):
+        value = str(response.get(key) or "").strip().lower()
+        if value:
+            raw = value
+            break
+    aliases = {
+        "rescue": "rescue",
+        "protect": "rescue",
+        "escort": "rescue",
+        "save": "rescue",
+        "investigate": "investigate",
+        "investigation": "investigate",
+        "survey": "investigate",
+        "research": "investigate",
+        "inspect": "investigate",
+        "delivery": "delivery",
+        "deliver": "delivery",
+        "handover": "delivery",
+        "hand_over": "delivery",
+    }
+    if raw in aliases:
+        return aliases[raw]
+    pack = quest.extra.get("details") if isinstance(quest.extra, dict) else {}
+    pack = pack if isinstance(pack, dict) else {}
+    quest_type = str(quest.extra.get("quest_type") or pack.get("quest_type") or "").strip().lower()
+    return aliases.get(quest_type, quest_type)
+
+def _quest_progress_tool_narration(response: dict[str, Any], fallback: str) -> str:
+    for key in ("narration", "message", "reason"):
+        value = str(response.get(key) or "").strip()
+        if value:
+            return _hide_internal_quest_tokens(value)
+    return fallback
+
+def _finish_quest_progress_tool_turn(
+    self,
+    quest: QuestData,
+    *,
+    action: str,
+    input_type: str,
+    source: str,
+    narration: str,
+    lines: list[str] | None = None,
+    choices: list[str] | None = None,
+    action_roll: dict[str, Any] | None = None,
+    event: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    location = self.state.current_location or self.state.world_data.starting_location
+    if choices is None:
+        choices = self._location_default_choices(location)
+    if not self._active_encounter():
+        self.state.flags["screen_mode"] = "exploration"
+    narration = _hide_internal_quest_tokens(narration)
+    choices = [_hide_internal_quest_tokens(choice) for choice in choices]
+    self._append_turn(action, narration, location, choices, input_type=input_type or "choice")
+    self._append_action_roll_log(action_roll)
+    status_lines = [_hide_internal_quest_tokens(line) for line in (lines or []) if str(line).strip()]
+    if status_lines:
+        self.state.display_log.extend(status_lines)
+    record = {
+        "manager": "quest_progress_tool",
+        "source": source,
+        "action": action,
+        "input_type": input_type,
+        "narration": narration,
+        "lines": list(status_lines),
+    }
+    if action_roll:
+        record["action_roll"] = action_roll
+    if event:
+        record["event"] = event
+    quest.log.append(record)
+    self.state.world_data.history.append({"quest": quest.name, **record})
+    self.save_game()
+    result = {
+        "handled": True,
+        "tool": "quest_progress",
+        "quest_name": quest.name,
+        "source": source,
+        "lines": list(status_lines),
+        "log_text": self.state.log_text(16),
+    }
+    if action_roll:
+        result["action_roll"] = action_roll
+    if event:
+        result["event"] = event
+    return result
+
+def _apply_response_quest_progress_tool(
+    self,
+    response: dict[str, Any],
+    source: str,
+    *,
+    action: str = "",
+    input_type: str = "",
+) -> dict[str, Any]:
+    response = response if isinstance(response, dict) else {}
+    quest = self._find_quest_by_name(self.state.active_quest) if self.state.active_quest else None
+    if not quest or quest.status != "active":
+        return self._tool_message_event("quest_progress", action, input_type, "進行できる依頼はありません。")
+    location = self.state.current_location or self.state.world_data.starting_location
+    pack = self._quest_objective_pack(quest)
+    quest_action = _quest_progress_tool_action(response, quest)
+    quest_type = str(quest.extra.get("quest_type") or pack.get("quest_type") or "").strip().lower()
+    if quest_action not in {"rescue", "investigate", "delivery"}:
+        return self._tool_message_event("quest_progress", action, input_type, "この依頼はこのツールで進行できる段階ではありません。")
+    if quest_action != quest_type:
+        return self._tool_message_event("quest_progress", action, input_type, "現在の依頼目的と異なる進行操作です。")
+    if not self._at_quest_objective_place(quest, location):
+        return self._tool_message_event("quest_progress", action, input_type, "ここは依頼の目的地ではありません。")
+
+    if quest_action == "rescue":
+        return self._apply_response_quest_progress_rescue_tool(response, source, action=action, input_type=input_type, quest=quest)
+    if quest_action == "investigate":
+        return self._apply_response_quest_progress_investigate_tool(response, source, action=action, input_type=input_type, quest=quest)
+    if quest_action == "delivery":
+        return self._apply_response_quest_progress_delivery_tool(response, source, action=action, input_type=input_type, quest=quest)
+    return self._tool_message_event("quest_progress", action, input_type, "依頼は進行しませんでした。")
+
+def _apply_response_quest_progress_rescue_tool(
+    self,
+    response: dict[str, Any],
+    source: str,
+    *,
+    action: str,
+    input_type: str,
+    quest: QuestData,
+) -> dict[str, Any]:
+    location = self.state.current_location or self.state.world_data.starting_location
+    subnode_id = self._current_subnode_id(location)
+    pack = self._quest_objective_pack(quest)
+    lines: list[str] = []
+    protected_any = False
+    if not self._quest_blockers_resolved(quest):
+        return _finish_quest_progress_tool_turn(
+            self,
+            quest,
+            action=action,
+            input_type=input_type,
+            source=source,
+            narration="まだ救助対象を安全に保護できません。",
+            lines=["> [Quest] 救助対象を保護する前に、妨害要因への対処が必要です。"],
+        )
+    for entry in self._quest_entries_by_role(quest, "rescue_target", "npcs"):
+        if str(entry.get("status") or "") not in {"waiting", "found"}:
+            continue
+        character = self._quest_objective_character(entry)
+        if not character or _character_state_is_dead(character):
+            entry["status"] = "lost"
+            continue
+        companions = self._party_companions()
+        already_companion = character.uuid in {companion.uuid for companion in companions}
+        if not already_companion and len(companions) >= PARTY_COMPANION_LIMIT:
+            self._set_character_presence(character, location, "present", subnode_id=subnode_id)
+            lines.append(f"> [Quest] {character.name}を保護しようとしましたが、同行枠がいっぱいです。")
+            continue
+        if already_companion:
+            _mark_quest_rescue_entry_escorting(self, quest, pack, entry, character, source=source or "quest_progress_tool")
+            self._set_character_presence(character, location, "party", subnode_id=subnode_id)
+            lines.append(f"> [Quest] 救助対象を保護しました: {character.name}")
+            protected_any = True
+        else:
+            join_lines = self._set_party_companion(character, source=source or "quest_progress_tool")
+            if character.uuid in {str(item or "").strip() for item in self.state.party_uuids[1:]}:
+                _mark_quest_rescue_entry_escorting(self, quest, pack, entry, character, source=source or "quest_progress_tool")
+                protected_any = True
+            lines.extend(join_lines or [f"> [Quest] 救助対象を保護しました: {character.name}"])
+            protected_any = protected_any or character.uuid in {str(item or "").strip() for item in self.state.party_uuids[1:]}
+    if protected_any:
+        narration = _quest_progress_tool_narration(response, "救助対象を保護し、ギルドまで同行できる状態にした。")
+    else:
+        narration = _quest_progress_tool_narration(response, "救助対象を保護できなかった。")
+        if not lines:
+            lines.append("> [Quest] 保護できる救助対象は見当たりません。")
+    return _finish_quest_progress_tool_turn(
+        self,
+        quest,
+        action=action,
+        input_type=input_type,
+        source=source,
+        narration=narration,
+        lines=lines,
+    )
+
+def _apply_response_quest_progress_investigate_tool(
+    self,
+    response: dict[str, Any],
+    source: str,
+    *,
+    action: str,
+    input_type: str,
+    quest: QuestData,
+) -> dict[str, Any]:
+    location = self.state.current_location or self.state.world_data.starting_location
+    danger = max(0, int(self._current_location_danger(location)))
+    target = 10 + (danger // 10) * 2
+    action_roll = self._make_action_roll(
+        action or "調査する",
+        purpose="quest_investigate",
+        forced_ability="int",
+        forced_target=target,
+        normalise_target=False,
+    )
+    pack = self._quest_objective_pack(quest)
+    lines: list[str] = []
+    investigated = False
+    if action_roll.get("success"):
+        for entry in self._quest_entries_by_role(quest, "investigation_point", "markers"):
+            if str(entry.get("status") or "") not in {"waiting", "found"}:
+                continue
+            entry["status"] = "investigated"
+            investigated = True
+            lines.append(f"> [Quest] 調査を完了しました: {entry.get('name')}")
+        if investigated:
+            pack["status"] = "investigated"
+            quest.extra["quest_stage"] = "return_to_guild"
+            self._set_quest_flag(quest, "objective_found", True)
+            self._set_quest_flag(quest, "objective_investigated", True)
+    else:
+        lines.append("> [Quest] 調査はまだ完了していません。")
+
+    event: dict[str, Any] = {"danger": danger, "target": target, "enemy_chance": 0.5, "enemy_triggered": False}
+    if investigated and random.random() < 0.5:
+        subnode_id = self._current_subnode_id(location)
+        graph = self._ensure_location_subnode_graph(self.state.world_data, location)
+        node = graph.get("nodes", {}).get(subnode_id, {}) if isinstance(graph, dict) else {}
+        monster = self._generate_random_danger_subnode_monster(
+            location,
+            subnode_id,
+            node if isinstance(node, dict) else {},
+            source=source or "quest_progress_investigate",
+            action=action,
+        )
+        if monster:
+            encounter = self._start_encounter_with_character(
+                monster,
+                source=source or "quest_progress_investigate",
+                action=action,
+                location=location,
+            )
+            event.update({"enemy_triggered": True, "monster_uuid": monster.uuid, "monster_name": monster.name})
+            choices = self._encounter_choices(encounter)
+            narration = _quest_progress_tool_narration(response, f"調査は成功したが、物音に引き寄せられて{monster.name}が現れた。")
+        else:
+            choices = self._location_default_choices(location)
+            narration = _quest_progress_tool_narration(response, "調査を完了した。")
+    else:
+        choices = self._location_default_choices(location)
+        narration = _quest_progress_tool_narration(response, "調査を完了した。" if investigated else "調査を試みたが、十分な手がかりは得られなかった。")
+    return _finish_quest_progress_tool_turn(
+        self,
+        quest,
+        action=action,
+        input_type=input_type,
+        source=source,
+        narration=narration,
+        lines=lines,
+        choices=choices,
+        action_roll=action_roll,
+        event=event,
+    )
+
+def _apply_response_quest_progress_delivery_tool(
+    self,
+    response: dict[str, Any],
+    source: str,
+    *,
+    action: str,
+    input_type: str,
+    quest: QuestData,
+) -> dict[str, Any]:
+    pack = self._quest_objective_pack(quest)
+    target_entries = self._quest_entries_by_role(quest, "delivery_target", "npcs")
+    item_entries = self._quest_entries_by_role(quest, "delivery_item", "items")
+    lines: list[str] = []
+    target_ok = all(self._quest_objective_character(entry) is not None for entry in target_entries)
+    delivered_any = False
+    missing_items: list[str] = []
+    if not target_ok:
+        lines.append("> [Quest] 配達相手が見当たりません。")
+    else:
+        for entry in item_entries:
+            if str(entry.get("status") or "") == "delivered":
+                delivered_any = True
+                continue
+            item_uuid = _quest_entry_item_uuid(entry)
+            if not self._quest_objective_item_in_player_inventory(item_uuid):
+                missing_items.append(str(entry.get("name") or "配達品"))
+                continue
+            removed = self._remove_player_item_by_uuid(item_uuid, source=source or "quest_progress_delivery", reason="delivered")
+            if removed:
+                entry["status"] = "delivered"
+                delivered_any = True
+                lines.append(f"> [Quest] 配達品を渡しました: {entry.get('name') or removed.get('name')}")
+        if delivered_any and all(str(entry.get("status") or "") == "delivered" for entry in item_entries):
+            for target_entry in target_entries:
+                target_entry["status"] = "received"
+            pack["status"] = QUEST_REPORT_STAGE
+            quest.extra["quest_stage"] = QUEST_REPORT_STAGE
+            self._set_quest_flag(quest, "delivery_completed", True)
+            self._set_quest_flag(quest, "ready_to_report", True)
+            self._sync_player_inventory()
+    if missing_items:
+        lines.append(f"> [Quest] 必要な配達品を持っていません: {', '.join(missing_items)}")
+    if delivered_any and not missing_items:
+        narration = _quest_progress_tool_narration(response, "目的の品を渡し、配達を完了した。")
+    else:
+        narration = _quest_progress_tool_narration(response, "配達は完了しなかった。")
+    return _finish_quest_progress_tool_turn(
+        self,
+        quest,
+        action=action,
+        input_type=input_type,
+        source=source,
+        narration=narration,
+        lines=lines,
+    )
+
 def _sync_quest_objective_escorts(self, location: str, *, subnode_id: str = "") -> None:
     quest = self._find_quest_by_name(self.state.active_quest) if self.state.active_quest else None
     if not quest:

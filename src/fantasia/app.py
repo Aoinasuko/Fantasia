@@ -6831,7 +6831,7 @@ class FantasiaApp(tk.Tk):
                     insert_at = 2 if mode == "exploration" else len(choices)
                     choices.insert(min(insert_at, len(choices)), trade_choice)
             if mode == "exploration":
-                choices = _limit_exploration_choices(choices)
+                choices = self.engine.format_contextual_choices(choices)
                 self.engine.state.choices = choices
         if not choices:
             tk.Label(

@@ -310,6 +310,19 @@ def run_llm_tool(engine: Any, call: LlmToolCall) -> LlmToolResult:
             input_type=call.input_type,
         )
         return LlmToolResult(name, event=event, acted=bool(event.get("handled")))
+    if name == LlmToolName.QUEST_PROGRESS:
+        event = engine._apply_response_quest_progress_tool(
+            response,
+            source,
+            action=call.action,
+            input_type=call.input_type,
+        )
+        return LlmToolResult(
+            name,
+            lines=[str(line) for line in event.get("lines", []) if str(line).strip()],
+            event=event,
+            acted=bool(event.get("handled")),
+        )
     if name == LlmToolName.QUEST_ABANDON:
         event = engine._apply_response_quest_abandon_tool(
             response,
@@ -468,9 +481,12 @@ def tool_prompt_instruction() -> str:
         "npc_remove_party, npc_dead, npc_capture_player, npc_update_memory, npc_update_description, "
         "world_home_construction, world_mainnode_reveal, world_subnode_reveal, "
         "crime_risk, item_add, item_remove, item_equip, item_unequip, craft, visual_intent, start_combat, "
-        "quest_report, quest_accept, quest_abandon, facility_visit, facility_request, conversation_start, "
+        "quest_report, quest_accept, quest_progress, quest_abandon, facility_visit, facility_request, conversation_start, "
         "conversation_end, trade_negotiation, home_purchase, player_rest, discover_location, generate_dungeon, generate_quest, spawn_npc, spawn_enemy, "
         "spawn_boss, request_npc_generation, quest_event, quest_progress, quest_update. "
+        "Use quest_progress only when the player definitely attempts the active quest objective; arguments should include "
+        "quest_action as rescue, investigate, or delivery when known. The game resolves success, rolls, inventory, party limits, and flags locally. "
+        "Use quest_abandon only when the player definitely intends to abandon the active quest. "
         "Use craft when the player explicitly tries crafting, cooking, smithing, alchemy, combining, or processing items; "
         "arguments must include consume_items as an array of item names or item_uuid values from current craft candidates, "
         "craft_type as auto|mix|synthesis|smithing|alchemy|cooking, and content as the intended result or request. "
@@ -738,6 +754,8 @@ def _merge_tool_payload(payload: dict[str, Any], tool_name: LlmToolName, args: d
         payload["event"] = _single_or_value(args, "event", "value")
         return
     if tool_name == LlmToolName.QUEST_PROGRESS:
+        payload.update(args)
+        _merge_keys(payload, args, ("quest_action", "progress_type", "objective_action", "narration", "reason"))
         value = args.get("progress", args.get("quest_progress", args.get("value", "")))
         if value:
             payload["quest_progress"] = str(value)

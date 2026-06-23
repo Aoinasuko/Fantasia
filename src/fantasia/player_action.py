@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable
 
-from .quest_rules import QUEST_REPORT_CHOICE_LABEL
+from .quest_rules import QUEST_REPORT_CHOICE_LABEL, QUEST_RESCUE_PROTECT_CHOICE_LABEL
 
 
 class PlayerInputType(str, Enum):
@@ -356,6 +356,17 @@ def resolve_player_input(
                 return finish(
                     command(ActionCommandType.QUEST_ABANDON, target=str(active_quest.name), payload={"llm_tool": "quest_abandon"}),
                     engine._resolve_quest_abandon_tool_action(action_text, input_type),
+                )
+            if action_text == QUEST_RESCUE_PROTECT_CHOICE_LABEL:
+                return finish(
+                    command(ActionCommandType.QUEST_OBJECTIVE_ACTION, target=str(active_quest.name), payload={"llm_tool": "quest_progress", "quest_action": "rescue"}),
+                    engine._resolve_quest_progress_tool_action(action_text, input_type, active_quest, forced_quest_action="rescue"),
+                )
+            quest_progress_result = engine._resolve_quest_progress_tool_action(action_text, input_type, active_quest)
+            if quest_progress_result is not None:
+                return finish(
+                    command(ActionCommandType.QUEST_OBJECTIVE_ACTION, target=str(active_quest.name), payload={"llm_tool": "quest_progress"}),
+                    quest_progress_result,
                 )
             action_roll = None
             action_roll = engine._action_roll_for_input(action_text, input_type, "quest")

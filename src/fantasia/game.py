@@ -103,6 +103,7 @@ from .quest_rules import (
     QUEST_BOARD_CHOICE_LABEL,
     QUEST_BOARD_NAME,
     QUEST_DEADLINE_HOURS,
+    QUEST_RESCUE_PROTECT_CHOICE_LABEL,
     QUEST_REPORT_CHOICE_LABEL,
     QUEST_REPORT_STAGE,
     QUEST_TYPES,
@@ -258,6 +259,10 @@ PLAYER_MAX_LEVEL = 50
 PLAYER_BASE_EXP_TO_NEXT = 5
 PLAYER_MAX_EXP_TO_NEXT = 100_000_000
 MAX_EXPLORATION_CHOICES = 5
+OTHER_COMMANDS_CHOICE_LABEL = "その他…"
+OTHER_COMMANDS_BACK_CHOICE_LABEL = "戻る"
+OTHER_COMMANDS_MAX_ITEMS = 6
+OTHER_COMMANDS_MENU_FLAG = "other_commands_menu"
 TEMP_LLM_CONTEXT_MAX_CHARS = 16_000
 TEMP_LLM_CONTEXT_EVENT_LIMIT = 8
 TEMP_CONTEXT_AWARE_MANAGERS = {
@@ -2425,8 +2430,107 @@ class GameEngine:
         choices: list[str],
         input_type: str = "free_action",
     ) -> None:
+        choices = self.format_contextual_choices(choices, expanded=False)
         self.state.append_turn(action, narration, location, choices, input_type=input_type)
+        objective_notice = self._active_quest_objective_arrival_notice(location)
+        if objective_notice:
+            self.state.display_log.append(objective_notice)
         self.state.display_log.extend(self._apply_starvation_turn_penalty())
+
+    def format_contextual_choices(self, choices: list[str], *, expanded: bool | None = None) -> list[str]:
+        source = _dedupe_strs([choice for choice in choices if not _is_other_commands_control_choice(str(choice or "").strip())])
+        menu = self.state.flags.get(OTHER_COMMANDS_MENU_FLAG)
+        stored_source: list[str] = []
+        stored_commands: list[str] = []
+        stored_expanded = False
+        if isinstance(menu, dict):
+            stored_source = _dedupe_strs(_as_str_list(menu.get("source_choices")))
+            stored_commands = _dedupe_strs(_as_str_list(menu.get("commands")))
+            stored_expanded = _as_bool(menu.get("expanded"))
+
+        if not self._contextual_choice_menu_applies():
+            self.state.flags.pop(OTHER_COMMANDS_MENU_FLAG, None)
+            return source
+
+        if not source and stored_source:
+            source = list(stored_source)
+        commands = [choice for choice in source if _is_contextual_command_choice(choice)]
+        normal_choices = [choice for choice in source if not _is_contextual_command_choice(choice)]
+        if stored_commands and (not commands or any(_is_other_commands_control_choice(str(choice or "").strip()) for choice in choices)):
+            commands = _dedupe_strs([*stored_commands, *commands])
+
+        if not commands:
+            self.state.flags.pop(OTHER_COMMANDS_MENU_FLAG, None)
+            return normal_choices[:MAX_EXPLORATION_CHOICES]
+
+        should_expand = stored_expanded if expanded is None else expanded
+        source_for_store = source or _dedupe_strs([*normal_choices, *commands])
+        self.state.flags[OTHER_COMMANDS_MENU_FLAG] = {
+            "expanded": bool(should_expand),
+            "source_choices": source_for_store,
+            "commands": commands,
+        }
+        if should_expand:
+            return [*commands[:OTHER_COMMANDS_MAX_ITEMS], OTHER_COMMANDS_BACK_CHOICE_LABEL]
+        return [OTHER_COMMANDS_CHOICE_LABEL, *normal_choices[: max(0, MAX_EXPLORATION_CHOICES - 1)]]
+
+    def _contextual_choice_menu_applies(self) -> bool:
+        if self._is_game_over() or self._active_encounter():
+            return False
+        mode = str(self.state.flags.get("screen_mode") or "").strip().casefold()
+        return mode in {"", "exploration"}
+
+    def _handle_other_commands_choice(self, choice: str) -> bool:
+        text = str(choice or "").strip()
+        if not _is_other_commands_control_choice(text):
+            return False
+        menu = self.state.flags.get(OTHER_COMMANDS_MENU_FLAG)
+        if not isinstance(menu, dict):
+            return False
+        if _is_other_commands_back_choice(text) and not _as_bool(menu.get("expanded")):
+            return False
+        source = _dedupe_strs(_as_str_list(menu.get("source_choices"))) or self.state.choices
+        expanded = not _is_other_commands_back_choice(text)
+        self.state.choices = self.format_contextual_choices(source, expanded=expanded)
+        return True
+
+    def _active_quest_objective_arrival_notice(self, location: str) -> str:
+        quest = self._find_quest_by_name(self.state.active_quest) if self.state.active_quest else None
+        if not quest or quest.status != "active":
+            return ""
+        pack = self._quest_objective_pack(quest)
+        quest_type = str(quest.extra.get("quest_type") or pack.get("quest_type") or "").strip().lower()
+        if quest_type not in {"rescue", "investigate"}:
+            return ""
+        if not self._at_quest_objective_place(quest, location):
+            return ""
+        if quest_type == "rescue":
+            available = False
+            for entry in self._quest_entries_by_role(quest, "rescue_target", "npcs"):
+                if str(entry.get("status") or "") not in {"waiting", "found"}:
+                    continue
+                character = self._quest_objective_character(entry)
+                if character and not _character_state_is_dead(character):
+                    available = True
+                    break
+            if not available:
+                return ""
+        elif quest_type == "investigate":
+            if not any(
+                str(entry.get("status") or "") in {"waiting", "found"}
+                for entry in self._quest_entries_by_role(quest, "investigation_point", "markers")
+            ):
+                return ""
+        subnode_id = self._current_subnode_id(location)
+        notice_key = f"{quest.name}|{quest_type}|{location}|{subnode_id}"
+        seen = quest.extra.get("objective_arrival_notices")
+        if not isinstance(seen, list):
+            seen = []
+            quest.extra["objective_arrival_notices"] = seen
+        if notice_key in {str(item) for item in seen}:
+            return ""
+        seen.append(notice_key)
+        return "ここが依頼の目的地のようだ。"
 
     def _player_inventory(self) -> list[dict[str, Any]]:
         character = self.player_character()
@@ -5878,6 +5982,7 @@ class GameEngine:
             character = self.state.world_data.character(name)
             if isinstance(character, Character):
                 opponent_entries.append(self._encounter_opponent_entry(character, location=location_name))
+        companion_turn_refs = [companion.uuid or companion.name for companion in self._party_companions()]
         encounter = {
             "status": "active",
             "turn": 0,
@@ -5899,7 +6004,7 @@ class GameEngine:
             "player_equipment": _compact_value(equipment_summary, max_chars=900),
             "location": location_name,
             "opponents": opponent_entries,
-            "turn_order": ["player"] + [entry.get("uuid") or entry.get("name") for entry in opponent_entries],
+            "turn_order": ["player"] + companion_turn_refs + [entry.get("uuid") or entry.get("name") for entry in opponent_entries],
             "log": [],
         }
         encounter.update(opponent_profile)
@@ -9102,13 +9207,22 @@ class GameEngine:
             return self._home_choices()
         dangerous_choices = self._dangerous_subnode_default_choices(location_name)
         if dangerous_choices:
-            return _exploration_choices(dangerous_choices)
+            return _augment_location_choices_for_world(
+                self.state.world_data,
+                location_name,
+                dangerous_choices,
+                active_quest=bool(self.state.active_quest),
+                can_move=self._location_has_movement_options(location_name),
+                quest_report_ready=self._active_quest_can_report_at(location_name),
+                quest_abandon_ready=self._active_quest_abandon_available(location_name),
+                quest_rescue_protect_ready=self._active_quest_rescue_protect_available(location_name),
+            )
         choices = ["休息する", "周囲を見る"]
         if self._location_has_movement_options(location_name):
-            choices.append(MOVE_CHOICE_LABEL)
+            choices.insert(0, MOVE_CHOICE_LABEL)
         active_facility = self._active_facility_record() if location_name == self.state.current_location else None
         active_is_guild = bool(active_facility and str(active_facility.get("type") or "").lower() == "guild")
-        if self.state.active_quest:
+        if self.state.active_quest and self._active_quest_abandon_available(location_name):
             choices.insert(0, QUEST_ABANDON_CHOICE_LABEL)
             if self._active_quest_can_report_at(location_name):
                 choices.insert(0, QUEST_REPORT_CHOICE_LABEL)
@@ -9119,7 +9233,44 @@ class GameEngine:
                 choices = [f"{cost}Goldで家を建てる" for cost in sorted(PLAYER_HOME_TOWN_HALL_PLANS)] + ["周囲を見る"]
         elif self._player_home_for_location(location_name):
             choices.insert(0, f"{PLAYER_HOME_NAME}へ移動")
+        if self._active_quest_rescue_protect_available(location_name):
+            choices = [choice for choice in choices if str(choice).strip() != QUEST_RESCUE_PROTECT_CHOICE_LABEL]
+            choices.insert(0, QUEST_RESCUE_PROTECT_CHOICE_LABEL)
         return _exploration_choices(choices)
+
+    def _active_quest_rescue_protect_available(self, location_name: str) -> bool:
+        quest = self._find_quest_by_name(self.state.active_quest) if self.state.active_quest else None
+        if not quest or quest.status != "active":
+            return False
+        pack = self._quest_objective_pack(quest)
+        if str(quest.extra.get("quest_type") or pack.get("quest_type") or "").strip().lower() != "rescue":
+            return False
+        if not self._at_quest_objective_place(quest, location_name):
+            return False
+        if not self._quest_blockers_resolved(quest):
+            return False
+        for entry in self._quest_entries_by_role(quest, "rescue_target", "npcs"):
+            if str(entry.get("status") or "") not in {"waiting", "found"}:
+                continue
+            character = self._quest_objective_character(entry)
+            if character and not _character_state_is_dead(character):
+                return True
+        return False
+
+    def _active_quest_abandon_available(self, location_name: str) -> bool:
+        if not self.state.active_quest:
+            return False
+        if location_name == self.state.current_location and self.is_current_location_guild():
+            return True
+        return _location_is_guild(self.state.world_data, location_name)
+
+    def _resolve_quest_rescue_protect_action(self, action: str, input_type: str, quest: QuestData) -> str:
+        return self._resolve_quest_progress_tool_action(
+            action,
+            input_type,
+            quest,
+            forced_quest_action="rescue",
+        ) or self.state.log_text(16)
 
     def _dangerous_subnode_default_choices(self, location_name: str) -> list[str]:
         world = self.state.world_data
@@ -9136,9 +9287,16 @@ class GameEngine:
         dangerous_choices = self._dangerous_subnode_default_choices(location_name)
         if dangerous_choices:
             filtered = self._filter_dangerous_nonadjacent_move_choices(choices, location_name)
-            if self._location_has_movement_options(location_name):
-                filtered.append(MOVE_CHOICE_LABEL)
-            return _exploration_choices([*filtered, *dangerous_choices])
+            return _augment_location_choices_for_world(
+                self.state.world_data,
+                location_name,
+                [*filtered, *dangerous_choices],
+                active_quest=bool(self.state.active_quest),
+                can_move=self._location_has_movement_options(location_name),
+                quest_report_ready=self._active_quest_can_report_at(location_name),
+                quest_abandon_ready=self._active_quest_abandon_available(location_name),
+                quest_rescue_protect_ready=self._active_quest_rescue_protect_available(location_name),
+            )
         return _augment_location_choices_for_world(
             self.state.world_data,
             location_name,
@@ -9146,6 +9304,8 @@ class GameEngine:
             active_quest=bool(self.state.active_quest),
             can_move=self._location_has_movement_options(location_name),
             quest_report_ready=self._active_quest_can_report_at(location_name),
+            quest_abandon_ready=self._active_quest_abandon_available(location_name),
+            quest_rescue_protect_ready=self._active_quest_rescue_protect_available(location_name),
         )
 
     def _filter_llm_choices_for_display(self, choices: list[str], *, keep_system_choices: bool = False) -> list[str]:
@@ -12459,6 +12619,8 @@ class GameEngine:
         if self._is_game_over():
             return self.state.log_text(16)
         self.dismiss_active_cg()
+        if self._handle_other_commands_choice(choice):
+            return self.state.log_text(16)
         return self._resolve_player_input(choice, "choice")
 
     def resolve_action(self, action: str) -> str:
@@ -13214,6 +13376,10 @@ class GameEngine:
         return self._run_llm_action_tool(LlmToolName.QUEST_REPORT, "player_choice", action, input_type, {})
 
     def _resolve_quest_abandon_tool_action(self, action: str, input_type: str) -> str | None:
+        location = self.state.current_location or self.state.world_data.starting_location
+        if not self._active_quest_abandon_available(location):
+            event = self._tool_message_event("quest_abandon", action, input_type, "依頼の放棄はギルドでのみ行えます。")
+            return str(event.get("log_text") or self.state.log_text(16))
         return self._run_llm_action_tool(LlmToolName.QUEST_ABANDON, "player_choice", action, input_type, {})
 
     def _resolve_facility_tool_action(self, action: str, input_type: str) -> str | None:
@@ -13308,6 +13474,8 @@ class GameEngine:
             return self._tool_message_event("quest_abandon", action, input_type, "放棄できる進行中の依頼はない。")
         previous_location = self.state.current_location
         location = previous_location or self.state.world_data.starting_location
+        if not self._active_quest_abandon_available(location):
+            return self._tool_message_event("quest_abandon", action, input_type, "依頼の放棄はギルドでのみ行えます。")
         narration = _hide_internal_quest_tokens(f"依頼「{quest.name}」から撤退した。")
         self.state.flags["screen_mode"] = "exploration"
         self._finish_quest(quest, "abandoned", source or "quest_abandon_tool", {"narration": narration})
@@ -16471,7 +16639,13 @@ class GameEngine:
             action,
             input_type,
             purpose,
-            excluded_actions=(MOVE_CHOICE_LABEL, QUEST_BOARD_CHOICE_LABEL, QUEST_REPORT_CHOICE_LABEL, QUEST_ABANDON_CHOICE_LABEL),
+            excluded_actions=(
+                MOVE_CHOICE_LABEL,
+                QUEST_BOARD_CHOICE_LABEL,
+                QUEST_REPORT_CHOICE_LABEL,
+                QUEST_ABANDON_CHOICE_LABEL,
+                QUEST_RESCUE_PROTECT_CHOICE_LABEL,
+            ),
             is_quest_abandon=_is_quest_abandon_action(action),
             is_conversation_end=_is_conversation_end_action(action),
         ):
@@ -18251,17 +18425,64 @@ def _dedupe_strs(values: list[str]) -> list[str]:
     return result
 
 
+def _is_other_commands_back_choice(text: str) -> bool:
+    lowered = str(text or "").strip().casefold()
+    return lowered in {OTHER_COMMANDS_BACK_CHOICE_LABEL.casefold(), "back"}
+
+
+def _is_other_commands_control_choice(text: str) -> bool:
+    lowered = str(text or "").strip().casefold()
+    return lowered in {
+        OTHER_COMMANDS_CHOICE_LABEL.casefold(),
+        "other...",
+        "other…",
+    } or _is_other_commands_back_choice(text)
+
+
+def _is_contextual_command_choice(text: str) -> bool:
+    text = str(text or "").strip()
+    if not text or _is_other_commands_control_choice(text):
+        return False
+    lowered = text.casefold()
+    if text in {
+        MOVE_CHOICE_LABEL,
+        QUEST_BOARD_CHOICE_LABEL,
+        QUEST_REPORT_CHOICE_LABEL,
+        QUEST_ABANDON_CHOICE_LABEL,
+        QUEST_RESCUE_PROTECT_CHOICE_LABEL,
+        f"{PLAYER_HOME_NAME}へ移動",
+        "休息する",
+        "周囲を見る",
+        "周囲を見回す",
+        "取引",
+        "依頼掲示板を見る",
+        "依頼掲示板を確認する",
+    }:
+        return True
+    if text in PLAYER_HOME_CHOICES:
+        return True
+    if lowered in {"move", "rest", "look around", "trade", "open quest board"}:
+        return True
+    return any(text == f"{cost}Goldで家を建てる" for cost in PLAYER_HOME_TOWN_HALL_PLANS)
+
+
 def _is_invalid_runtime_control_choice(text: str) -> bool:
     lowered = str(text or "").strip().casefold()
     return lowered in {"restart", "re-start", "retry", "リスタート", "再スタート", "やり直す", "ゲームを再開"}
 
 
 def _exploration_choices(values: list[str]) -> list[str]:
-    return _dedupe_strs(values)[:MAX_EXPLORATION_CHOICES]
+    return _dedupe_strs(values)
 
 
 def _system_choice_allowed_through_movement_filter(text: str, *, allow_home_choices: bool) -> bool:
-    if text in {MOVE_CHOICE_LABEL, QUEST_BOARD_CHOICE_LABEL, QUEST_REPORT_CHOICE_LABEL, QUEST_ABANDON_CHOICE_LABEL}:
+    if text in {
+        MOVE_CHOICE_LABEL,
+        QUEST_BOARD_CHOICE_LABEL,
+        QUEST_REPORT_CHOICE_LABEL,
+        QUEST_ABANDON_CHOICE_LABEL,
+        QUEST_RESCUE_PROTECT_CHOICE_LABEL,
+    }:
         return True
     if text == f"{PLAYER_HOME_NAME}へ移動":
         return True
@@ -19993,17 +20214,23 @@ def _augment_location_choices_for_world(
     active_quest: bool,
     can_move: bool = False,
     quest_report_ready: bool = False,
+    quest_abandon_ready: bool = False,
+    quest_rescue_protect_ready: bool = False,
 ) -> list[str]:
     result = list(choices)
     if can_move:
+        result = [choice for choice in result if str(choice).strip() != MOVE_CHOICE_LABEL]
         result.insert(0, MOVE_CHOICE_LABEL)
     if quest_report_ready:
         result = [choice for choice in result if str(choice).strip() != QUEST_REPORT_CHOICE_LABEL]
         result.insert(0, QUEST_REPORT_CHOICE_LABEL)
-    if active_quest:
+    if active_quest and quest_abandon_ready:
         result = [choice for choice in result if str(choice).strip() != QUEST_ABANDON_CHOICE_LABEL]
         insert_at = 1 if result and result[0] == QUEST_REPORT_CHOICE_LABEL else 0
         result.insert(insert_at, QUEST_ABANDON_CHOICE_LABEL)
+    if quest_rescue_protect_ready:
+        result = [choice for choice in result if str(choice).strip() != QUEST_RESCUE_PROTECT_CHOICE_LABEL]
+        result.insert(0, QUEST_RESCUE_PROTECT_CHOICE_LABEL)
     elif _location_is_guild(world, location_name) and not active_quest:
         result = [choice for choice in result if not _is_direct_quest_accept_choice(choice)]
         result.insert(0, QUEST_BOARD_CHOICE_LABEL)
@@ -21662,6 +21889,10 @@ def _install_quest_modules() -> None:
             "_quest_blockers_resolved",
             "_refresh_quest_objective_state",
             "_apply_quest_objective_action",
+            "_apply_response_quest_progress_tool",
+            "_apply_response_quest_progress_rescue_tool",
+            "_apply_response_quest_progress_investigate_tool",
+            "_apply_response_quest_progress_delivery_tool",
             "_sync_quest_objective_escorts",
             "_mark_quest_rescue_target_escorting",
             "_quest_objective_completion_allowed",
@@ -21676,6 +21907,8 @@ def _install_quest_modules() -> None:
             "_start_quest",
             "_quest_starter",
             "_resolve_active_quest_action",
+            "_resolve_quest_progress_tool_action",
+            "_quest_progress_tool_judgement",
             "_quest_referee_with_free_action",
             "_quest_referee_event_resolve",
             "_find_quest_to_start",

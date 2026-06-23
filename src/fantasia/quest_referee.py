@@ -148,8 +148,15 @@ def _resolve_active_quest_action(
         self.save_game()
         return self.state.log_text(16)
     if _is_quest_abandon_action(action):
-        narration = f"依頼「{quest.name}」から撤退した。"
         location = self.state.current_location or self.state.world_data.starting_location
+        if not self._active_quest_abandon_available(location):
+            narration = "依頼の放棄はギルドでのみ行えます。"
+            choices = self._location_default_choices(location)
+            self.state.flags["screen_mode"] = "exploration"
+            self._append_turn(action, narration, location, choices, input_type=input_type)
+            self.save_game()
+            return self.state.log_text(16)
+        narration = f"依頼「{quest.name}」から撤退した。"
         choices = self._location_default_choices(location)
         self.state.flags["screen_mode"] = "exploration"
         narration = _hide_internal_quest_tokens(narration)
@@ -161,6 +168,8 @@ def _resolve_active_quest_action(
         return self.state.log_text(16)
     if action_command_type == ActionCommandType.QUEST_REPORT.value:
         return self._resolve_dedicated_quest_report(action, input_type, quest)
+    if str(action or "").strip() == QUEST_RESCUE_PROTECT_CHOICE_LABEL:
+        return self._resolve_quest_progress_tool_action(action, input_type, quest, forced_quest_action="rescue") or self.state.log_text(16)
     referee = self._quest_referee_with_free_action(
         action,
         input_type,
@@ -224,7 +233,10 @@ def _resolve_active_quest_action(
             if location_data:
                 self._ensure_quest_objective_subnode(location_data, quest, quest_destination)
     self._set_player_presence(location)
-    objective_lines = self._apply_quest_objective_action(quest, action, location)
+    objective_lines: list[str] = []
+    objective_quest_type = str(quest.extra.get("quest_type") or self._quest_objective_pack(quest).get("quest_type") or "").strip().lower()
+    if objective_quest_type not in {"rescue", "investigate", "delivery"}:
+        objective_lines = self._apply_quest_objective_action(quest, action, location)
     movement_narration = [str(line) for line in movement_result.get("narration_lines", []) if str(line).strip()]
     if movement_narration:
         narration = "\n".join([narration, *movement_narration]).strip()
@@ -368,6 +380,118 @@ def _resolve_active_quest_action(
         self._finish_quest(quest, finish_status, "quest_referee_event_resolve" if event_resolution else "quest_referee_with_free_action", event_resolution or referee)
     self.save_game()
     return self.state.log_text(16)
+
+def _resolve_quest_progress_tool_action(
+    self,
+    action: str,
+    input_type: str,
+    quest: QuestData,
+    *,
+    forced_quest_action: str = "",
+) -> str | None:
+    location = self.state.current_location or self.state.world_data.starting_location
+    if forced_quest_action:
+        result = run_llm_tool(
+            self,
+            LlmToolCall(
+                LlmToolName.QUEST_PROGRESS,
+                source="player_choice",
+                action=action,
+                input_type=input_type,
+                location=location,
+                payload={"quest_action": forced_quest_action},
+            ),
+        )
+        if result.acted:
+            return str(result.event.get("log_text") or self.state.log_text(16))
+        return None
+
+    judgement = self._quest_progress_tool_judgement(action, input_type, quest)
+    if not isinstance(judgement, dict):
+        return None
+    calls = response_tool_calls(judgement, source="quest_progress_tool_judgement")
+    for call in calls:
+        try:
+            tool_name = LlmToolName(call["name"])
+        except ValueError:
+            continue
+        if tool_name not in {LlmToolName.QUEST_PROGRESS, LlmToolName.QUEST_ABANDON}:
+            continue
+        result = run_llm_tool(
+            self,
+            LlmToolCall(
+                tool_name,
+                source="quest_progress_tool_judgement",
+                action=action,
+                input_type=input_type,
+                location=location,
+                response=judgement,
+                payload=call.get("arguments") if isinstance(call.get("arguments"), dict) else {},
+            ),
+        )
+        quest.extra["last_quest_progress_tool_judgement"] = _strip_response_metadata(judgement)
+        if result.acted:
+            return str(result.event.get("log_text") or self.state.log_text(16))
+    quest.extra["last_quest_progress_tool_judgement"] = _strip_response_metadata(judgement)
+    return None
+
+def _quest_progress_tool_judgement(self, action: str, input_type: str, quest: QuestData) -> dict[str, Any] | None:
+    pack = self._quest_objective_pack(quest)
+    quest_type = str(quest.extra.get("quest_type") or pack.get("quest_type") or "").strip().lower()
+    context = {
+        "quest_name": quest.name,
+        "quest_type": quest_type,
+        "quest_status": quest.status,
+        "quest_stage": quest.extra.get("quest_stage"),
+        "current_location": self.state.current_location,
+        "current_subnode_id": self._current_subnode_id(self.state.current_location) if self.state.current_location else "",
+        "at_objective_place": self._at_quest_objective_place(quest, self.state.current_location),
+        "at_guild": self.is_current_location_guild(),
+        "objective": pack,
+        "recent_log": self.state.log_text(6),
+    }
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are the quest action tool judge for Fantasia. Return JSON only. "
+                "Your job is only to decide whether the player's current action should call a quest tool. "
+                "Use tool_judgements with confidence 0.0 to 1.0. The game executes only confidence exactly 1.0. "
+                "Use quest_progress with confidence=1.0 only when the player clearly attempts the current quest objective. "
+                "For rescue quests, quest_progress means protecting/rescuing/escorting the tracked rescue target. "
+                "For investigate quests, quest_progress means actively investigating/surveying/examining the tracked investigation point. "
+                "For delivery quests, quest_progress means handing over or delivering the tracked delivery item to the tracked target. "
+                "Use quest_abandon with confidence=1.0 only when the player clearly intends to abandon, give up, or withdraw from the active quest. "
+                "Do not decide success, failure, rolls, rewards, inventory changes, party joins, or combat; the game resolves those locally. "
+                "If the action is only talking, waiting, looking around, moving, shopping, crafting, or unrelated roleplay, return an empty tool_judgements array."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"quest_context: {_ai_json(context)}\n"
+                f"input_type: {input_type}\n"
+                f"player_action: {action}\n"
+                "Return exactly one JSON object. Example for progress: "
+                "{\"tool_judgements\":[{\"name\":\"quest_progress\",\"confidence\":1.0,"
+                "\"arguments\":{\"quest_action\":\"rescue\"},\"reason\":\"...\"}]}. "
+                "Example for no tool: {\"tool_judgements\":[]}."
+            ),
+        },
+    ]
+    try:
+        return self._chat_json(
+            "quest_progress_tool_judgement",
+            messages,
+            max_tokens=350,
+            world_name=self.state.world_name,
+            player_name=self.state.player_name,
+        )
+    except Exception as exc:
+        quest.extra.setdefault("quest_progress_tool_errors", []).append(
+            {"action": action, "input_type": input_type, "error": str(exc)}
+        )
+        return None
 
 def _quest_referee_with_free_action(
     self,
