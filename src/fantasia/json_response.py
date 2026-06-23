@@ -384,6 +384,26 @@ STATUS_EFFECT_FIELDS = (
 
 
 SCHEMAS: dict[str, ManagerSchema] = {
+    "action_roll_judger": ManagerSchema(
+        manager_name="action_roll_judger",
+        fields=(
+            FieldRule("attribute_scores", (dict,), string_items=False),
+            FieldRule("difficulty", (int, float, str), non_empty=False),
+            FieldRule("reason", (str,), required=False, non_empty=False),
+        ),
+        example={
+            "attribute_scores": {
+                "str": 0.0,
+                "con": 0.1,
+                "dex": 0.9,
+                "int": 0.2,
+                "wis": 0.4,
+                "cha": 0.0,
+            },
+            "difficulty": 2,
+            "reason": "鍵を開ける細かな作業なので器用に最も近く、技能があれば五分五分の難度。",
+        },
+    ),
     "create_world_overview": ManagerSchema(
         manager_name="create_world_overview",
         fields=(
@@ -1244,21 +1264,6 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "reason": "敵対的だが、まだ即座には襲いかかっていないため。",
         },
     ),
-    "combat_transition_detector": ManagerSchema(
-        manager_name="combat_transition_detector",
-        fields=(
-            FieldRule("combat_started", (bool,)),
-            FieldRule("opponent_name", (str,), required=False, non_empty=False),
-            FieldRule("narration", (str,), required=False, non_empty=False),
-            FieldRule("reason", (str,), required=False, non_empty=False),
-        ),
-        example={
-            "combat_started": True,
-            "opponent_name": "街道を塞ぐ蟲",
-            "narration": "蟲が牙を鳴らして飛びかかり、戦闘が始まった。",
-            "reason": "応答文で敵が明確に攻撃を開始しているため。",
-        },
-    ),
     "combat_player_action": ManagerSchema(
         manager_name="combat_player_action",
         fields=(
@@ -1586,12 +1591,14 @@ def schema_instruction(manager_name: str) -> str:
             "- Each tool judgement item must be {\"name\":\"tool_name\",\"confidence\":0.0-1.0,\"arguments\":{...},\"reason\":\"...\"}.\n"
             "- The game executes only tool judgements whose confidence is exactly 1.0. 0.99 or missing confidence is not executed.\n"
             "- Set confidence to 1.0 only when the state change is definitely intended by the action and current context.\n"
+            "- Use start_combat only when combat actually begins now. Mentioning danger, an enemy, traces of an attack, a threat, or an option to fight is not enough.\n"
             "- For the status_effects tool, arguments must be {\"status_effects\":[{\"effect_id\":\"HP_Damage/SP_Damage/Paralysis/Silence/Psychosis/Inoperable/SendLLM/Atk_Mod/Def_Mod\",...}]}; entries without effect_id are ignored.\n"
             "- Supported tool names: move_player, status_effects, hp_effects, sp_effects, gold_delta, hunger_delta, "
             "exp_delta, time_passage, game_over, npc_change_relationship, npc_move, npc_join_party, npc_remove_party, npc_dead, "
             "npc_capture_player, npc_update_memory, npc_update_description, world_home_construction, world_mainnode_reveal, world_subnode_reveal, "
-            "crime_risk, item_add, item_remove, item_equip, item_unequip, visual_intent, start_combat, discover_location, "
-            "generate_quest, spawn_npc, spawn_enemy, spawn_boss, request_npc_generation, quest_event, "
+            "crime_risk, item_add, item_remove, item_equip, item_unequip, craft, visual_intent, start_combat, "
+            "quest_report, quest_accept, quest_abandon, facility_visit, facility_request, conversation_start, conversation_end, "
+            "trade_negotiation, home_purchase, player_rest, discover_location, generate_dungeon, generate_quest, spawn_npc, spawn_enemy, spawn_boss, request_npc_generation, quest_event, "
             "quest_progress, quest_update.\n"
             "- Example: {\"intent\":{\"kind\":\"look\",\"summary\":\"observe the area\"},\"narration\":\"...\","
             "\"choices\":[\"look around\"],\"tool_judgements\":[{\"name\":\"move_player\",\"confidence\":1.0,\"arguments\":{\"location\":\"Town Gate\"},\"reason\":\"The player chose to go there.\"}]}\n"

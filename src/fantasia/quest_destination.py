@@ -582,12 +582,6 @@ def _quest_objective_subnode_display(self, quest: QuestData, hint: dict[str, Any
         raw_description = f"Objective site for quest: {quest.name}."
     return _short_text(raw_name, 48), _short_text(raw_description, 180)
 
-def _quest_destination_choices(self, destination: dict[str, Any], current_location: str) -> list[str]:
-    location_name = str(destination.get("location") or "").strip()
-    if not location_name or location_name == current_location:
-        return []
-    return [f"{location_name}へ向かう"]
-
 def _quest_destination_for_action(
     self,
     quest: QuestData,

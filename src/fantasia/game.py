@@ -11,6 +11,14 @@ from uuid import uuid4
 
 from . import npc_generate
 from . import combat_flow
+from .action_roll import (
+    _normalise_roll_target,
+    action_roll_judgement_context,
+    action_roll_system_prompt,
+    make_action_roll as _make_game_action_roll,
+    normalise_action_roll_judgement,
+    should_use_action_roll as _should_use_action_roll,
+)
 from .image_pipeline import process_subject_image
 from .imagegen import BaseImageBackend, ImageResult
 from .i18n import ELEMENT_IDS, tr_enum
@@ -29,16 +37,14 @@ from .combat_buff import (
     status_blocks_skill as _combat_status_blocks_skill,
     tick_buffs as _combat_tick_buffs,
 )
-from .combat_model import normalise_combat_skill
+from .combat_model import combat_effect_type, combat_skill_sp_cost, normalise_combat_skill
 from .craft import (
     CraftPlan,
     build_craft_result,
-    craft_intent_from_action as _craft_intent_from_action,
     craft_intent_payload as _craft_intent_payload,
     craft_material_phrases as _craft_material_phrases,
     craft_preview_text,
     determine_craft_plan,
-    is_craft_action_text as _is_craft_action_text,
     match_craft_candidate as _match_craft_candidate,
     normalise_craft_intent as _normalise_craft_intent,
 )
@@ -67,9 +73,13 @@ from .json_response import JsonResponseError, retry_prompt, sanitize_retry_respo
 from .json_store import JsonStore
 from .llm import BaseLlmBackend
 from .llm_tool import (
+    LlmToolCall,
+    LlmToolName,
     apply_common_response_tools,
     apply_npc_action_tool as apply_llm_npc_action_tool,
     requested_location_from_tools,
+    response_tool_calls,
+    run_llm_tool,
     tool_effect_payload,
     tool_prompt_instruction,
 )
@@ -89,6 +99,7 @@ from .quest_context import (
 )
 from .quest_rules import (
     INTERNAL_QUEST_TOKEN_LABELS,
+    QUEST_ABANDON_CHOICE_LABEL,
     QUEST_BOARD_CHOICE_LABEL,
     QUEST_BOARD_NAME,
     QUEST_DEADLINE_HOURS,
@@ -278,8 +289,18 @@ PLAYER_HOME_NAME = "プレイヤーの家"
 PLAYER_HOME_MAX_LEVEL = 10
 PLAYER_HOME_BUILD_PROGRESS_STEP = 25
 PLAYER_HOME_REST_HOURS = 8
+PLAYER_REST_INN_COST = 50
 PLAYER_HOME_TOWN_HALL_PLANS = {500: 3, 1000: 5, 10000: 7}
-PLAYER_HOME_CHOICES = ("休息する", "クラフトをする", "家の保存箱を開く", "外に出る")
+PLAYER_HOME_CHOICES = ("保存箱を開く", "クラフトを行う", "休息する", "家から出る")
+COMBAT_CHOICE_ATTACK_MENU = "攻撃対象選択"
+COMBAT_CHOICE_SKILL_MENU = "スキル一覧"
+COMBAT_CHOICE_ESCAPE = "逃走する"
+COMBAT_CHOICE_ACCEPT_SURRENDER = "降伏を受け入れる"
+COMBAT_CHOICE_BACK = "戻る"
+COMBAT_CHOICE_ATTACK_PREFIX = "攻撃: "
+COMBAT_CHOICE_SKILL_PREFIX = "スキル: "
+COMBAT_CHOICE_TARGET_PREFIX = "対象: "
+COMBAT_CHOICE_MENU_FLAG = "combat_choice_menu"
 SKILL_POWER_MIN = 1
 SKILL_POWER_MAX = 5
 NPC_DEFAULT_POWER_BUDGET = npc_generate.NPC_DEFAULT_POWER_BUDGET
@@ -2598,41 +2619,278 @@ class GameEngine:
         return home
 
     def _resolve_home_rest(self, action: str, input_type: str) -> str:
-        home = self._current_player_home()
-        if not home:
-            return self.state.log_text(16)
-        max_hp = self._player_max_hp()
-        max_sp = self._player_max_sp()
-        old_hp = self._player_current_hp(max_hp)
-        old_sp = self._player_current_sp(max_sp)
-        self._set_player_hp(max_hp, max_hp=max_hp)
-        self._set_player_sp(max_sp, max_sp=max_sp)
-        time_event = self._advance_world_time(
-            PLAYER_HOME_REST_HOURS,
-            source="player_home_rest",
-            reason="home rest",
-            append_log=False,
-        )
-        narration = "自分の家で身体を休めた。家具の整った静かな空間で、疲労がゆっくりと抜けていく。"
-        self._append_turn(action, narration, self.state.current_location, self._home_choices(), input_type=input_type)
-        if time_event.get("line"):
-            self.state.display_log.append(str(time_event["line"]))
-        self.state.display_log.append(f"> [休息] HP {old_hp}/{max_hp} -> {max_hp}/{max_hp} / SP {old_sp}/{max_sp} -> {max_sp}/{max_sp}")
-        self.save_game()
-        return self.state.log_text(16)
+        return self._resolve_player_rest_tool_action(action, input_type) or self.state.log_text(16)
 
     def _resolve_home_exit(self, action: str, input_type: str) -> str:
         home = self._current_player_home()
         if not home:
             return self.state.log_text(16)
-        location_name = self.state.current_location or self.state.world_data.starting_location
         parent = str(home.get("parent_subnode_id") or DEFAULT_SUBNODE_ID)
-        self._set_current_subnode(location_name, parent)
-        narration = "家を出て、外の空気を吸い込んだ。"
-        choices = self._location_default_choices(location_name)
-        self._append_turn(action, narration, location_name, choices, input_type=input_type)
+        return self._run_llm_action_tool(
+            LlmToolName.MOVE_PLAYER,
+            "player_choice",
+            action,
+            input_type,
+            {"target_subnode": parent, "reason": "home_exit", "narration": "家を出て、外の空気を吸い込んだ。"},
+        ) or self.state.log_text(16)
+
+    def _apply_response_move_player_tool(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        action: str = "",
+        input_type: str = "choice",
+        location: str = "",
+    ) -> dict[str, Any]:
+        response = response if isinstance(response, dict) else {}
+        previous_location = self.state.current_location or self.state.world_data.starting_location
+        proposed = requested_location_from_tools(response, location or previous_location)
+        movement_result = self._normalize_world_response_location(action, input_type, response, proposed)
+        new_location = str(movement_result.get("location") or proposed or previous_location)
+        narration = str(response.get("narration") or "").strip()
+        movement_lines = [str(line) for line in movement_result.get("narration_lines", []) if str(line).strip()]
+        if not narration:
+            if movement_result.get("moved"):
+                narration = "移動した。"
+            elif movement_result.get("denied"):
+                narration = movement_lines[0] if movement_lines else "その場所へは移動できない。"
+            else:
+                narration = "現在地を確認した。"
+        if movement_lines and movement_lines[0] not in narration:
+            narration = "\n".join([narration, *movement_lines]).strip()
+        choices = self._location_default_choices(new_location)
+        encounter = self._active_encounter()
+        if encounter:
+            choices = self._encounter_choices(encounter)
+        elif not self._active_encounter():
+            self.state.flags["screen_mode"] = "exploration"
+        self._append_turn(action or "移動する", narration, new_location, choices, input_type=input_type)
+        self._set_player_presence(new_location)
+        status_lines = [str(line) for line in movement_result.get("status_lines", []) if str(line).strip()]
+        if status_lines:
+            self.state.display_log.extend(status_lines)
+        event = {
+            "handled": True,
+            "source": source,
+            "action": action,
+            "input_type": input_type,
+            "previous_location": previous_location,
+            "location": new_location,
+            "moved": bool(movement_result.get("moved")),
+            "denied": bool(movement_result.get("denied")),
+            "movement_result": movement_result,
+            "lines": status_lines,
+            "log_text": self.state.log_text(16),
+        }
+        self.state.world_data.extra.setdefault("move_player_tool_events", []).append(
+            {key: value for key, value in event.items() if key != "log_text"}
+        )
         self.save_game()
-        return self.state.log_text(16)
+        return event
+
+    def _resolve_player_rest_tool_action(self, action: str, input_type: str) -> str | None:
+        return self._run_llm_action_tool(LlmToolName.PLAYER_REST, "player_choice", action, input_type, {})
+
+    def _apply_response_player_rest_tool(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        action: str = "",
+        input_type: str = "choice",
+    ) -> dict[str, Any]:
+        location_name = self.state.current_location or self.state.world_data.starting_location
+        rest_kind = self._player_rest_kind()
+        if rest_kind == "inn" and self.state.gold < PLAYER_REST_INN_COST:
+            narration = f"宿屋で休むには{PLAYER_REST_INN_COST}Goldが必要だ。所持金が足りない。"
+            self._append_turn(action or "休息する", narration, location_name, self._location_default_choices(location_name), input_type=input_type)
+            self.save_game()
+            return {
+                "handled": True,
+                "rested": False,
+                "reason": "not_enough_gold",
+                "required_gold": PLAYER_REST_INN_COST,
+                "current_gold": self.state.gold,
+                "log_text": self.state.log_text(16),
+            }
+
+        gold_event: dict[str, Any] = {}
+        if rest_kind == "inn":
+            gold_event = self._apply_gold_delta(
+                -PLAYER_REST_INN_COST,
+                source=source,
+                reason="宿泊",
+                append_log=False,
+            )
+
+        time_event = self._advance_world_time(
+            PLAYER_HOME_REST_HOURS,
+            source=source or "player_rest",
+            reason=self._player_rest_reason(rest_kind),
+            append_log=False,
+        )
+        full_recovery = rest_kind in {"inn", "home"}
+        recovery_lines = self._recover_player_and_party_for_rest(full=full_recovery)
+        ambush_event: dict[str, Any] = {}
+        narration = self._player_rest_narration(rest_kind)
+        choices = self._location_default_choices(location_name)
+        if rest_kind == "dangerous" and not self._rest_location_has_npc(location_name):
+            ambush_event = self._maybe_start_rest_ambush(action or "休息する")
+            if ambush_event.get("started"):
+                narration = "\n".join(part for part in (narration, str(ambush_event.get("narration") or "")) if part.strip())
+                encounter = self._active_encounter()
+                if encounter:
+                    choices = self._encounter_choices(encounter)
+
+        self._append_turn(action or "休息する", narration, location_name, choices, input_type=input_type)
+        display_lines: list[str] = []
+        if gold_event.get("line"):
+            display_lines.append(str(gold_event["line"]))
+        if time_event.get("line"):
+            display_lines.append(str(time_event["line"]))
+        display_lines.extend(str(item) for item in time_event.get("companion_lines", []) if item)
+        display_lines.extend(recovery_lines)
+        self.state.display_log.extend(display_lines)
+        event = {
+            "handled": True,
+            "rested": True,
+            "source": source,
+            "rest_kind": rest_kind,
+            "hours": PLAYER_HOME_REST_HOURS,
+            "full_recovery": full_recovery,
+            "location": location_name,
+            "gold_event": gold_event,
+            "time_event": time_event,
+            "recovery_lines": recovery_lines,
+            "ambush": ambush_event,
+            "log_text": self.state.log_text(16),
+        }
+        self.state.world_data.extra.setdefault("player_rest_events", []).append(
+            {key: value for key, value in event.items() if key != "log_text"}
+        )
+        self.save_game()
+        return event
+
+    def _player_rest_kind(self) -> str:
+        active = self._active_facility_record()
+        if active:
+            facility_id = str(active.get("id") or active.get("facility_id") or "").strip().lower()
+            facility_type = str(active.get("type") or active.get("kind") or "").strip().lower()
+            if facility_id == "inn" or facility_type == "inn":
+                return "inn"
+        if self._current_player_home():
+            return "home"
+        return "dangerous" if self._current_area_is_dangerous_for_rest() else "safe"
+
+    def _player_rest_reason(self, rest_kind: str) -> str:
+        if rest_kind == "inn":
+            return "inn rest"
+        if rest_kind == "home":
+            return "home rest"
+        if rest_kind == "dangerous":
+            return "dangerous area rest"
+        return "safe area rest"
+
+    def _player_rest_narration(self, rest_kind: str) -> str:
+        if rest_kind == "inn":
+            return "宿屋で部屋を取り、身体を休めた。"
+        if rest_kind == "home":
+            return "自分の家で身体を休めた。家具の整った静かな空間で、疲労がゆっくりと抜けていく。"
+        if rest_kind == "dangerous":
+            return "危険地帯で周囲を警戒しながら休息した。十分とは言えないが、少しだけ体力を取り戻した。"
+        return "安全な場所で休息し、少しだけ体力を取り戻した。"
+
+    def _current_area_is_dangerous_for_rest(self) -> bool:
+        location = self.state.world_data.locations.get(self.state.current_location)
+        if not location:
+            return False
+        if location.flags.get("dangerous") or _is_dungeon_location(location) or _world_location_blocks_world_map_departure(location):
+            return True
+        return self._current_location_danger(location.name) > 0 and not _is_settlement_location(location)
+
+    def _recover_player_and_party_for_rest(self, *, full: bool) -> list[str]:
+        lines: list[str] = []
+        max_hp = self._player_max_hp()
+        max_sp = self._player_max_sp()
+        old_hp = self._player_current_hp(max_hp)
+        old_sp = self._player_current_sp(max_sp)
+        new_hp = max_hp if full else min(max_hp, old_hp + max(1, (max_hp + 3) // 4))
+        new_sp = max_sp if full else min(max_sp, old_sp + max(1, (max_sp + 3) // 4))
+        self._set_player_hp(new_hp, max_hp=max_hp)
+        self._set_player_sp(new_sp, max_sp=max_sp)
+        lines.append(f"> [休息] {self.state.player_name}: HP {old_hp}/{max_hp} -> {new_hp}/{max_hp} / SP {old_sp}/{max_sp} -> {new_sp}/{max_sp}")
+        for companion in self._party_companions():
+            self._ensure_character_runtime_data(companion)
+            comp_max_hp = max(1, _safe_int(companion.max_hp, _character_calculated_max_hp(companion)))
+            comp_max_sp = max(1, _safe_int(companion.max_sp, _character_calculated_max_sp(companion, max_hp=comp_max_hp)))
+            comp_old_hp = max(0, min(comp_max_hp, _safe_int(companion.current_hp, comp_max_hp)))
+            comp_old_sp = max(0, min(comp_max_sp, _safe_int(companion.current_sp, comp_max_sp)))
+            comp_new_hp = comp_max_hp if full else min(comp_max_hp, comp_old_hp + max(1, (comp_max_hp + 3) // 4))
+            comp_new_sp = comp_max_sp if full else min(comp_max_sp, comp_old_sp + max(1, (comp_max_sp + 3) // 4))
+            companion.max_hp = comp_max_hp
+            companion.max_sp = comp_max_sp
+            companion.current_hp = comp_new_hp
+            companion.current_sp = comp_new_sp
+            companion.extra["current_hp"] = comp_new_hp
+            companion.extra["max_hp"] = comp_max_hp
+            companion.extra["current_sp"] = comp_new_sp
+            companion.extra["max_sp"] = comp_max_sp
+            self._sync_companion_party_entry(companion)
+            lines.append(f"> [休息] {companion.name}: HP {comp_old_hp}/{comp_max_hp} -> {comp_new_hp}/{comp_max_hp} / SP {comp_old_sp}/{comp_max_sp} -> {comp_new_sp}/{comp_max_sp}")
+        return lines
+
+    def _rest_location_has_npc(self, location_name: str) -> bool:
+        location_name = str(location_name or self.state.current_location or self.state.world_data.starting_location or "").strip()
+        if not location_name:
+            return False
+        for character in self.state.world_data.characters.values():
+            if character.flags.get("is_player") or _character_state_is_dead(character):
+                continue
+            if not _actor_present_at(character.location, character.state, character.flags, location_name):
+                continue
+            if not self._character_matches_current_subnode(character, location_name):
+                continue
+            if location_name == (self.state.current_location or self.state.world_data.starting_location) and not self._character_matches_active_facility(character):
+                continue
+            return True
+        return False
+
+    def _maybe_start_rest_ambush(self, action: str) -> dict[str, Any]:
+        roll = random.random()
+        event: dict[str, Any] = {"roll": round(roll, 6), "chance": 0.5, "started": False}
+        if roll >= 0.5 or self._active_encounter():
+            return event
+        location_name = self.state.current_location or self.state.world_data.starting_location
+        graph = self._ensure_location_subnode_graph(self.state.world_data, location_name)
+        subnode_id = self._current_subnode_id(location_name)
+        node = graph.get("nodes", {}).get(subnode_id, {}) if isinstance(graph, dict) else {}
+        monster = self._generate_random_danger_subnode_monster(
+            location_name,
+            subnode_id,
+            node if isinstance(node, dict) else {},
+            source="player_rest_ambush",
+            action=action,
+        )
+        if monster is None:
+            event["error"] = "monster_generation_failed"
+            return event
+        encounter = self._start_encounter_with_character(monster, source="player_rest_ambush", action=action, location=location_name)
+        subnode_name = str((node or {}).get("name") or subnode_id or location_name)
+        narration = f"{subnode_name}で休んでいる最中、{monster.name}が襲いかかってきた。"
+        event.update(
+            {
+                "started": True,
+                "location": location_name,
+                "subnode_id": subnode_id,
+                "monster_uuid": monster.uuid,
+                "monster_name": monster.name,
+                "narration": narration,
+                "encounter": _strip_encounter_log(encounter),
+            }
+        )
+        self.state.world_data.extra.setdefault("player_rest_ambushes", []).append(event)
+        return event
 
     def is_current_location_settlement(self) -> bool:
         return self._current_settlement_location() is not None
@@ -3099,31 +3357,28 @@ class GameEngine:
         if not text:
             return None
         if self._current_player_home():
-            if any(word in text for word in ("休息", "休む", "寝る", "rest")):
-                return self._resolve_home_rest(action, input_type)
-            if any(word in text for word in ("外に出", "出る", "leave", "exit")):
-                return self._resolve_home_exit(action, input_type)
-            if any(word in text for word in ("保存箱", "倉庫", "storage", "stash")):
+            if text == "保存箱を開く":
                 self.state.flags["pending_home_menu"] = "storage"
                 self._append_turn(action, "家の保存箱を開いた。", self.state.current_location, self._home_choices(), input_type=input_type)
                 self.save_game()
                 return self.state.log_text(16)
-            if any(word in text for word in ("クラフト", "合成", "調合", "鍛冶", "料理", "craft")):
+            if text == "クラフトを行う":
                 self.state.flags["pending_home_menu"] = "craft"
                 self._append_turn(action, "家の作業台を使う準備をした。", self.state.current_location, self._home_choices(), input_type=input_type)
                 self.save_game()
                 return self.state.log_text(16)
+            if text == "休息する":
+                return self._resolve_player_rest_tool_action(action, input_type)
+            if text == "家から出る":
+                return self._resolve_home_exit(action, input_type)
 
         home_travel = self._resolve_player_home_travel(action, input_type)
         if home_travel is not None:
             return home_travel
 
-        town_hall_result = self._resolve_town_hall_home_purchase(action, input_type)
+        town_hall_result = self._resolve_home_purchase_tool_action(action, input_type)
         if town_hall_result is not None:
             return town_hall_result
-
-        if _is_home_construction_action(action):
-            return self._resolve_home_construction_action(action, input_type)
         return None
 
     def _resolve_player_home_travel(self, action: str, input_type: str) -> str | None:
@@ -3145,34 +3400,67 @@ class GameEngine:
         return self.state.log_text(16)
 
     def _resolve_town_hall_home_purchase(self, action: str, input_type: str) -> str | None:
+        return self._resolve_home_purchase_tool_action(action, input_type)
+
+    def _resolve_home_purchase_tool_action(self, action: str, input_type: str) -> str | None:
         active = self._active_facility_record()
         if not active or str(active.get("type") or "").lower() != "town_hall":
             return None
         text = str(action or "")
-        if not any(word in text for word in ("家", "自宅", "住居", "home", "house")):
+        plan = _town_hall_home_plan_from_action(action)
+        if not plan and not any(word in text for word in ("家", "自宅", "住居", "home", "house")):
             return None
+        payload: dict[str, Any] = {}
+        if plan:
+            payload["cost"] = plan[0]
+            payload["level"] = plan[1]
+        return self._run_llm_action_tool(LlmToolName.HOME_PURCHASE, "player_choice", action, input_type, payload)
+
+    def _apply_response_home_purchase_tool(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        action: str = "",
+        input_type: str = "choice",
+    ) -> dict[str, Any]:
+        response = response if isinstance(response, dict) else {}
+        active = self._active_facility_record()
+        if not active or str(active.get("type") or "").lower() != "town_hall":
+            return {"handled": False, "reason": "not_town_hall"}
         settlement = self._current_settlement_location()
         if settlement is None:
-            return None
+            return {"handled": False, "reason": "not_settlement"}
         if self._player_home_for_location(settlement.name):
             narration = f"{settlement.name}には、すでにあなたの家がある。"
             self._append_turn(action, narration, settlement.name, self._location_default_choices(settlement.name), input_type=input_type)
             self.save_game()
-            return self.state.log_text(16)
-        plan = _town_hall_home_plan_from_action(action)
+            return {"handled": True, "purchased": False, "reason": "already_has_home", "log_text": self.state.log_text(16)}
+        cost = _safe_int((response or {}).get("cost") or (response or {}).get("price") or (response or {}).get("gold"), 0)
+        level = _safe_int((response or {}).get("level") or (response or {}).get("home_level"), 0)
+        plan = (cost, level) if cost in PLAYER_HOME_TOWN_HALL_PLANS and level > 0 else _town_hall_home_plan_from_action(action)
+        if plan and plan[0] in PLAYER_HOME_TOWN_HALL_PLANS:
+            plan = (plan[0], PLAYER_HOME_TOWN_HALL_PLANS[plan[0]])
         if not plan:
             choices = [f"{cost}Goldで家を建てる" for cost in sorted(PLAYER_HOME_TOWN_HALL_PLANS)]
             narration = "役場では、土地と小さな家の手続きを行える。500Gold、1000Gold、10000Goldの三つのプランが提示された。"
             self._append_turn(action, narration, settlement.name, _exploration_choices(choices), input_type=input_type)
             self.save_game()
-            return self.state.log_text(16)
+            return {"handled": True, "purchased": False, "reason": "plan_selection", "log_text": self.state.log_text(16)}
         cost, level = plan
         if self.state.gold < cost:
             narration = f"役場職員は首を横に振った。{cost}Goldの支払いには所持金が足りない。"
             self._append_turn(action, narration, settlement.name, self._location_default_choices(settlement.name), input_type=input_type)
             self.save_game()
-            return self.state.log_text(16)
-        gold_event = self._apply_gold_delta(-cost, source="town_hall_home", reason="家の購入", append_log=False)
+            return {
+                "handled": True,
+                "purchased": False,
+                "reason": "not_enough_gold",
+                "required_gold": cost,
+                "current_gold": self.state.gold,
+                "log_text": self.state.log_text(16),
+            }
+        gold_event = self._apply_gold_delta(-cost, source=source or "home_purchase", reason="家の購入", append_log=False)
         self._create_player_home(settlement.name, level, source="town_hall", parent_subnode_id=DEFAULT_SUBNODE_ID, cost=cost)
         narration = f"役場で{cost}Goldを支払い、{settlement.name}にあなたの家を用意した。家具レベルは{level}。"
         choices = [MOVE_CHOICE_LABEL, f"{PLAYER_HOME_NAME}へ移動", "周囲を見る"]
@@ -3180,106 +3468,15 @@ class GameEngine:
         if gold_event.get("line"):
             self.state.display_log.append(str(gold_event["line"]))
         self.save_game()
-        return self.state.log_text(16)
-
-    def _resolve_home_construction_action(self, action: str, input_type: str) -> str:
-        location_name = self.state.current_location or self.state.world_data.starting_location
-        if self._current_settlement_location() is not None:
-            narration = "街の中で自分の家を増築するには、役場で土地と建物の手続きを行う必要がある。"
-            self._append_turn(action, narration, location_name, self._location_default_choices(location_name), input_type=input_type)
-            self.save_game()
-            return self.state.log_text(16)
-        if self._player_home_for_location(location_name):
-            narration = "このロケーションには、すでにあなたの家がある。"
-            self._append_turn(action, narration, location_name, self._location_default_choices(location_name), input_type=input_type)
-            self.save_game()
-            return self.state.log_text(16)
-        material = self._home_build_material_from_action(action)
-        if not material:
-            narration = "家の建築に使う具体的な建材が見つからない。所持品か周囲にある素材を指定する必要がある。"
-            self._append_turn(action, narration, location_name, self._location_default_choices(location_name), input_type=input_type)
-            self.save_game()
-            return self.state.log_text(16)
-        response = self._home_construction_evaluator(action, material)
-        lines = self._apply_home_construction_entry(
-            response,
-            source="home_construction_evaluator",
-            action=action,
-            input_type=input_type,
-            preselected_item=material,
-        )
-        if lines:
-            self.state.display_log.extend(lines)
-        self.save_game()
-        return self.state.log_text(16)
-
-    def _home_build_material_from_action(self, action: str) -> dict[str, Any] | None:
-        items, _missing = self._craft_ingredients_from_action(action)
-        if items:
-            return dict(items[0])
-        text = str(action or "")
-        for candidate in self._craft_item_candidates():
-            item = dict(candidate["item"])
-            name = str(item.get("name") or "")
-            if not name or name not in text:
-                continue
-            item["_craft_source"] = candidate["source"]
-            item["_craft_source_uuid"] = str(item.get("item_uuid") or "")
-            return item
-        return None
-
-    def _home_construction_evaluator(self, action: str, material: dict[str, Any]) -> dict[str, Any]:
-        location_name = self.state.current_location or self.state.world_data.starting_location
-        location = self.state.world_data.locations.get(location_name)
-        graph = self._ensure_location_subnode_graph(self.state.world_data, location_name)
-        subnode_id = self._current_subnode_id(location_name)
-        subnode = graph.get("nodes", {}).get(subnode_id, {}) if isinstance(graph, dict) else {}
-        payload = {
-            "world": _world_ai_context(self.state.world_data, include_characters=False, include_monsters=False, include_quests=True),
-            "location": _location_ai_context(location) if location else {"name": location_name},
-            "subnode": {
-                "id": subnode_id,
-                "name": str(subnode.get("name") or subnode_id),
-                "description": str(subnode.get("description") or ""),
-                "kind": str(subnode.get("kind") or ""),
-            },
-            "player_action": action,
-            "material_item": _compact_item_for_ai(material),
-            "rules": {
-                "progress_step": PLAYER_HOME_BUILD_PROGRESS_STEP,
-                "max_furniture_level_gain_per_item": 3,
-                "max_final_furniture_level": PLAYER_HOME_MAX_LEVEL,
-            },
+        return {
+            "handled": True,
+            "purchased": True,
+            "cost": cost,
+            "level": level,
+            "location": settlement.name,
+            "gold_event": gold_event,
+            "log_text": self.state.log_text(16),
         }
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "あなたはFantasiaのプレイヤーの家建築評価担当です。"
-                    "指定されたアイテムが家の建材、家具、作業設備、生活設備として妥当かを判断してください。"
-                    "返答は usable, narration, reason, furniture_level_gain, consume_item を持つJSONだけにしてください。"
-                    "furniture_level_gainは0から3で、素材が良いほど高くします。"
-                ),
-            },
-            {"role": "user", "content": _ai_json(payload)},
-        ]
-        try:
-            return self._chat_json(
-                "home_construction_evaluator",
-                messages,
-                max_tokens=350,
-                world_name=self.state.world_name,
-                player_name=self.state.player_name,
-                retries=1,
-            )
-        except Exception as exc:
-            return {
-                "usable": False,
-                "narration": f"建材として使えるか判断できなかった: {exc}",
-                "reason": str(exc),
-                "furniture_level_gain": 0,
-                "consume_item": False,
-            }
 
     def _apply_home_construction_entry(
         self,
@@ -3662,28 +3859,6 @@ class GameEngine:
         self.state.world_data.extra.setdefault("craft_events", []).append(dict(event))
         self._sync_player_inventory()
         return event
-
-    def _resolve_craft_action(self, action: str, input_type: str) -> str | None:
-        if not _is_craft_action_text(action):
-            return None
-        items, missing = self._craft_ingredients_from_action(action)
-        if missing:
-            message = "指定された素材が見つかりません: " + ", ".join(missing)
-            self._append_turn(action, message, self.state.current_location, self.state.choices, input_type=input_type)
-            self.save_game()
-            return self.state.log_text(16)
-        if len(items) < 2:
-            message = "クラフトには、所持品か周囲にある素材を2つ以上指定してください。"
-            self._append_turn(action, message, self.state.current_location, self.state.choices, input_type=input_type)
-            self.save_game()
-            return self.state.log_text(16)
-        return self._resolve_craft_with_ingredients(
-            action,
-            input_type,
-            items,
-            source="free_action",
-            craft_intent=_craft_intent_from_action(action),
-        )
 
     def _resolve_craft_with_ingredients(
         self,
@@ -5773,7 +5948,8 @@ class GameEngine:
 
     def _create_facility_from_action(self, action: str, input_type: str) -> str | None:
         settlement = self._current_settlement_location()
-        requested = _facility_request_from_action(action, self.current_location_facilities())
+        facilities = self.current_location_facilities()
+        requested = _facility_request_from_action(action, facilities) or _facility_request_from_creation_action(action, facilities)
         if not requested:
             return None
         if _is_reserved_settlement_facility_name(requested):
@@ -8882,13 +9058,15 @@ class GameEngine:
         dangerous_choices = self._dangerous_subnode_default_choices(location_name)
         if dangerous_choices:
             return _exploration_choices(dangerous_choices)
-        choices = ["周囲を見る"]
+        choices = ["休息する", "周囲を見る"]
         if self._location_has_movement_options(location_name):
             choices.append(MOVE_CHOICE_LABEL)
         active_facility = self._active_facility_record() if location_name == self.state.current_location else None
         active_is_guild = bool(active_facility and str(active_facility.get("type") or "").lower() == "guild")
-        if self._active_quest_can_report_at(location_name):
-            choices.insert(0, QUEST_REPORT_CHOICE_LABEL)
+        if self.state.active_quest:
+            choices.insert(0, QUEST_ABANDON_CHOICE_LABEL)
+            if self._active_quest_can_report_at(location_name):
+                choices.insert(0, QUEST_REPORT_CHOICE_LABEL)
         elif (active_is_guild or _location_is_guild(self.state.world_data, location_name)) and not self.state.active_quest:
             choices.insert(0, QUEST_BOARD_CHOICE_LABEL)
         if location_name == self.state.current_location and active_facility and str(active_facility.get("type") or "").lower() == "town_hall":
@@ -8903,7 +9081,7 @@ class GameEngine:
         location = world.locations.get(str(location_name or "").strip())
         if not location or not (_is_dungeon_location(location) or _world_location_blocks_world_map_departure(location)):
             return []
-        choices = ["周囲を見る"]
+        choices = ["休息する", "周囲を見る"]
         if self._location_has_movement_options(location_name):
             choices.append(MOVE_CHOICE_LABEL)
         return choices
@@ -12239,8 +12417,6 @@ class GameEngine:
             action,
             input_type,
             as_bool=_as_bool,
-            is_attack_action=_is_attack_action,
-            is_surprise_attack_action=_is_surprise_attack_action,
             is_exploration_action=_is_exploration_action,
             is_skill_action=_is_skill_action,
             is_quest_abandon_action=_is_quest_abandon_action,
@@ -12360,7 +12536,6 @@ class GameEngine:
             location,
             narration,
             choices,
-            allow_text_inference=False,
         )
         if transition_response:
             history_entry["combat_transition"] = _strip_response_metadata(transition_response)
@@ -12713,43 +12888,684 @@ class GameEngine:
         return response
 
     def _resolve_encounter_input(self, action: str, input_type: str, encounter: dict[str, Any]) -> str:
-        if self._encounter_has_surrendered_opponents(encounter) and _is_accept_surrender_action(action):
-            return self._accept_opponent_surrender(action, input_type, encounter)
+        tool_result = self._resolve_combat_tool_choice(action, input_type, encounter)
+        if tool_result is not None:
+            return tool_result
         block_reason = self._player_incapacitated_action_block(action, encounter=encounter, for_movement=False)
         if block_reason:
             return self._resolve_blocked_player_action(action, input_type, block_reason, encounter=encounter)
         if _is_skill_action(action):
-            return self._resolve_player_skill(action, input_type, encounter)
+            return self._run_player_combat_tool(
+                CombatToolName.PLAYER_SKILL,
+                action,
+                input_type,
+                encounter,
+                {"action": action, "skill_name": self._extract_skill_name_for_combat(action)},
+            )
         if _is_escape_action(action):
-            return combat_flow.resolve_player_escape(self, action, input_type, encounter)
+            return self._run_player_combat_tool(
+                CombatToolName.PLAYER_ESCAPE,
+                action,
+                input_type,
+                encounter,
+                {"action": action},
+            )
         if _is_attack_action(action):
-            return self._resolve_player_attack(action, input_type, encounter)
+            return self._run_player_combat_tool(
+                CombatToolName.PLAYER_ATTACK,
+                action,
+                input_type,
+                encounter,
+                {"action": action, "target_name": _extract_attack_target(action)},
+            )
         return self._resolve_player_any_input(action, input_type, encounter)
 
-    def _start_encounter_from_attack(self, action: str, input_type: str) -> str:
-        encounter = self._ensure_encounter(action)
-        encounter["status"] = "active"
-        self.state.flags["active_encounter"] = encounter
-        self.state.flags["screen_mode"] = "battle"
-        opponent_name = str(encounter.get("opponent_name") or "敵")
-        location = str(encounter.get("location") or self.state.current_location)
-        narration = f"{opponent_name}があなたの敵意に反応し、戦闘態勢に入った。"
-        self._append_turn(action, narration, location, self._encounter_choices(encounter), input_type=input_type)
-        self.state.world_data.extra.setdefault("encounters", []).append(
+    def _resolve_combat_tool_choice(self, action: str, input_type: str, encounter: dict[str, Any]) -> str | None:
+        text = str(action or "").strip()
+        if not text:
+            return None
+        if text == COMBAT_CHOICE_BACK:
+            self.state.flags.pop(COMBAT_CHOICE_MENU_FLAG, None)
+            self.state.choices = self._encounter_choices(encounter)
+            self.save_game()
+            return self.state.log_text(16)
+        if text == COMBAT_CHOICE_ATTACK_MENU:
+            self.state.flags[COMBAT_CHOICE_MENU_FLAG] = {"kind": "attack_target"}
+            self.state.choices = self._encounter_choices(encounter)
+            self.save_game()
+            return self.state.log_text(16)
+        if text == COMBAT_CHOICE_SKILL_MENU:
+            self.state.flags[COMBAT_CHOICE_MENU_FLAG] = {"kind": "skill_list"}
+            self.state.choices = self._encounter_choices(encounter)
+            self.save_game()
+            return self.state.log_text(16)
+        if text == "使用できるスキルがない":
+            self.state.choices = self._encounter_choices(encounter)
+            self.save_game()
+            return self.state.log_text(16)
+        if text == COMBAT_CHOICE_ESCAPE:
+            self.state.flags.pop(COMBAT_CHOICE_MENU_FLAG, None)
+            return self._run_player_combat_tool(
+                CombatToolName.PLAYER_ESCAPE,
+                text,
+                input_type,
+                encounter,
+                {"action": text},
+            )
+        if text == COMBAT_CHOICE_ACCEPT_SURRENDER:
+            self.state.flags.pop(COMBAT_CHOICE_MENU_FLAG, None)
+            return self._run_player_combat_tool(
+                CombatToolName.PLAYER_ACCEPT_SURRENDER,
+                text,
+                input_type,
+                encounter,
+                {"action": text},
+            )
+        if text.startswith(COMBAT_CHOICE_ATTACK_PREFIX):
+            target_name = text[len(COMBAT_CHOICE_ATTACK_PREFIX) :].strip()
+            self.state.flags.pop(COMBAT_CHOICE_MENU_FLAG, None)
+            return self._run_player_combat_tool(
+                CombatToolName.PLAYER_ATTACK,
+                text,
+                input_type,
+                encounter,
+                {"target_name": target_name},
+            )
+        if text.startswith(COMBAT_CHOICE_SKILL_PREFIX):
+            skill_name = self._combat_skill_name_from_choice(text)
+            skill = self._find_player_skill(skill_name)
+            if not skill:
+                self.state.choices = self._encounter_choices(encounter)
+                self.save_game()
+                return self.state.log_text(16)
+            target_mode = self._combat_skill_target_mode(skill)
+            if target_mode == "none":
+                self.state.flags.pop(COMBAT_CHOICE_MENU_FLAG, None)
+                return self._run_player_combat_tool(
+                    CombatToolName.PLAYER_SKILL,
+                    text,
+                    input_type,
+                    encounter,
+                    {"skill_name": skill_name},
+                )
+            self.state.flags[COMBAT_CHOICE_MENU_FLAG] = {
+                "kind": "skill_target",
+                "skill_name": skill_name,
+                "target_mode": target_mode,
+            }
+            self.state.choices = self._encounter_choices(encounter)
+            self.save_game()
+            return self.state.log_text(16)
+        if text.startswith(COMBAT_CHOICE_TARGET_PREFIX):
+            menu = self.state.flags.get(COMBAT_CHOICE_MENU_FLAG)
+            if not isinstance(menu, dict) or str(menu.get("kind") or "") != "skill_target":
+                return None
+            skill_name = str(menu.get("skill_name") or "").strip()
+            target_name = text[len(COMBAT_CHOICE_TARGET_PREFIX) :].strip()
+            self.state.flags.pop(COMBAT_CHOICE_MENU_FLAG, None)
+            return self._run_player_combat_tool(
+                CombatToolName.PLAYER_SKILL,
+                text,
+                input_type,
+                encounter,
+                {"skill_name": skill_name, "target_name": target_name},
+            )
+        return None
+
+    def _run_player_combat_tool(
+        self,
+        tool_name: CombatToolName,
+        action: str,
+        input_type: str,
+        encounter: dict[str, Any],
+        payload: dict[str, Any] | None = None,
+    ) -> str:
+        result = run_combat_tool(
+            self,
+            CombatToolCall(
+                tool_name,
+                source="player_combat_choice",
+                action=action,
+                input_type=input_type,
+                encounter=encounter,
+                payload=payload or {},
+            ),
+        )
+        self.state.world_data.history.append(
             {
-                "event": "engage",
+                "manager": "player_combat_choice_tool",
                 "action": action,
-                "opponent_type": encounter.get("opponent_type"),
-                "opponent_name": opponent_name,
-                "location": location,
+                "input_type": input_type,
+                "tool": result.to_record(),
             }
         )
+        self.save_game()
+        return str(result.event.get("log_text") or self.state.log_text(16))
+
+    def _combat_skill_name_from_choice(self, action: str) -> str:
+        text = str(action or "").strip()
+        if text.startswith(COMBAT_CHOICE_SKILL_PREFIX):
+            text = text[len(COMBAT_CHOICE_SKILL_PREFIX) :].strip()
+        if "(" in text:
+            text = text.split("(", 1)[0].strip()
+        return text.strip("「」[] ")
+
+    def _combat_skill_target_mode(self, skill: dict[str, Any]) -> str:
+        normalised = normalise_combat_skill(skill)
+        effect_types = [combat_effect_type(effect) for effect in _as_list(normalised.get("type") or skill.get("type"))]
+        if any(effect_type in {"damage_hp_party", "damage_sp_party", "absorption_party", "effect_enemy_party", "heal_party", "effect_ally_party", "effect_self"} for effect_type in effect_types):
+            return "none"
+        if any(effect_type in {"heal_single", "effect_ally_single"} for effect_type in effect_types):
+            return "ally"
+        return "enemy"
+
+    def _combat_attack_target_choices(self, encounter: dict[str, Any]) -> list[str]:
+        choices = [f"{COMBAT_CHOICE_ATTACK_PREFIX}{character.name}" for character in self._living_encounter_opponents(encounter)]
+        return choices + [COMBAT_CHOICE_BACK]
+
+    def _combat_skill_choices(self) -> list[str]:
+        choices: list[str] = []
+        for skill in self._player_skills():
+            name = str(skill.get("name") or "").strip()
+            if not name:
+                continue
+            cost = combat_skill_sp_cost(normalise_combat_skill(skill) or skill)
+            choices.append(f"{COMBAT_CHOICE_SKILL_PREFIX}{name} (SP {cost})")
+        if not choices:
+            choices.append("使用できるスキルがない")
+        return choices + [COMBAT_CHOICE_BACK]
+
+    def _combat_skill_target_choices(self, encounter: dict[str, Any], target_mode: str) -> list[str]:
+        if target_mode == "ally":
+            choices = [f"{COMBAT_CHOICE_TARGET_PREFIX}プレイヤー"]
+            choices.extend(f"{COMBAT_CHOICE_TARGET_PREFIX}{character.name}" for character in self._party_companions())
+            return choices + [COMBAT_CHOICE_BACK]
+        choices = [f"{COMBAT_CHOICE_TARGET_PREFIX}{character.name}" for character in self._living_encounter_opponents(encounter)]
+        return choices + [COMBAT_CHOICE_BACK]
+
+    def _select_player_skill_target_from_action(
+        self,
+        encounter: dict[str, Any],
+        action: str,
+        skill: dict[str, Any],
+    ) -> Character | None:
+        mode = self._combat_skill_target_mode(skill)
+        if mode != "ally":
+            return self._select_encounter_target_from_action(encounter, action)
+        text = str(action or "")
+        player = self.player_character()
+        if player and ("プレイヤー" in text or self.state.player_name in text or player.name in text):
+            return player
+        for companion in self._party_companions():
+            if companion.name and companion.name in text:
+                return companion
+        return player
+
+    def _tool_message_event(self, tool_name: str, action: str, input_type: str, narration: str) -> dict[str, Any]:
+        location = self.state.current_location or self.state.world_data.starting_location
+        self._append_turn(action, narration, location, self._location_default_choices(location), input_type=input_type)
+        self.save_game()
+        return {"handled": True, "tool": tool_name, "log_text": self.state.log_text(16), "narration": narration}
+
+    def _run_llm_action_tool(
+        self,
+        tool_name: LlmToolName,
+        source: str,
+        action: str,
+        input_type: str,
+        payload: dict[str, Any] | None = None,
+    ) -> str | None:
+        result = run_llm_tool(
+            self,
+            LlmToolCall(
+                tool_name,
+                source=source,
+                action=action,
+                input_type=input_type,
+                location=self.state.current_location,
+                payload=payload or {},
+            ),
+        )
+        self.state.world_data.history.append(
+            {
+                "manager": "player_action_llm_tool",
+                "action": action,
+                "input_type": input_type,
+                "tool": result.to_record(),
+            }
+        )
+        self.save_game()
+        return str(result.event.get("log_text") or self.state.log_text(16)) if result.acted else None
+
+    def _resolve_quest_accept_tool_action(self, action: str, input_type: str, quest: QuestData | None = None) -> str | None:
+        payload: dict[str, Any] = {}
+        if quest:
+            payload["quest_name"] = quest.name
+        return self._run_llm_action_tool(LlmToolName.QUEST_ACCEPT, "player_choice", action, input_type, payload)
+
+    def _resolve_quest_report_tool_action(self, action: str, input_type: str) -> str | None:
+        return self._run_llm_action_tool(LlmToolName.QUEST_REPORT, "player_choice", action, input_type, {})
+
+    def _resolve_quest_abandon_tool_action(self, action: str, input_type: str) -> str | None:
+        return self._run_llm_action_tool(LlmToolName.QUEST_ABANDON, "player_choice", action, input_type, {})
+
+    def _resolve_facility_tool_action(self, action: str, input_type: str) -> str | None:
+        settlement = self._current_settlement_location()
+        facilities = self.current_location_facilities()
+        requested = _facility_request_from_action(action, facilities)
+        if not requested:
+            requested = _facility_request_from_creation_action(action, facilities)
+        if not requested:
+            return None
+        existing = self._find_or_create_facility_record(settlement, requested) if settlement is not None else None
+        tool_name = LlmToolName.FACILITY_VISIT if existing else LlmToolName.FACILITY_REQUEST
+        return self._run_llm_action_tool(tool_name, "player_choice", action, input_type, {"facility_name": requested})
+
+    def _resolve_conversation_tool_action(self, action: str, input_type: str) -> str | None:
+        active = self._active_conversation_character()
+        if active and _is_conversation_end_action(action):
+            return self._run_llm_action_tool(
+                LlmToolName.CONVERSATION_END,
+                "player_choice",
+                action,
+                input_type,
+                {"character_name": active.name},
+            )
+        target = None if active else self._find_conversation_target(action)
+        if not target:
+            return None
+        return self._run_llm_action_tool(
+            LlmToolName.CONVERSATION_START,
+            "player_choice",
+            action,
+            input_type,
+            {"character_name": target.name},
+        )
+
+    def _resolve_trade_negotiation_tool_action(self, action: str, input_type: str) -> str | None:
+        target = self._trade_negotiation_target(action)
+        if not target:
+            return None
+        return self._run_llm_action_tool(
+            LlmToolName.TRADE_NEGOTIATION,
+            "player_choice",
+            action,
+            input_type,
+            {"character_name": target.name},
+        )
+
+    def _apply_response_quest_accept_tool(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        action: str = "",
+        input_type: str = "",
+    ) -> dict[str, Any]:
+        if self.state.active_quest:
+            return self._tool_message_event("quest_accept", action, input_type, "進行中の依頼があるため、別の依頼はまだ受けられない。")
+        quest_name = str(response.get("quest_name") or response.get("target_name") or response.get("name") or "").strip()
+        quest = self._find_quest_by_name(quest_name) if quest_name else None
+        if quest is None:
+            available = [item for item in self.state.world_data.quests if item.status in {"available", ""} and not item.flags.get("wild")]
+            quest = available[0] if len(available) == 1 else None
+        if quest is None or quest.status not in {"available", ""}:
+            return self._tool_message_event("quest_accept", action, input_type, "その依頼は現在受けられない。")
+        log_text = self._start_quest(action or f"依頼を受ける: {quest.name}", input_type or "choice", quest)
+        return {"handled": True, "tool": "quest_accept", "quest_name": quest.name, "source": source, "log_text": log_text}
+
+    def _apply_response_quest_report_tool(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        action: str = "",
+        input_type: str = "",
+    ) -> dict[str, Any]:
+        quest = self._find_quest_by_name(self.state.active_quest)
+        if not quest:
+            return self._tool_message_event("quest_report", action, input_type, "報告できる進行中の依頼はない。")
+        log_text = self._resolve_dedicated_quest_report(action or QUEST_REPORT_CHOICE_LABEL, input_type or "choice", quest)
+        return {"handled": True, "tool": "quest_report", "quest_name": quest.name, "source": source, "log_text": log_text}
+
+    def _apply_response_quest_abandon_tool(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        action: str = "",
+        input_type: str = "",
+    ) -> dict[str, Any]:
+        quest = self._find_quest_by_name(self.state.active_quest)
+        if not quest:
+            return self._tool_message_event("quest_abandon", action, input_type, "放棄できる進行中の依頼はない。")
+        previous_location = self.state.current_location
+        location = previous_location or self.state.world_data.starting_location
+        narration = _hide_internal_quest_tokens(f"依頼「{quest.name}」から撤退した。")
+        self.state.flags["screen_mode"] = "exploration"
+        self._finish_quest(quest, "abandoned", source or "quest_abandon_tool", {"narration": narration})
+        choices = [_hide_internal_quest_tokens(choice) for choice in self._location_default_choices(location)]
+        self._append_turn(action or "現在の依頼を放棄する", narration, location, choices, input_type=input_type or "choice")
+        self._apply_visual_intent({}, "quest_abandon_tool", location, previous_location)
+        self.save_game()
+        return {"handled": True, "tool": "quest_abandon", "quest_name": quest.name, "source": source, "log_text": self.state.log_text(16)}
+
+    def _apply_response_facility_visit_tool(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        action: str = "",
+        input_type: str = "",
+    ) -> dict[str, Any]:
+        settlement = self._current_settlement_location()
+        requested = str(response.get("facility_name") or response.get("target_name") or response.get("name") or "").strip()
+        if not requested:
+            facilities = self.current_location_facilities()
+            requested = _facility_request_from_action(action, facilities) or _facility_request_from_creation_action(action, facilities)
+        if settlement is None:
+            return self._tool_message_event("facility_visit", action, input_type, f"この場所には「{requested or '施設'}」のような街の施設は存在しない。")
+        facility = self._find_or_create_facility_record(settlement, requested)
+        if not facility:
+            return self._tool_message_event("facility_visit", action, input_type, f"{settlement.name}には「{requested}」という施設は見当たらない。")
+        log_text = self._move_to_facility(settlement, facility, action=action or f"{requested}へ移動", input_type=input_type or "choice")
+        return {"handled": True, "tool": "facility_visit", "facility_name": str(facility.get("name") or requested), "source": source, "log_text": log_text}
+
+    def _apply_response_facility_request_tool(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        action: str = "",
+        input_type: str = "",
+    ) -> dict[str, Any]:
+        requested = str(response.get("facility_name") or response.get("target_name") or response.get("name") or "").strip()
+        action_text = action or (f"{requested}へ向かう" if requested else "施設へ向かう")
+        log_text = self._create_facility_from_action(action_text, input_type or "choice")
+        if log_text is None:
+            return self._tool_message_event("facility_request", action_text, input_type or "choice", f"「{requested or 'その施設'}」は見つからなかった。")
+        return {"handled": True, "tool": "facility_request", "facility_name": requested, "source": source, "log_text": log_text}
+
+    def _apply_response_conversation_start_tool(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        action: str = "",
+        input_type: str = "",
+    ) -> dict[str, Any]:
+        target_name = str(response.get("character_name") or response.get("target_name") or response.get("npc_name") or "").strip()
+        target = self._match_character_reference_from_candidates(target_name, self._conversation_candidates()) if target_name else self._find_conversation_target(action)
+        if not target:
+            return self._tool_message_event("conversation_start", action, input_type, "会話できる相手は見当たらない。")
+        log_text = self._start_conversation(action or f"{target.name}に話しかける", input_type or "choice", target)
+        return {"handled": True, "tool": "conversation_start", "character_name": target.name, "source": source, "log_text": log_text}
+
+    def _apply_response_conversation_end_tool(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        action: str = "",
+        input_type: str = "",
+    ) -> dict[str, Any]:
+        target = self._active_conversation_character()
+        if not target:
+            return self._tool_message_event("conversation_end", action, input_type, "終了する会話はない。")
+        log_text = self._continue_conversation(action or "会話を終える", input_type or "choice", target)
+        return {"handled": True, "tool": "conversation_end", "character_name": target.name, "source": source, "log_text": log_text}
+
+    def _apply_response_trade_negotiation_tool(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        action: str = "",
+        input_type: str = "",
+    ) -> dict[str, Any]:
+        target_name = str(response.get("character_name") or response.get("target_name") or response.get("npc_name") or "").strip()
+        candidates = self._current_trade_candidates()
+        target = self._match_character_reference_from_candidates(target_name, candidates) if target_name else self._trade_negotiation_target(action)
+        if not target:
+            return self._tool_message_event("trade_negotiation", action, input_type, "値引き交渉できる相手は見当たらない。")
+        log_text = self._resolve_trade_negotiation_action(action or f"{target.name}に値引き交渉をする", input_type or "choice", target)
+        return {"handled": True, "tool": "trade_negotiation", "character_name": target.name, "source": source, "log_text": log_text}
+
+    def _conversation_candidates(self) -> list[Character]:
+        current_location = self.state.current_location or self.state.world_data.starting_location
+        return [
+            character
+            for character in self.state.world_data.characters.values()
+            if not character.flags.get("is_player")
+            and _actor_present_at(character.location, character.state, character.flags, current_location)
+            and self._character_matches_active_facility(character)
+        ]
+
+    def _resolve_start_combat_tool_action(self, action: str, input_type: str) -> str | None:
+        if self._active_encounter():
+            return None
+        if not _combat_start_tool_candidate(action):
+            return None
+        response = self._start_combat_intent_evaluator(action, input_type)
+        start_calls = [
+            tool
+            for tool in response_tool_calls(response, source="start_combat_intent_evaluator")
+            if tool.get("name") == LlmToolName.START_COMBAT.value
+        ]
+        history_entry: dict[str, Any] = {
+            "manager": "start_combat_intent_evaluator",
+            "action": action,
+            "input_type": input_type,
+            "location": self.state.current_location,
+            "response": _strip_response_metadata(response),
+            "tool_called": bool(start_calls),
+        }
+        if not start_calls:
+            self.state.world_data.history.append(history_entry)
+            return None
+        block_reason = self._player_incapacitated_action_block(action, combat_intent_confirmed=True)
+        if block_reason:
+            history_entry["blocked_reason"] = block_reason
+            self.state.world_data.history.append(history_entry)
+            return self._resolve_blocked_player_action(action, input_type, block_reason)
+        result = run_llm_tool(
+            self,
+            LlmToolCall(
+                LlmToolName.START_COMBAT,
+                source="start_combat_intent_evaluator",
+                action=action,
+                input_type=input_type,
+                location=self.state.current_location,
+                payload=start_calls[0].get("arguments") or {},
+            ),
+        )
+        history_entry["tool_result"] = result.to_record()
+        self.state.world_data.history.append(history_entry)
+        if not result.acted:
+            return None
+        encounter = self._active_encounter()
+        if not encounter:
+            return None
+        event = result.event
+        if _as_bool(event.get("surprise_attack") or event.get("surprise") or event.get("first_strike") or event.get("preemptive")):
+            return self._resolve_player_attack(action, input_type, encounter)
+        location = str(event.get("location") or encounter.get("location") or self.state.current_location)
+        narration = str(event.get("narration") or "").strip()
+        if not narration:
+            opponent_name = str(event.get("opponent_name") or encounter.get("opponent_name") or "敵")
+            narration = f"{opponent_name}との戦闘が始まった。"
+        self._append_turn(action, narration, location, self._encounter_choices(encounter), input_type=input_type)
         self._request_background_if_needed(location)
         self.save_game()
         return self.state.log_text(16)
 
+    def _start_combat_intent_evaluator(self, action: str, input_type: str) -> dict[str, Any]:
+        context = self._start_combat_tool_context()
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are Fantasia's combat-start intent evaluator. Decide whether the current player input "
+                    "definitely starts combat right now. Return compact JSON only. "
+                    "Use tool_judgements start_combat with confidence exactly 1.0 only when the player explicitly "
+                    "attacks, ambushes, or otherwise initiates immediate violence against a valid target, or when "
+                    "the immediate result is that a present hostile enemy begins combat. "
+                    "Do not start combat for inspecting attack traces, mentioning attacks, preparing, threatening, "
+                    "negotiating, surrendering, calming someone, moving, quest reporting, reading, crafting, or any ambiguous action. "
+                    "Never use top-level combat_started/start_combat/battle_started."
+                ),
+            },
+            {
+                "role": "user",
+                "content": _ai_json(
+                    {
+                        "input_type": input_type,
+                        "player_action": action,
+                        "context": context,
+                    }
+                ),
+            },
+            {"role": "system", "content": tool_prompt_instruction()},
+        ]
+        schema = (
+            "Return one JSON object with keys intent, narration, choices, tool_judgements. "
+            "intent.kind must be combat_start, noncombat, or ambiguous. "
+            "If combat does not definitely start now, tool_judgements must be []. "
+            "If combat starts, tool_judgements must contain {\"name\":\"start_combat\",\"confidence\":1.0,"
+            "\"arguments\":{\"opponent_name\":\"present target name\",\"surprise_attack\":false},\"reason\":\"...\"}. "
+            "Do not include top-level side-effect keys."
+        )
+        try:
+            return self._chat_json(
+                "start_combat_intent_evaluator",
+                messages,
+                max_tokens=450,
+                world_name=self.state.world_name,
+                player_name=self.state.player_name,
+                retries=1,
+                schema_instruction_text=schema,
+            )
+        except Exception as exc:
+            self.state.world_data.extra.setdefault("start_combat_intent_errors", []).append(
+                {"action": action, "input_type": input_type, "location": self.state.current_location, "error": str(exc)}
+            )
+            return {"intent": {"kind": "ambiguous"}, "narration": "", "choices": [], "tool_judgements": []}
+
+    def _start_combat_tool_context(self) -> dict[str, Any]:
+        location_name = str(self.state.current_location or self.state.world_data.starting_location or "").strip()
+        location_data = self.state.world_data.locations.get(location_name) if location_name else None
+        subnode_id = self._current_subnode_id(location_name) if location_name and location_name in self.state.world_data.locations else ""
+        subnode: dict[str, Any] = {}
+        if location_name and subnode_id:
+            graph = self._ensure_location_subnode_graph(self.state.world_data, location_name)
+            node = graph.get("nodes", {}).get(subnode_id) if isinstance(graph, dict) else None
+            if isinstance(node, dict):
+                subnode = {
+                    "id": subnode_id,
+                    "name": str(node.get("name") or subnode_id),
+                    "kind": str(node.get("kind") or ""),
+                    "description": _short_text(str(node.get("description") or ""), 220),
+                }
+        nearby: list[dict[str, Any]] = []
+        for character in self.state.world_data.characters.values():
+            if character.flags.get("is_player") or _character_state_is_dead(character):
+                continue
+            if location_name and not _actor_present_at(character.location, character.state, character.flags, location_name):
+                continue
+            if not self._character_matches_active_facility(character):
+                continue
+            context = _character_ai_context(character, details=False, include_traits=False, include_skills=False)
+            context["hostile"] = _character_is_hostile_actor(character)
+            context["references"] = _character_reference_terms(character)
+            nearby.append(context)
+            if len(nearby) >= 12:
+                break
+        return _drop_empty(
+            {
+                "current_location": _location_ai_context(location_data) if location_data else {"name": location_name},
+                "current_subnode": subnode,
+                "nearby_characters": nearby,
+                "recent_log": self.state.log_text(6),
+            }
+        )
+
+    def _apply_response_start_combat_tool(
+        self,
+        response: dict[str, Any],
+        source: str,
+        *,
+        action: str = "",
+        input_type: str = "",
+        location: str = "",
+    ) -> dict[str, Any]:
+        active = self._active_encounter()
+        if active:
+            return {"started": False, "reason": "active_encounter_exists", "opponent_name": active.get("opponent_name", "")}
+        if not _as_bool(response.get("combat_started") or response.get("start_combat") or response.get("battle_started")):
+            return {"started": False, "reason": "tool_not_requested"}
+        location_name = str(location or self.state.current_location or self.state.world_data.starting_location or "").strip()
+        requested_name = str(response.get("opponent_name") or response.get("target_name") or response.get("enemy_name") or "").strip()
+        candidates = self._hostile_characters_at(location_name, limit=8)
+        opponent = self._select_hostile_opponent(requested_name, candidates)
+        if opponent is None and requested_name:
+            opponent = self._select_present_combat_opponent(requested_name, location_name)
+        if opponent is None and candidates:
+            opponent = candidates[0]
+        if opponent is None:
+            opponent_type, opponent_name = self._find_or_create_encounter_opponent(
+                "\n".join(part for part in (action, requested_name, str(response.get("reason") or "")) if str(part).strip())
+            )
+            opponent = self.state.world_data.character(opponent_name)
+        if opponent is None:
+            return {"started": False, "reason": "opponent_not_found", "opponent_name": requested_name}
+        if not _character_is_hostile_actor(opponent):
+            opponent.flags["hostile"] = True
+            opponent.extra["hostile"] = True
+        encounter = self._start_encounter_with_character(opponent, source=source, action=action, location=location_name)
+        narration = str(response.get("narration") or "").strip() or f"{opponent.name}との戦闘が始まった。"
+        event = {
+            "started": True,
+            "source": source,
+            "action": action,
+            "input_type": input_type,
+            "location": location_name,
+            "opponent_name": opponent.name,
+            "opponent_uuid": opponent.uuid,
+            "narration": narration,
+            "surprise_attack": _as_bool(
+                response.get("surprise_attack")
+                or response.get("surprise")
+                or response.get("first_strike")
+                or response.get("preemptive")
+            ),
+            "player_initiated": _as_bool(response.get("player_initiated")),
+            "reason": str(response.get("reason") or ""),
+            "lines": [narration],
+            "encounter": _strip_encounter_log(encounter),
+        }
+        self.state.world_data.extra.setdefault("start_combat_tool_events", []).append(
+            {key: value for key, value in event.items() if key != "encounter"}
+        )
+        return event
+
+    def _select_present_combat_opponent(self, requested_name: str, location: str) -> Character | None:
+        location_name = str(location or self.state.current_location or self.state.world_data.starting_location or "").strip()
+        candidates: list[Character] = []
+        for character in self.state.world_data.characters.values():
+            if character.flags.get("is_player") or _character_state_is_dead(character):
+                continue
+            if location_name and not _actor_present_at(character.location, character.state, character.flags, location_name):
+                continue
+            if not self._character_matches_active_facility(character):
+                continue
+            candidates.append(character)
+        return self._select_hostile_opponent(requested_name, candidates)
+
     def _resolve_player_skill(self, action: str, input_type: str, encounter: dict[str, Any]) -> str:
         return combat_flow.resolve_player_skill(self, action, input_type, encounter)
+
+    def _resolve_player_escape(self, action: str, input_type: str, encounter: dict[str, Any]) -> str:
+        return combat_flow.resolve_player_escape(self, action, input_type, encounter)
 
     def _find_player_skill(self, name: str) -> dict[str, Any] | None:
         needle = str(name or "").strip().lower()
@@ -13370,6 +14186,29 @@ class GameEngine:
                 ),
             },
         ]
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "When the hostile NPC actually starts combat now, emit tool_judgements with "
+                    "start_combat confidence=1.0 and opponent_name. If the NPC only watches, warns, "
+                    "threatens, blocks the way, or waits, tool_judgements must be []. "
+                    "The game executes combat start only from the start_combat tool."
+                ),
+            }
+        )
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "Tool judgement format: include tool_judgements as an array. "
+                    "The game executes only items whose confidence is exactly 1.0. "
+                    "For combat start, use {\"name\":\"start_combat\",\"confidence\":1.0,"
+                    "\"arguments\":{\"opponent_name\":\"...\"},\"reason\":\"...\"}. "
+                    "Use [] when combat does not definitely begin now."
+                ),
+            }
+        )
         try:
             response = self._chat_json(
                 "hostile_npc_encounter_evaluator",
@@ -13390,11 +14229,23 @@ class GameEngine:
         response_choices = self._filter_llm_choices_for_display(_as_str_list(response.get("choices")))
         if response_choices:
             choices = _exploration_choices(response_choices + choices)
-        if _as_bool(response.get("combat_started") or response.get("start_combat") or response.get("battle_started")):
-            opponent = self._select_hostile_opponent(str(response.get("opponent_name") or response.get("target_name") or ""), candidates)
-            if opponent:
-                encounter = self._start_encounter_with_character(opponent, source=source, action=action, location=location)
-                choices = self._encounter_choices(encounter)
+        tool_payload = tool_effect_payload(response)
+        if _as_bool(tool_payload.get("combat_started")):
+            result = run_llm_tool(
+                self,
+                LlmToolCall(
+                    LlmToolName.START_COMBAT,
+                    source=source,
+                    action=action,
+                    input_type=input_type,
+                    location=location,
+                    payload=tool_payload,
+                ),
+            )
+            event = result.event
+            if event.get("started"):
+                encounter = self._active_encounter()
+                choices = self._encounter_choices(encounter) if encounter else choices
         self.state.world_data.extra.setdefault("hostile_arrival_events", []).append(
             {
                 "source": source,
@@ -13414,77 +14265,37 @@ class GameEngine:
         location: str,
         narration: str,
         choices: list[str],
-        *,
-        allow_text_inference: bool = True,
     ) -> tuple[str, list[str], dict[str, Any]]:
         active_encounter = self._active_encounter()
         if active_encounter:
             return narration, self._encounter_choices(active_encounter), {}
-        explicit = _as_bool(response.get("combat_started") or response.get("start_combat") or response.get("battle_started"))
-        trigger_text = _combat_trigger_text(action, response, narration, choices)
-        candidates = self._hostile_characters_at(location)
-        if not explicit and (not allow_text_inference or not _text_implies_combat_started(trigger_text)):
-            return narration, choices, {}
-        context = self._hostile_encounter_context(location, candidates, narration)
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "あなたはFantasiaの戦闘突入検出担当です。"
-                    "通常進行のLLM応答を読み、敵や魔物が実際に襲い掛かった、攻撃を開始した、戦闘に突入した場合だけ combat_started=true にしてください。"
-                    "単に敵を見つけた、睨んでいる、選択肢として攻撃できる、警戒しているだけなら false です。"
-                    "true の場合は opponent_name に戦闘相手の名前または種族名だけを書いてください。"
+        tool_payload = tool_effect_payload(response)
+        if not tool_payload and isinstance(response, dict) and not any(
+            key in response for key in ("narration", "choices", "content_violation", "process", "intent", "tool_judgements")
+        ):
+            tool_payload = dict(response)
+        explicit = _as_bool(tool_payload.get("combat_started"))
+        if explicit:
+            result = run_llm_tool(
+                self,
+                LlmToolCall(
+                    LlmToolName.START_COMBAT,
+                    source=source,
+                    action=action,
+                    input_type=input_type,
+                    location=location,
+                    payload=tool_payload,
                 ),
-            },
-            {
-                "role": "user",
-                "content": _ai_json(
-                    {
-                        "source": source,
-                        "input_type": input_type,
-                        "player_action": action,
-                        "response": _strip_response_metadata(response),
-                        "narration": narration,
-                        "choices": choices,
-                        "context": context,
-                    }
-                ),
-            },
-        ]
-        try:
-            detector = self._chat_json(
-                "combat_transition_detector",
-                messages,
-                max_tokens=350,
-                world_name=self.state.world_name,
-                player_name=self.state.player_name,
-                retries=1,
             )
-        except Exception as exc:
-            self.state.world_data.extra.setdefault("combat_transition_errors", []).append(
-                {"source": source, "location": location, "error": str(exc)}
-            )
-            return narration, choices, {}
-        detector_started = _as_bool(detector.get("combat_started") or detector.get("start_combat") or detector.get("battle_started"))
-        if explicit and not detector_started:
-            detector["combat_started"] = True
-            detector.setdefault("reason", "Upstream response explicitly requested combat start.")
-            detector_started = True
-        if not detector_started:
-            return narration, choices, detector
-        opponent = self._select_hostile_opponent(str(detector.get("opponent_name") or response.get("opponent_name") or ""), candidates)
-        if opponent is None:
-            opponent_type, opponent_name = self._find_or_create_encounter_opponent(
-                "\n".join(part for part in (action, narration, str(detector.get("opponent_name") or "")) if str(part).strip())
-            )
-            opponent = self.state.world_data.character(opponent_name)
-        if opponent is None:
-            return narration, choices, detector
-        line = str(detector.get("narration") or "").strip()
-        if line and line not in narration:
-            narration = "\n".join(part for part in (narration, line) if str(part).strip())
-        encounter = self._start_encounter_with_character(opponent, source=source, action=action, location=location)
-        return narration, self._encounter_choices(encounter), detector
+            event = result.event
+            if not event.get("started"):
+                return narration, choices, event
+            line = str(event.get("narration") or "").strip()
+            if line and line not in narration:
+                narration = "\n".join(part for part in (narration, line) if str(part).strip())
+            encounter = self._active_encounter()
+            return narration, self._encounter_choices(encounter) if encounter else choices, event
+        return narration, choices, {}
 
     def _find_or_create_encounter_opponent(self, action: str) -> tuple[str, str]:
         text = action.strip()
@@ -14234,6 +15045,7 @@ class GameEngine:
         *,
         encounter: dict[str, Any] | None = None,
         for_movement: bool = False,
+        combat_intent_confirmed: bool = False,
     ) -> str:
         if for_movement:
             return ""
@@ -14244,6 +15056,8 @@ class GameEngine:
         if _is_escape_action(action):
             return "escape" if _combat_status_blocks_escape(self._actor_status_effects("player", encounter)) else ""
         if _is_attack_action(action) or _is_aggressive_player_action(action):
+            if encounter is None and not combat_intent_confirmed:
+                return ""
             return "attack" if _combat_status_blocks_attack(self._actor_status_effects("player", encounter)) else ""
         return ""
 
@@ -15586,7 +16400,14 @@ class GameEngine:
         }
 
     def _action_roll_for_input(self, action: str, input_type: str, purpose: str = "action") -> dict[str, Any] | None:
-        if not _should_use_action_roll(action, input_type, purpose):
+        if not _should_use_action_roll(
+            action,
+            input_type,
+            purpose,
+            excluded_actions=(MOVE_CHOICE_LABEL, QUEST_BOARD_CHOICE_LABEL, QUEST_REPORT_CHOICE_LABEL, QUEST_ABANDON_CHOICE_LABEL),
+            is_quest_abandon=_is_quest_abandon_action(action),
+            is_conversation_end=_is_conversation_end_action(action),
+        ):
             return None
         return self._make_action_roll(action, purpose=purpose)
 
@@ -15619,47 +16440,67 @@ class GameEngine:
         forced_target: int | None = None,
         normalise_target: bool = True,
     ) -> dict[str, Any]:
-        ability = forced_ability or _roll_ability_for_action(action, purpose)
-        attrs = self._player_attributes()
-        ability_score = _safe_int(attrs.get(ability), 10)
-        bonus = ability_score // 3
-        raw_target = forced_target if forced_target is not None else _roll_target_for_action(action, purpose)
-        target = _normalise_roll_target(raw_target) if normalise_target else max(2, min(30, _safe_int(raw_target, 10)))
-        die_1 = random.randint(1, 6)
-        die_2 = random.randint(1, 6)
-        natural = die_1 + die_2
-        total = natural + bonus
-        critical_failure = natural == 2
-        critical_success = natural == 12
-        success = critical_success or (not critical_failure and total >= target)
-        ability_label = _roll_ability_label(ability)
-        if critical_success:
-            outcome = "強制成功"
-        elif critical_failure:
-            outcome = "強制失敗"
-        else:
-            outcome = "成功" if success else "失敗"
-        line = f"> [判定] 目標値 {target} / 2d6 {die_1}+{die_2} + {ability_label}ボーナス{bonus} = {total} : {outcome}"
-        return {
-            "enabled": True,
-            "rule": "2d6 + floor(relevant_ability / 3) vs target. Natural 2 is forced failure. Natural 12 is forced success.",
-            "purpose": purpose,
-            "action": action,
-            "ability": ability,
-            "ability_label": ability_label,
-            "ability_score": ability_score,
-            "bonus": bonus,
-            "dice": [die_1, die_2],
-            "roll": natural,
-            "target": target,
-            "total": total,
-            "success": success,
-            "failure": not success,
-            "critical_success": critical_success,
-            "critical_failure": critical_failure,
-            "margin": total - target,
-            "line": line,
-        }
+        judgement: dict[str, Any] | None = None
+        if not forced_ability and forced_target is None:
+            judgement = self._action_roll_llm_judgement(action, purpose)
+        return _make_game_action_roll(
+            action,
+            purpose=purpose,
+            attributes=self._player_attributes(),
+            current_danger=self._current_location_danger(),
+            forced_ability=forced_ability,
+            forced_target=forced_target,
+            normalise_target=normalise_target,
+            judgement=judgement,
+        )
+
+    def _action_roll_llm_judgement(self, action: str, purpose: str) -> dict[str, Any] | None:
+        context = action_roll_judgement_context(
+            action,
+            purpose,
+            current_danger=self._current_location_danger(),
+        )
+        messages = [
+            {"role": "system", "content": action_roll_system_prompt()},
+            {"role": "user", "content": _ai_json(context)},
+        ]
+        try:
+            response = self._chat_json(
+                "action_roll_judger",
+                messages,
+                max_tokens=420,
+                world_name=self.state.world_name,
+                player_name=self.state.player_name,
+                retries=2,
+            )
+        except Exception as exc:
+            self.state.world_data.extra.setdefault("action_roll_judgement_errors", []).append(
+                {
+                    "action": action,
+                    "purpose": purpose,
+                    "error": str(exc),
+                }
+            )
+            return None
+        judgement = normalise_action_roll_judgement(response)
+        if judgement is None:
+            self.state.world_data.extra.setdefault("action_roll_judgement_errors", []).append(
+                {
+                    "action": action,
+                    "purpose": purpose,
+                    "error": "invalid_action_roll_judgement",
+                    "response": _strip_response_metadata(response),
+                }
+            )
+            return None
+        self.state.world_data.extra.setdefault("action_roll_judgements", []).append(
+            {
+                "action": action,
+                "purpose": purpose,
+                "judgement": judgement,
+            }
+        )
+        return judgement
 
     def _append_action_roll_log(self, action_roll: dict[str, Any] | None) -> None:
         if isinstance(action_roll, dict) and action_roll.get("line"):
@@ -15802,17 +16643,27 @@ class GameEngine:
 
     def _encounter_choices(self, encounter: dict[str, Any]) -> list[str]:
         if encounter.get("status") == "ended":
+            self.state.flags.pop(COMBAT_CHOICE_MENU_FLAG, None)
             return _quest_start_choices(self.state.world_data.quests) or ["周囲を見る"]
-        choices = ["攻撃", "スキル", "行動", "逃走"]
+        menu = self.state.flags.get(COMBAT_CHOICE_MENU_FLAG)
+        if isinstance(menu, dict):
+            kind = str(menu.get("kind") or "").strip()
+            if kind == "attack_target":
+                return self._combat_attack_target_choices(encounter)
+            if kind == "skill_list":
+                return self._combat_skill_choices()
+            if kind == "skill_target":
+                return self._combat_skill_target_choices(encounter, str(menu.get("target_mode") or "enemy"))
+        choices = [COMBAT_CHOICE_ATTACK_MENU, COMBAT_CHOICE_SKILL_MENU, COMBAT_CHOICE_ESCAPE]
         player_statuses = self._actor_status_effects("player", encounter)
         if _combat_status_blocks_attack(player_statuses):
-            choices = [choice for choice in choices if choice != "攻撃"]
+            choices = [choice for choice in choices if choice != COMBAT_CHOICE_ATTACK_MENU]
         if _combat_status_blocks_escape(player_statuses):
-            choices = [choice for choice in choices if choice != "逃走"]
+            choices = [choice for choice in choices if choice != COMBAT_CHOICE_ESCAPE]
         if _combat_status_blocks_skill(player_statuses):
-            choices = [choice for choice in choices if choice != "スキル"]
+            choices = [choice for choice in choices if choice != COMBAT_CHOICE_SKILL_MENU]
         if self._encounter_has_surrendered_opponents(encounter):
-            choices.append("降伏を受け入れる")
+            choices.append(COMBAT_CHOICE_ACCEPT_SURRENDER)
         return choices
     def _start_conversation(self, action: str, input_type: str, character: Character) -> str:
         previous_location = self.state.current_location
@@ -16164,54 +17015,6 @@ class GameEngine:
         )
 
     def _should_run_field_event_evaluator(self, action: str, input_type: str) -> bool:
-        text = str(action or "").strip()
-        lowered = text.casefold()
-        strong_event_terms = (
-            "探索",
-            "探す",
-            "調べ",
-            "周囲",
-            "奥",
-            "洞窟",
-            "ダンジョン",
-            "遺跡",
-            "森",
-            "危険",
-            "宝",
-            "助け",
-            "救",
-            "search",
-            "discover",
-            "dungeon",
-            "cave",
-            "ruin",
-            "forest",
-            "help",
-        )
-        if any(term in text or term in lowered for term in strong_event_terms):
-            return True
-        location_name = self.state.current_location or self.state.world_data.starting_location
-        location = self.state.world_data.locations.get(location_name)
-        extra = location.extra if location and isinstance(location.extra, dict) else {}
-        kind = str(extra.get("location_kind") or extra.get("kind") or "").strip().lower()
-        if kind in {"dungeon", "wilderness", "road", "crossroad", "coast", "mountain", "river", "plain"}:
-            return True
-        if self._current_location_danger(location_name) > 0:
-            return True
-        graph = self._ensure_location_subnode_graph(self.state.world_data, location_name)
-        subnode_id = self._current_subnode_id(location_name)
-        nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
-        subnode = nodes.get(subnode_id, {}) if isinstance(nodes, dict) else {}
-        subnode_kind = str(subnode.get("kind") or "").strip().lower()
-        if any(term in subnode_kind for term in ("dungeon", "danger", "nest", "boss", "wild", "forest", "cave", "ruin")):
-            return True
-        for character in self.state.world_data.characters.values():
-            if character.flags.get("is_player"):
-                continue
-            if not _actor_present_at(character.location, character.state, character.flags, location_name):
-                continue
-            if bool(character.flags.get("hostile") or character.extra.get("hostile")):
-                return True
         return False
 
     def _roll_field_event_trigger(
@@ -16480,7 +17283,6 @@ class GameEngine:
             location,
             narration,
             choices,
-            allow_text_inference=False,
         )
         if transition_response:
             event_record["combat_transition"] = _strip_response_metadata(transition_response)
@@ -17384,7 +18186,7 @@ def _exploration_choices(values: list[str]) -> list[str]:
 
 
 def _system_choice_allowed_through_movement_filter(text: str, *, allow_home_choices: bool) -> bool:
-    if text in {MOVE_CHOICE_LABEL, QUEST_BOARD_CHOICE_LABEL, QUEST_REPORT_CHOICE_LABEL}:
+    if text in {MOVE_CHOICE_LABEL, QUEST_BOARD_CHOICE_LABEL, QUEST_REPORT_CHOICE_LABEL, QUEST_ABANDON_CHOICE_LABEL}:
         return True
     if text == f"{PLAYER_HOME_NAME}へ移動":
         return True
@@ -19123,6 +19925,10 @@ def _augment_location_choices_for_world(
     if quest_report_ready:
         result = [choice for choice in result if str(choice).strip() != QUEST_REPORT_CHOICE_LABEL]
         result.insert(0, QUEST_REPORT_CHOICE_LABEL)
+    if active_quest:
+        result = [choice for choice in result if str(choice).strip() != QUEST_ABANDON_CHOICE_LABEL]
+        insert_at = 1 if result and result[0] == QUEST_REPORT_CHOICE_LABEL else 0
+        result.insert(insert_at, QUEST_ABANDON_CHOICE_LABEL)
     elif _location_is_guild(world, location_name) and not active_quest:
         result = [choice for choice in result if not _is_direct_quest_accept_choice(choice)]
         result.insert(0, QUEST_BOARD_CHOICE_LABEL)
@@ -19561,6 +20367,29 @@ def _facility_request_from_action(action: str, facilities: list[dict[str, Any]])
     return ""
 
 
+def _facility_request_from_creation_action(action: str, facilities: list[dict[str, Any]]) -> str:
+    text = str(action or "").strip()
+    if not text:
+        return ""
+    lowered = text.lower()
+    creation = any(word in lowered or word in text for word in ("作", "建", "開", "設け", "用意", "追加", "生成", "欲しい", "必要", "request", "create", "build", "add"))
+    if not creation:
+        return ""
+    for facility in facilities:
+        name = str(facility.get("name") or "")
+        if name and name in text:
+            return name
+    for keyword in FACILITY_KEYWORDS:
+        if keyword and (keyword.lower() in lowered or keyword in text):
+            return _canonical_facility_name(keyword)
+    match = re.search(r"(.{2,24}?)(?:を|が|の)?(?:作る|建てる|開く|設ける|用意|追加|生成|欲しい|必要)", text)
+    if match:
+        candidate = match.group(1).strip("「」『』 　")
+        if candidate and _looks_like_facility_term(candidate):
+            return candidate
+    return ""
+
+
 def _looks_like_facility_term(value: str) -> bool:
     text = str(value or "").strip()
     lowered = text.lower()
@@ -19623,17 +20452,6 @@ def _canonical_facility_name(keyword: str) -> str:
 
 
 
-def _is_home_construction_action(action: str) -> bool:
-    text = str(action or "").strip()
-    lowered = text.lower()
-    if not any(word in lowered or word in text for word in ("house", "home", "hut", "cabin", "家", "自宅", "小屋", "住居")):
-        return False
-    return any(
-        word in lowered or word in text
-        for word in ("build", "construct", "repair", "improve", "建て", "建築", "建設", "作る", "造る", "修理", "増築", "進める")
-    )
-
-
 def _town_hall_home_plan_from_action(action: str) -> tuple[int, int] | None:
     text = str(action or "")
     lowered = text.lower()
@@ -19676,208 +20494,6 @@ def _compact_item_for_ai(item: dict[str, Any]) -> dict[str, Any]:
         "defense": normalised.get("defense"),
     }
     return _drop_empty(data)
-
-
-def _should_use_action_roll(action: str, input_type: str, purpose: str) -> bool:
-    text = str(action or "").strip()
-    if not text:
-        return False
-    lowered = text.lower()
-    if text in {MOVE_CHOICE_LABEL, QUEST_BOARD_CHOICE_LABEL}:
-        return False
-    if _is_quest_abandon_action(text) or _is_conversation_end_action(text):
-        return False
-    if purpose == "craft":
-        return True
-    if _contains_any_action_roll_keyword(text, lowered):
-        return True
-    if _looks_like_simple_auto_action(text, lowered):
-        return False
-    if purpose in {"quest", "conversation", "exploration"}:
-        return input_type == "free_action"
-    return input_type == "free_action"
-
-
-def _roll_ability_for_action(action: str, purpose: str) -> str:
-    text = str(action or "")
-    lowered = text.lower()
-    if purpose == "craft":
-        return "dex"
-    ability_keywords = (
-        ("str", ("force", "break", "lift", "carry", "push", "pull", "bend", "smash", "筋力", "力ずく", "壊す", "破壊", "持ち上げ", "押す", "引く")),
-        ("dex", ("dex", "agile", "sneak", "hide", "steal", "lockpick", "pick lock", "disarm", "dodge", "climb", "jump", "throw", "器用", "隠れる", "忍び", "盗む", "鍵", "開錠", "解除", "罠", "避け", "登る", "跳ぶ", "投げ")),
-        ("con", ("endure", "resist", "withstand", "swim", "stamina", "poison", "耐える", "抵抗", "泳ぐ", "毒", "我慢")),
-        ("int", ("decipher", "study", "analyze", "remember", "research", "solve", "read", "知識", "解読", "分析", "研究", "調査", "読む", "思い出")),
-        ("wis", ("search", "investigate", "track", "notice", "sense", "listen", "find", "探索", "探す", "調べ", "追跡", "気配", "聞き耳", "発見", "観察")),
-        ("cha", ("persuade", "convince", "negotiate", "deceive", "lie", "threaten", "perform", "bargain", "説得", "交渉", "騙す", "嘘", "脅す", "演奏", "値切", "魅力")),
-        ("magic", ("magic", "spell", "ritual", "mana", "arcane", "cast", "魔法", "呪文", "儀式", "魔力", "詠唱")),
-        ("will", ("will", "focus", "fear", "curse", "mental", "spirit", "意志", "集中", "恐怖", "呪い", "精神")),
-    )
-    for ability, keywords in ability_keywords:
-        if any(keyword in lowered or keyword in text for keyword in keywords):
-            return ability
-    if purpose == "conversation":
-        return "cha"
-    if purpose == "exploration":
-        return "wis"
-    return "wis"
-
-
-def _roll_target_for_action(action: str, purpose: str) -> int:
-    text = str(action or "")
-    lowered = text.lower()
-    target = 10
-    if purpose == "conversation":
-        target = 10
-    elif purpose == "exploration":
-        target = 8
-    if any(word in lowered or word in text for word in ("easy", "simple", "trivial", "簡単", "容易", "素人でも簡単")):
-        target = min(target, 6)
-    if any(word in lowered or word in text for word in ("quick", "ordinary", "basic", "軽い", "普通", "5分")):
-        target = min(target, 8)
-    if any(word in lowered or word in text for word in ("locked", "trap", "sneak", "persuade", "negotiate", "heal", "repair", "鍵", "罠", "忍び", "説得", "交渉", "治療", "修理")):
-        target = max(target, 10)
-    if any(word in lowered or word in text for word in ("hard", "difficult", "complex", "dangerous", "ritual", "expert", "難しい", "複雑", "危険", "儀式", "熟練", "精通")):
-        target = max(target, 12)
-    if any(word in lowered or word in text for word in ("very hard", "severe", "delicate", "ancient", "呪い", "古代", "繊細", "かなり難しい")):
-        target = max(target, 14)
-    if any(word in lowered or word in text for word in ("master", "legendary", "impossible", "dragon", "artifact", "熟練の技術", "伝説", "不可能", "神器")):
-        target = max(target, 16)
-    if any(word in lowered or word in text for word in ("miracle", "fate", "one chance", "奇跡", "時の運", "一か八か")):
-        target = max(target, 18)
-    return _normalise_roll_target(target)
-
-
-def _normalise_roll_target(value: Any) -> int:
-    number = max(6, min(18, _safe_int(value, 10)))
-    return min((6, 8, 10, 12, 14, 16, 18), key=lambda target: (abs(target - number), target))
-
-
-def _roll_ability_label(ability: str) -> str:
-    return {
-        "str": "筋力",
-        "dex": "器用",
-        "con": "耐久",
-        "int": "知力",
-        "wis": "判断",
-        "cha": "魅力",
-        "magic": "魔力",
-        "will": "意志",
-    }.get(str(ability or ""), str(ability or "能力"))
-
-
-def _contains_any_action_roll_keyword(text: str, lowered: str) -> bool:
-    keywords = (
-        "search",
-        "investigate",
-        "examine",
-        "lockpick",
-        "pick lock",
-        "force",
-        "break",
-        "climb",
-        "jump",
-        "swim",
-        "sneak",
-        "hide",
-        "steal",
-        "persuade",
-        "convince",
-        "threaten",
-        "deceive",
-        "negotiate",
-        "bargain",
-        "craft",
-        "combine",
-        "upgrade",
-        "repair",
-        "disarm",
-        "track",
-        "decipher",
-        "cast",
-        "ritual",
-        "heal",
-        "treat",
-        "resist",
-        "endure",
-        "dodge",
-        "chase",
-        "trap",
-        "forage",
-        "harvest",
-        "mine",
-        "brew",
-        "探索",
-        "調査",
-        "探す",
-        "調べ",
-        "開錠",
-        "鍵",
-        "こじ開け",
-        "破壊",
-        "登る",
-        "跳ぶ",
-        "泳ぐ",
-        "忍び",
-        "隠れる",
-        "盗む",
-        "説得",
-        "交渉",
-        "脅す",
-        "騙す",
-        "値切",
-        "クラフト",
-        "合成",
-        "強化",
-        "修理",
-        "罠",
-        "解読",
-        "魔法",
-        "儀式",
-        "治療",
-        "耐える",
-        "避け",
-        "追跡",
-        "採取",
-        "採掘",
-        "調合",
-    )
-    return any(keyword in lowered or keyword in text for keyword in keywords)
-
-
-def _looks_like_simple_auto_action(text: str, lowered: str) -> bool:
-    simple_keywords = (
-        "go to",
-        "move to",
-        "head to",
-        "visit",
-        "enter",
-        "leave",
-        "open map",
-        "map",
-        "quest board",
-        "inventory",
-        "status",
-        "look around",
-        "wait",
-        "rest",
-        "talk to",
-        "speak to",
-        "行く",
-        "向かう",
-        "移動",
-        "入る",
-        "出る",
-        "地図",
-        "掲示板",
-        "インベントリ",
-        "所持品",
-        "周囲を見る",
-        "待つ",
-        "休む",
-        "話しかけ",
-    )
-    return any(keyword in lowered or keyword in text for keyword in simple_keywords)
 
 
 def _roll_rarity_rank(rarity: str) -> int:
@@ -20001,6 +20617,42 @@ def _is_movement_intent(action: str) -> bool:
 def _is_surprise_attack_action(action: str) -> bool:
     text = action.strip().lower()
     return any(keyword in text for keyword in ("不意打ち", "奇襲", "先制", "背後から", "ambush", "surprise", "sneak attack"))
+
+
+def _combat_start_tool_candidate(action: str) -> bool:
+    text = str(action or "").strip()
+    if not text:
+        return False
+    lowered = text.casefold()
+    if _is_attack_action(text) or _is_aggressive_player_action(text) or _is_surprise_attack_action(text):
+        return True
+    english_keywords = (
+        "ambush",
+        "charge",
+        "draw weapon",
+        "draw my weapon",
+        "open fire",
+        "first strike",
+        "preemptive",
+        "sneak attack",
+        "start combat",
+        "begin combat",
+        "battle",
+    )
+    japanese_keywords = (
+        "戦闘",
+        "攻撃",
+        "奇襲",
+        "不意打ち",
+        "先制",
+        "殴",
+        "斬",
+        "刺",
+        "撃",
+        "射",
+        "襲",
+    )
+    return any(word in lowered for word in english_keywords) or any(word in text for word in japanese_keywords)
 
 
 def _is_skill_action(action: str) -> bool:
@@ -20818,54 +21470,6 @@ def _actor_state_is_present(value: str) -> bool:
     return actor_state not in {"absent", "gone", "left", "hidden", "dead", "ended", "inactive", "removed", "fled", "escaped", "retreated"}
 
 
-def _combat_trigger_text(action: str, response: dict[str, Any], narration: str, choices: list[str]) -> str:
-    parts = [
-        action,
-        narration,
-        str(response.get("narration") or ""),
-        str(response.get("text") or ""),
-        str(response.get("message") or ""),
-        str(response.get("event") or ""),
-        json.dumps(_as_list(response.get("choices")) + choices, ensure_ascii=False, default=str),
-    ]
-    return "\n".join(part for part in parts if str(part or "").strip())
-
-
-def _text_implies_combat_started(text: str) -> bool:
-    source = str(text or "")
-    lowered = source.casefold()
-    english = (
-        "attacks",
-        "starts attacking",
-        "is attacking",
-        "attacked you",
-        "attacks you",
-        "attack begins",
-        "battle begins",
-        "combat begins",
-        "lunges at you",
-        "charges at you",
-        "pounces on you",
-    )
-    japanese = (
-        "襲い掛か",
-        "襲いかか",
-        "襲ってき",
-        "攻撃してき",
-        "飛びかか",
-        "飛び掛か",
-        "突進してき",
-        "戦闘が始",
-        "戦闘に突入",
-        "戦いが始",
-        "牙をむいて飛び",
-        "爪を振りかざ",
-        "こちらへ襲",
-        "こちらに襲",
-    )
-    return any(word in lowered for word in english) or any(word in source for word in japanese)
-
-
 def _install_quest_modules() -> None:
     from . import quest_board
     from . import quest_deadline
@@ -20957,7 +21561,6 @@ def _install_quest_modules() -> None:
             "_quest_branch_parent",
             "_ensure_quest_branch_connection",
             "_quest_objective_subnode_display",
-            "_quest_destination_choices",
             "_quest_destination_for_action",
         ),
         quest_objective: (

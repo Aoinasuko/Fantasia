@@ -36,6 +36,16 @@ class LlmToolName(str, Enum):
     MOVEMENT_STATUS = "movement_status"
     MOVE_PLAYER = "move_player"
     START_COMBAT = "start_combat"
+    QUEST_REPORT = "quest_report"
+    QUEST_ACCEPT = "quest_accept"
+    QUEST_ABANDON = "quest_abandon"
+    FACILITY_VISIT = "facility_visit"
+    FACILITY_REQUEST = "facility_request"
+    CONVERSATION_START = "conversation_start"
+    CONVERSATION_END = "conversation_end"
+    TRADE_NEGOTIATION = "trade_negotiation"
+    HOME_PURCHASE = "home_purchase"
+    PLAYER_REST = "player_rest"
     DISCOVER_LOCATION = "discover_location"
     GENERATE_DUNGEON = "generate_dungeon"
     GENERATE_QUEST = "generate_quest"
@@ -256,6 +266,114 @@ def run_llm_tool(engine: Any, call: LlmToolCall) -> LlmToolResult:
         movement = call.movement_result or {}
         lines = [str(line) for line in movement.get("status_lines", []) if str(line).strip()]
         return LlmToolResult(name, lines=lines, acted=bool(lines))
+    if name == LlmToolName.MOVE_PLAYER:
+        event = engine._apply_response_move_player_tool(
+            response,
+            source,
+            action=call.action,
+            input_type=call.input_type,
+            location=call.location,
+        )
+        return LlmToolResult(
+            name,
+            lines=[str(line) for line in event.get("lines", []) if str(line).strip()],
+            event=event,
+            acted=bool(event.get("handled")),
+        )
+    if name == LlmToolName.START_COMBAT:
+        event = engine._apply_response_start_combat_tool(
+            response,
+            source,
+            action=call.action,
+            input_type=call.input_type,
+            location=call.location,
+        )
+        return LlmToolResult(
+            name,
+            lines=[str(line) for line in event.get("lines", []) if str(line).strip()],
+            event=event,
+            acted=bool(event.get("started")),
+        )
+    if name == LlmToolName.QUEST_REPORT:
+        event = engine._apply_response_quest_report_tool(
+            response,
+            source,
+            action=call.action,
+            input_type=call.input_type,
+        )
+        return LlmToolResult(name, event=event, acted=bool(event.get("handled")))
+    if name == LlmToolName.QUEST_ACCEPT:
+        event = engine._apply_response_quest_accept_tool(
+            response,
+            source,
+            action=call.action,
+            input_type=call.input_type,
+        )
+        return LlmToolResult(name, event=event, acted=bool(event.get("handled")))
+    if name == LlmToolName.QUEST_ABANDON:
+        event = engine._apply_response_quest_abandon_tool(
+            response,
+            source,
+            action=call.action,
+            input_type=call.input_type,
+        )
+        return LlmToolResult(name, event=event, acted=bool(event.get("handled")))
+    if name == LlmToolName.FACILITY_VISIT:
+        event = engine._apply_response_facility_visit_tool(
+            response,
+            source,
+            action=call.action,
+            input_type=call.input_type,
+        )
+        return LlmToolResult(name, event=event, acted=bool(event.get("handled")))
+    if name == LlmToolName.FACILITY_REQUEST:
+        event = engine._apply_response_facility_request_tool(
+            response,
+            source,
+            action=call.action,
+            input_type=call.input_type,
+        )
+        return LlmToolResult(name, event=event, acted=bool(event.get("handled")))
+    if name == LlmToolName.CONVERSATION_START:
+        event = engine._apply_response_conversation_start_tool(
+            response,
+            source,
+            action=call.action,
+            input_type=call.input_type,
+        )
+        return LlmToolResult(name, event=event, acted=bool(event.get("handled")))
+    if name == LlmToolName.CONVERSATION_END:
+        event = engine._apply_response_conversation_end_tool(
+            response,
+            source,
+            action=call.action,
+            input_type=call.input_type,
+        )
+        return LlmToolResult(name, event=event, acted=bool(event.get("handled")))
+    if name == LlmToolName.TRADE_NEGOTIATION:
+        event = engine._apply_response_trade_negotiation_tool(
+            response,
+            source,
+            action=call.action,
+            input_type=call.input_type,
+        )
+        return LlmToolResult(name, event=event, acted=bool(event.get("handled")))
+    if name == LlmToolName.HOME_PURCHASE:
+        event = engine._apply_response_home_purchase_tool(
+            response,
+            source,
+            action=call.action,
+            input_type=call.input_type,
+        )
+        return LlmToolResult(name, event=event, acted=bool(event.get("handled")))
+    if name == LlmToolName.PLAYER_REST:
+        event = engine._apply_response_player_rest_tool(
+            response,
+            source,
+            action=call.action,
+            input_type=call.input_type,
+        )
+        return LlmToolResult(name, event=event, acted=bool(event.get("handled")))
     if name == LlmToolName.NPC_ACTION:
         result = apply_npc_action_tool(
             engine,
@@ -340,18 +458,25 @@ def tool_prompt_instruction() -> str:
         "Each tool judgement item must be {\"name\":\"tool_name\",\"confidence\":0.0-1.0,\"arguments\":{...},\"reason\":\"...\"}. "
         "The game executes only tool judgements whose confidence is exactly 1.0; 0.99 or missing confidence is not executed. "
         "Set confidence to 1.0 only when the state change is definitely intended by the action and current context. "
+        "Use start_combat only when combat actually begins now. Mentioning danger, an enemy, traces of an attack, a threat, "
+        "or an option to fight is not enough. For player-initiated attacks or ambushes, include opponent_name or target_name; "
+        "set surprise_attack=true only when the player takes the first strike immediately. "
         "For the status_effects tool, arguments must be {\"status_effects\":[{\"effect_id\":\"HP_Damage/SP_Damage/Paralysis/Silence/Psychosis/Inoperable/SendLLM/Atk_Mod/Def_Mod\",...}]}; "
         "status effects without explicit effect_id are ignored. "
         "Supported tools: move_player, status_effects, hp_effects, sp_effects, gold_delta, hunger_delta, "
         "exp_delta, time_passage, game_over, npc_change_relationship, npc_move, npc_join_party, "
         "npc_remove_party, npc_dead, npc_capture_player, npc_update_memory, npc_update_description, "
         "world_home_construction, world_mainnode_reveal, world_subnode_reveal, "
-        "crime_risk, item_add, item_remove, item_equip, item_unequip, craft, visual_intent, start_combat, discover_location, generate_dungeon, generate_quest, spawn_npc, spawn_enemy, "
+        "crime_risk, item_add, item_remove, item_equip, item_unequip, craft, visual_intent, start_combat, "
+        "quest_report, quest_accept, quest_abandon, facility_visit, facility_request, conversation_start, "
+        "conversation_end, trade_negotiation, home_purchase, player_rest, discover_location, generate_dungeon, generate_quest, spawn_npc, spawn_enemy, "
         "spawn_boss, request_npc_generation, quest_event, quest_progress, quest_update. "
         "Use craft when the player explicitly tries crafting, cooking, smithing, alchemy, combining, or processing items; "
         "arguments must include consume_items as an array of item names or item_uuid values from current craft candidates, "
         "craft_type as auto|mix|synthesis|smithing|alchemy|cooking, and content as the intended result or request. "
         "Do not also emit item_add or item_remove for the same craft; the craft tool consumes materials and creates the result. "
+        "Use home_purchase only when the player explicitly buys a home through a town hall plan. "
+        "Use player_rest only when the player explicitly rests at an inn, their home, or the current area. "
         "Use generate_dungeon only when a definite clue, diary, map, document, rumor, or magical effect reveals an unknown dungeon near the current or adjacent main node; "
         "arguments may include {\"name\":\"dungeon name\",\"description\":\"short description\",\"dungeon_subtype\":\"forest|mountain|ruin|cave|mine|labyrinth|crypt|lair\",\"anchor_location\":\"current or adjacent location\",\"reason\":\"why it is revealed\"}. "
         "Use an empty tool_judgements array when no state changes are needed."
@@ -469,6 +594,16 @@ def apply_common_response_tools(
             if tool_name in {
                 LlmToolName.MOVE_PLAYER,
                 LlmToolName.START_COMBAT,
+                LlmToolName.QUEST_REPORT,
+                LlmToolName.QUEST_ACCEPT,
+                LlmToolName.QUEST_ABANDON,
+                LlmToolName.FACILITY_VISIT,
+                LlmToolName.FACILITY_REQUEST,
+                LlmToolName.CONVERSATION_START,
+                LlmToolName.CONVERSATION_END,
+                LlmToolName.TRADE_NEGOTIATION,
+                LlmToolName.HOME_PURCHASE,
+                LlmToolName.PLAYER_REST,
                 LlmToolName.DISCOVER_LOCATION,
                 LlmToolName.GENERATE_QUEST,
                 LlmToolName.SPAWN_NPC,
@@ -542,7 +677,36 @@ def _merge_tool_payload(payload: dict[str, Any], tool_name: LlmToolName, args: d
         return
     if tool_name == LlmToolName.START_COMBAT:
         payload["combat_started"] = True
-        _merge_keys(payload, args, ("opponent_name", "target_name", "enemy_name", "narration", "reason"))
+        _merge_keys(
+            payload,
+            args,
+            (
+                "opponent_name",
+                "target_name",
+                "enemy_name",
+                "narration",
+                "reason",
+                "surprise",
+                "surprise_attack",
+                "first_strike",
+                "preemptive",
+                "player_initiated",
+            ),
+        )
+        return
+    if tool_name in {
+        LlmToolName.QUEST_REPORT,
+        LlmToolName.QUEST_ACCEPT,
+        LlmToolName.QUEST_ABANDON,
+        LlmToolName.FACILITY_VISIT,
+        LlmToolName.FACILITY_REQUEST,
+        LlmToolName.CONVERSATION_START,
+        LlmToolName.CONVERSATION_END,
+        LlmToolName.TRADE_NEGOTIATION,
+        LlmToolName.HOME_PURCHASE,
+        LlmToolName.PLAYER_REST,
+    }:
+        payload.update(args)
         return
     if tool_name == LlmToolName.DISCOVER_LOCATION:
         payload["discovered_location"] = _single_or_value(args, "location", "discovered_location", "value")

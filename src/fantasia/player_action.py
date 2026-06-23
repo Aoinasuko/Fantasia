@@ -26,11 +26,11 @@ class ActionCommandType(str, Enum):
     FACILITY = "facility"
     QUEST_START = "quest_start"
     QUEST_REPORT = "quest_report"
-    QUEST_GO_TO_DESTINATION = "quest_go_to_destination"
     QUEST_OBJECTIVE_ACTION = "quest_objective_action"
     QUEST_ABANDON = "quest_abandon"
     CONVERSATION_CONTINUE = "conversation_continue"
     CONVERSATION_START = "conversation_start"
+    CONVERSATION_END = "conversation_end"
     FIELD_EVENT = "field_event"
     MASTER_AI = "master_ai"
 
@@ -120,11 +120,8 @@ def quest_action_command_type(
 ) -> ActionCommandType:
     if is_quest_abandon_action(action):
         return ActionCommandType.QUEST_ABANDON
-    destination_requested = _quest_destination_action_requested(engine, quest, action)
     if _explicit_quest_report_action(action):
         return ActionCommandType.QUEST_REPORT
-    if destination_requested:
-        return ActionCommandType.QUEST_GO_TO_DESTINATION
     if is_quest_report_action(action):
         return ActionCommandType.QUEST_REPORT
     return ActionCommandType.QUEST_OBJECTIVE_ACTION
@@ -156,37 +153,12 @@ def _explicit_quest_report_action(action: str) -> bool:
     return any(word in lowered for word in ("report quest", "turn in quest", "claim reward"))
 
 
-def _quest_destination_action_requested(engine: Any, quest: Any, action: str) -> bool:
-    destination = getattr(quest, "extra", {}).get("destination") if isinstance(getattr(quest, "extra", None), dict) else {}
-    if not isinstance(destination, dict):
-        return False
-    location_name = str(destination.get("location") or destination.get("destination_location") or "").strip()
-    objective_name = str(destination.get("objective_subnode_name") or "").strip()
-    objective_id = str(destination.get("objective_subnode_id") or "").strip()
-    if location_name and location_name not in getattr(engine.state.world_data, "locations", {}):
-        return False
-    text = str(action or "")
-    lowered = text.casefold()
-    movement_requested = any(word in text for word in ("向か", "行く", "移動", "出発", "進む", "入る", "戻")) or any(
-        word in lowered for word in ("go", "travel", "move", "head", "depart", "enter", "return")
-    )
-    if not movement_requested:
-        return False
-    named_target = any(value and value in text for value in (location_name, objective_name, objective_id))
-    generic_target = any(word in text for word in ("目的地", "現地", "目標地点")) or any(
-        word in lowered for word in ("destination", "target site", "objective site")
-    )
-    return named_target or generic_target
-
-
 def resolve_player_input(
     engine: Any,
     action: str,
     input_type: str,
     *,
     as_bool: Callable[[Any], bool],
-    is_attack_action: Callable[[str], bool],
-    is_surprise_attack_action: Callable[[str], bool],
     is_exploration_action: Callable[[str], bool],
     is_skill_action: Callable[[str], bool],
     is_quest_abandon_action: Callable[[str], bool],
@@ -328,32 +300,34 @@ def resolve_player_input(
     if home_result is not None:
         return finish(command(ActionCommandType.HOME), home_result)
 
-    if is_attack_action(action_text):
-        if is_surprise_attack_action(action_text):
-            return finish(command(ActionCommandType.ATTACK, payload={"surprise": True}), engine._resolve_player_attack(action_text, input_type))
-        return finish(command(ActionCommandType.ATTACK), engine._start_encounter_from_attack(action_text, input_type))
+    if action_text == "休息する":
+        rest_result = engine._resolve_player_rest_tool_action(action_text, input_type)
+        if rest_result is not None:
+            return finish(command(ActionCommandType.HOME, payload={"llm_tool": "player_rest"}), rest_result)
 
-    if input_type != PlayerInputType.FREE_ACTION.value:
-        craft_result = engine._resolve_craft_action(action_text, input_type)
-        if craft_result is not None:
-            return finish(command(ActionCommandType.CRAFT), craft_result)
-
-    trade_negotiation_target = engine._trade_negotiation_target(action_text)
-    if trade_negotiation_target:
+    combat_start_result = engine._resolve_start_combat_tool_action(action_text, input_type)
+    if combat_start_result is not None:
         return finish(
-            command(ActionCommandType.TRADE_NEGOTIATION, target=str(trade_negotiation_target.name)),
-            engine._resolve_trade_negotiation_action(action_text, input_type, trade_negotiation_target),
+            command(ActionCommandType.ATTACK, payload={"llm_tool": "start_combat"}),
+            combat_start_result,
         )
 
-    facility_result = engine._create_facility_from_action(action_text, input_type)
+    trade_result = engine._resolve_trade_negotiation_tool_action(action_text, input_type)
+    if trade_result:
+        return finish(
+            command(ActionCommandType.TRADE_NEGOTIATION, payload={"llm_tool": "trade_negotiation"}),
+            trade_result,
+        )
+
+    facility_result = engine._resolve_facility_tool_action(action_text, input_type)
     if facility_result is not None:
-        return finish(command(ActionCommandType.FACILITY), facility_result)
+        return finish(command(ActionCommandType.FACILITY, payload={"llm_tool": "facility_visit_or_request"}), facility_result)
 
     quest_to_start = engine._find_quest_to_start(action_text)
     if quest_to_start:
         return finish(
-            command(ActionCommandType.QUEST_START, target=str(quest_to_start.name)),
-            engine._start_quest(action_text, input_type, quest_to_start),
+            command(ActionCommandType.QUEST_START, target=str(quest_to_start.name), payload={"llm_tool": "quest_accept"}),
+            engine._resolve_quest_accept_tool_action(action_text, input_type, quest_to_start),
         )
 
     if engine.state.active_quest:
@@ -370,12 +344,21 @@ def resolve_player_input(
                 conversation_target = engine._find_conversation_target(action_text)
                 if conversation_target:
                     return finish(
-                        command(ActionCommandType.CONVERSATION_START, target=str(conversation_target.name)),
-                        engine._start_conversation(action_text, input_type, conversation_target),
+                        command(ActionCommandType.CONVERSATION_START, target=str(conversation_target.name), payload={"llm_tool": "conversation_start"}),
+                        engine._resolve_conversation_tool_action(action_text, input_type),
                     )
+            if quest_command_type == ActionCommandType.QUEST_REPORT:
+                return finish(
+                    command(ActionCommandType.QUEST_REPORT, target=str(active_quest.name), payload={"llm_tool": "quest_report"}),
+                    engine._resolve_quest_report_tool_action(action_text, input_type),
+                )
+            if quest_command_type == ActionCommandType.QUEST_ABANDON:
+                return finish(
+                    command(ActionCommandType.QUEST_ABANDON, target=str(active_quest.name), payload={"llm_tool": "quest_abandon"}),
+                    engine._resolve_quest_abandon_tool_action(action_text, input_type),
+                )
             action_roll = None
-            if quest_command_type != ActionCommandType.QUEST_REPORT:
-                action_roll = engine._action_roll_for_input(action_text, input_type, "quest")
+            action_roll = engine._action_roll_for_input(action_text, input_type, "quest")
             action_kind = player_action_type_for_text(
                 action_text,
                 is_skill_action=is_skill_action,
@@ -398,6 +381,12 @@ def resolve_player_input(
 
     active_conversation = engine._active_conversation_character()
     if active_conversation:
+        conversation_end_result = engine._resolve_conversation_tool_action(action_text, input_type)
+        if conversation_end_result:
+            return finish(
+                command(ActionCommandType.CONVERSATION_END, target=str(active_conversation.name), payload={"llm_tool": "conversation_end"}),
+                conversation_end_result,
+            )
         action_roll = engine._action_roll_for_input(action_text, input_type, "conversation")
         return finish(
             command(ActionCommandType.CONVERSATION_CONTINUE, target=str(active_conversation.name), payload={"action_roll": action_roll or {}}),
@@ -407,8 +396,8 @@ def resolve_player_input(
     conversation_target = engine._find_conversation_target(action_text)
     if conversation_target:
         return finish(
-            command(ActionCommandType.CONVERSATION_START, target=str(conversation_target.name)),
-            engine._start_conversation(action_text, input_type, conversation_target),
+            command(ActionCommandType.CONVERSATION_START, target=str(conversation_target.name), payload={"llm_tool": "conversation_start"}),
+            engine._resolve_conversation_tool_action(action_text, input_type),
         )
 
     action_roll: dict[str, Any] | None = None
@@ -419,54 +408,6 @@ def resolve_player_input(
     exploration_action = is_exploration_action(action_text)
     if exploration_action:
         action_roll = engine._action_roll_for_input(action_text, input_type, "exploration")
-    if exploration_action and engine._should_run_field_event_evaluator(action_text, input_type):
-        field_event_trigger = engine._roll_field_event_trigger(action_text, input_type, action_roll)
-        if not as_bool(field_event_trigger.get("triggered")):
-            engine.state.world_data.history.append(
-                {
-                    "manager": "field_event_local_roll",
-                    "action": action_text,
-                    "input_type": input_type,
-                    "action_roll": action_roll,
-                    "field_event_trigger": field_event_trigger,
-                    "event_occurred": False,
-                    "called_llm": False,
-                }
-            )
-        else:
-            field_event = engine._field_event_evaluator(
-                action_text,
-                input_type,
-                action_roll=action_roll,
-                field_event_trigger=field_event_trigger,
-            )
-            if as_bool(field_event.get("event_occurred")):
-                return finish(
-                    command(
-                        ActionCommandType.FIELD_EVENT,
-                        payload={"field_event_trigger": field_event_trigger, "routed_to": ActionCommandType.FIELD_EVENT.value},
-                    ),
-                    engine._apply_field_event(
-                        action_text,
-                        input_type,
-                        field_event,
-                        action_roll=action_roll,
-                        field_event_trigger=field_event_trigger,
-                    ),
-                )
-            engine.state.world_data.history.append(
-                {
-                    "manager": "field_event_evaluator",
-                    "action": action_text,
-                    "input_type": input_type,
-                    "action_roll": action_roll,
-                    "field_event_trigger": field_event_trigger,
-                    "event_occurred": False,
-                    "response": strip_response_metadata(field_event)
-                    if strip_response_metadata is not None
-                    else field_event,
-                }
-            )
 
     if action_roll is None:
         action_roll = engine._action_roll_for_input(action_text, input_type, "action")

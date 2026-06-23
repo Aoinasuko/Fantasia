@@ -10,6 +10,10 @@ from .status_effects import FLED_STATUS_ID, SURRENDERED_STATUS_ID, canonical_sta
 
 
 class CombatToolName(str, Enum):
+    PLAYER_ATTACK = "player_attack"
+    PLAYER_SKILL = "player_skill"
+    PLAYER_ESCAPE = "player_escape"
+    PLAYER_ACCEPT_SURRENDER = "player_accept_surrender"
     COMBAT_END = "combat_end"
     PLAYER_SURRENDER = "player_surrender"
     ACCEPT_PLAYER_SURRENDER = "accept_player_surrender"
@@ -177,6 +181,14 @@ def apply_combat_response_tools(
 
 def run_combat_tool(engine: Any, call: CombatToolCall) -> CombatToolResult:
     encounter = call.encounter or {}
+    if call.name == CombatToolName.PLAYER_ATTACK:
+        return _tool_player_attack(engine, encounter, call)
+    if call.name == CombatToolName.PLAYER_SKILL:
+        return _tool_player_skill(engine, encounter, call)
+    if call.name == CombatToolName.PLAYER_ESCAPE:
+        return _tool_player_escape(engine, encounter, call)
+    if call.name == CombatToolName.PLAYER_ACCEPT_SURRENDER:
+        return _tool_player_accept_surrender(engine, encounter, call)
     if call.name == CombatToolName.PLAYER_SURRENDER:
         return _tool_player_surrender(engine, encounter, call.payload)
     if call.name == CombatToolName.ACCEPT_PLAYER_SURRENDER:
@@ -194,6 +206,65 @@ def run_combat_tool(engine: Any, call: CombatToolCall) -> CombatToolResult:
     if call.name == CombatToolName.COMBAT_END:
         return _tool_combat_end(engine, encounter, call.payload)
     return CombatToolResult(call.name)
+
+
+def _tool_player_attack(engine: Any, encounter: dict[str, Any], call: CombatToolCall) -> CombatToolResult:
+    target_name = str(call.payload.get("target_name") or call.payload.get("target") or "").strip()
+    action = str(call.payload.get("action") or call.action or "").strip()
+    if target_name and target_name not in action:
+        action = f"{target_name}を攻撃する"
+    if not action:
+        action = "攻撃する"
+    log_text = engine._resolve_player_attack(action, call.input_type or "choice", encounter)
+    finished = not bool(engine._active_encounter())
+    return CombatToolResult(
+        CombatToolName.PLAYER_ATTACK,
+        event={"kind": "player_attack", "target_name": target_name, "log_text": log_text},
+        acted=True,
+        finished=finished,
+    )
+
+
+def _tool_player_skill(engine: Any, encounter: dict[str, Any], call: CombatToolCall) -> CombatToolResult:
+    skill_name = str(call.payload.get("skill_name") or call.payload.get("skill") or "").strip()
+    target_name = str(call.payload.get("target_name") or call.payload.get("target") or "").strip()
+    action = str(call.payload.get("action") or call.action or "").strip()
+    if skill_name:
+        action = f"スキル: {skill_name}" + (f" -> {target_name}" if target_name else "")
+    if not action:
+        action = "スキル"
+    log_text = engine._resolve_player_skill(action, call.input_type or "choice", encounter)
+    finished = not bool(engine._active_encounter())
+    return CombatToolResult(
+        CombatToolName.PLAYER_SKILL,
+        event={"kind": "player_skill", "skill_name": skill_name, "target_name": target_name, "log_text": log_text},
+        acted=True,
+        finished=finished,
+    )
+
+
+def _tool_player_escape(engine: Any, encounter: dict[str, Any], call: CombatToolCall) -> CombatToolResult:
+    action = str(call.payload.get("action") or call.action or "逃走する").strip()
+    log_text = engine._resolve_player_escape(action, call.input_type or "choice", encounter)
+    finished = not bool(engine._active_encounter())
+    return CombatToolResult(
+        CombatToolName.PLAYER_ESCAPE,
+        event={"kind": "player_escape", "log_text": log_text},
+        acted=True,
+        finished=finished,
+    )
+
+
+def _tool_player_accept_surrender(engine: Any, encounter: dict[str, Any], call: CombatToolCall) -> CombatToolResult:
+    action = str(call.payload.get("action") or call.action or "降伏を受け入れる").strip()
+    log_text = engine._accept_opponent_surrender(action, call.input_type or "choice", encounter)
+    finished = not bool(engine._active_encounter())
+    return CombatToolResult(
+        CombatToolName.PLAYER_ACCEPT_SURRENDER,
+        event={"kind": "player_accept_surrender", "log_text": log_text},
+        acted=True,
+        finished=finished,
+    )
 
 
 def _tool_player_surrender(engine: Any, encounter: dict[str, Any], payload: dict[str, Any]) -> CombatToolResult:

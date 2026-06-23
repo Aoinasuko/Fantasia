@@ -57,7 +57,11 @@ def resolve_player_skill(engine: Any, action: str, input_type: str, encounter: d
         event = engine._apply_player_sp_delta(-cost, source="skill", reason=str(skill.get("name") or ""), encounter=encounter)
         if event.get("line"):
             encounter.setdefault("pending_resource_lines", []).append(str(event["line"]))
-    target = engine._select_encounter_target_from_action(encounter, action)
+    selector = getattr(engine, "_select_player_skill_target_from_action", None)
+    if callable(selector):
+        target = selector(encounter, action, skill)
+    else:
+        target = engine._select_encounter_target_from_action(encounter, action)
     response = _resolve_skill(engine, encounter, actor=player, target=target, skill=skill, action=action, source="player_skill")
     return finish_combat_round(engine, action, input_type, encounter, response, "combat_player_skill")
 
@@ -328,7 +332,9 @@ def _resolve_skill(
             for item in engine._living_encounter_opponents(encounter):
                 calc_results.append(_apply_skill_sp_damage(engine, encounter, actor, item, skill, effect))
         elif effect_type == "heal_single":
-            calc_results.append(_apply_skill_hp_heal(engine, encounter, actor, actor, skill, effect, source=source))
+            heal_targets = targets[:1] if targets else [actor]
+            for item in heal_targets:
+                calc_results.append(_apply_skill_hp_heal(engine, encounter, actor, item, skill, effect, source=source))
         elif effect_type == "heal_party":
             for item in _same_side_targets(engine, encounter, actor):
                 calc_results.append(_apply_skill_hp_heal(engine, encounter, actor, item, skill, effect, source=source))
@@ -339,7 +345,7 @@ def _resolve_skill(
         elif effect_type == "effect_self":
             calc_results.append(_apply_skill_buff(actor, skill, effect))
         elif effect_type in {"effect_ally_single", "effect_ally_party"}:
-            affected = [actor] if effect_type.endswith("_single") else _same_side_targets(engine, encounter, actor)
+            affected = (targets[:1] if targets else [actor]) if effect_type.endswith("_single") else _same_side_targets(engine, encounter, actor)
             for item in affected:
                 calc_results.append(_apply_skill_buff(item, skill, effect))
     for calc in calc_results:

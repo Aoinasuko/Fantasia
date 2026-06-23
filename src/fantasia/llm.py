@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .action_roll import fallback_action_roll_judgement
 from .config import AppConfig
 from .paths import BIN_DIR, LOG_DIR, ROOT, resolve_model_path
 
@@ -310,6 +311,23 @@ class FixtureLlmBackend(BaseLlmBackend):
                     else "この行動は通常進行へ渡せます。"
                 ),
                 "suggested_action": "" if not impossible else "周囲を調べ、実際に使える手段を探す",
+            }
+        elif manager_name == "action_roll_judger":
+            try:
+                fixture_context = json.loads(user_text)
+            except Exception:
+                fixture_context = {}
+            action = str(fixture_context.get("action") or _extract_action(user_text) or user_text) if isinstance(fixture_context, dict) else user_text
+            purpose = str(fixture_context.get("purpose") or "action") if isinstance(fixture_context, dict) else "action"
+            try:
+                danger = int(float(fixture_context.get("current_location_danger") or 0)) if isinstance(fixture_context, dict) else 0
+            except (TypeError, ValueError):
+                danger = 0
+            judgement = fallback_action_roll_judgement(action, purpose, danger)
+            content = {
+                "attribute_scores": judgement["attribute_scores"],
+                "difficulty": judgement["difficulty"],
+                "reason": judgement["reason"],
             }
         elif manager_name == "create_story":
             content = {
@@ -841,6 +859,35 @@ class FixtureLlmBackend(BaseLlmBackend):
                 "confidence": 90 if target != "未知の魔物" else 30,
                 "reason": "プレイヤー行動と一時コンテキストログから戦闘対象を推定した。",
             }
+        elif manager_name == "start_combat_intent_evaluator":
+            action = _extract_action(user_text)
+            lowered = action.casefold()
+            noncombat = any(word in action for word in ("跡", "痕跡", "調べ", "確認", "読む", "会話", "説得", "降伏", "無抵抗"))
+            hostile = any(
+                word in action or word in lowered
+                for word in ("攻撃", "殴", "斬", "刺", "撃", "射", "襲", "奇襲", "不意打ち", "attack", "strike", "ambush", "fight")
+            )
+            target = _extract_fixture_visible_enemy(user_text) or _extract_fixture_encounter_target(action) or "敵対者"
+            tool_judgements = []
+            if hostile and not noncombat:
+                tool_judgements.append(
+                    {
+                        "name": "start_combat",
+                        "confidence": 1.0,
+                        "arguments": {
+                            "opponent_name": target,
+                            "surprise_attack": any(word in action for word in ("奇襲", "不意打ち", "先制")) or "ambush" in lowered,
+                            "player_initiated": True,
+                        },
+                        "reason": "Fixture combat-start tool judgement.",
+                    }
+                )
+            content = {
+                "intent": {"kind": "combat_start" if tool_judgements else "noncombat"},
+                "narration": "",
+                "choices": [],
+                "tool_judgements": tool_judgements,
+            }
         elif manager_name == "hostile_npc_encounter_evaluator":
             target = _extract_fixture_visible_enemy(user_text) or "敵対者"
             content = {
@@ -850,16 +897,6 @@ class FixtureLlmBackend(BaseLlmBackend):
                 "stance": "watching",
                 "choices": ["距離を取る", "武器を構える", "声をかける"],
                 "reason": "Fixture hostile encounter response.",
-            }
-        elif manager_name == "combat_transition_detector":
-            text = user_text.casefold()
-            started = any(word in text for word in ("襲い掛", "襲いかか", "攻撃してき", "飛びかか", "attacks", "attack"))
-            target = _extract_fixture_visible_enemy(user_text) or _extract_fixture_encounter_target(user_text) or ""
-            content = {
-                "combat_started": started,
-                "opponent_name": target,
-                "narration": f"{target or '敵'}との戦闘が始まった。" if started else "",
-                "reason": "Fixture combat transition detector.",
             }
         elif manager_name == "context_reference_resolver":
             action = _extract_action(user_text)

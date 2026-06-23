@@ -36,10 +36,7 @@ def _start_quest(self, action: str, input_type: str, quest: QuestData) -> str:
 
     narration = str(response.get("narration") or response.get("text") or f"クエスト「{quest.name}」を開始した。")
     location = self._quest_starter_location(action, tool_payload)
-    choices = self._augment_location_choices(
-        _as_str_list(response.get("choices")) + self._quest_destination_choices(quest_destination, location),
-        location,
-    )
+    choices = self._augment_location_choices(_as_str_list(response.get("choices")), location)
     quest.log.append(
         {
             "manager": "quest_starter",
@@ -107,7 +104,7 @@ def _quest_starter(self, quest: QuestData) -> dict[str, Any]:
                 f"quest_destination: {destination_payload}\n"
                 "このクエストの導入文、最初の目標、選択肢を作ってください。"
                 "まだ目的地へは移動せず、まだ依頼は完了していません。"
-                "選択肢には、準備や聞き込みに加えて、確定済みの目的地へ向かう行動を入れてください。"
+                "選択肢には、準備や聞き込みを入れてください。目的地へ向かう選択肢はゲーム側の移動UIが追加します。"
             ),
         },
     ]
@@ -145,7 +142,7 @@ def _resolve_active_quest_action(
 ) -> str:
     previous_location = self.state.current_location
     current_location = self.state.current_location or self.state.world_data.starting_location
-    quest_movement_explicit = action_command_type == ActionCommandType.QUEST_GO_TO_DESTINATION.value
+    quest_movement_explicit = False
     timeout_event = self._fail_quest_if_deadline_expired(quest, source="quest_deadline", append_log=True)
     if timeout_event:
         self.save_game()
@@ -311,7 +308,6 @@ def _resolve_active_quest_action(
         location,
         narration,
         choices,
-        allow_text_inference=False,
     )
     if transition_response:
         quest.extra["last_combat_transition"] = _strip_response_metadata(transition_response)
@@ -426,9 +422,8 @@ def _quest_referee_with_free_action(
             "content": (
                 "Action command rule: choices are display-only labels for the player and must never be used "
                 "as evidence for movement, quest reporting, reward grants, combat start, or quest completion. "
-                "The game only honors quest destination movement when action_command_type is exactly "
-                "'quest_go_to_destination'. For all other action_command_type values, keep location at the "
-                "current player location even if the narration mentions another place."
+                "Quest destination movement is not handled by this referee. Keep location at the current "
+                "player location even if the narration mentions another place."
             ),
         }
     )

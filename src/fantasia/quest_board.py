@@ -102,7 +102,7 @@ def accept_quest_from_board(self, quest_name: str) -> str:
         )
         self.save_game()
         return self.state.log_text(16)
-    return self._start_quest(f"依頼を受ける: {quest.name}", "choice", quest)
+    return self._resolve_quest_accept_tool_action(f"依頼を受ける: {quest.name}", "choice", quest)
 
 def _active_quest_can_report_at(self, location_name: str = "") -> bool:
     if not self.state.active_quest:

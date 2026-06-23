@@ -29,6 +29,7 @@ from .game import (
     DEFAULT_WORLD_ENEMY_STRENGTH,
     INITIAL_WORLD_TIME_HOURS,
     PLAYER_INVENTORY_MAX_SLOTS,
+    SUBNODE_GRAPH_KEY,
     GameEngine,
 )
 from .generation_log import append_task_event, format_generation_log_detail, list_generation_logs
@@ -3297,7 +3298,7 @@ class FantasiaApp(tk.Tk):
         if normalized in {_ui_text(self.config_data, "game_trade"), "取引", "Trade"} or normalized.casefold() == "trade":
             self._open_trade_inventory(normalized)
             return True
-        if normalized in {_ui_text(self.config_data, "choice_quest_board"), "依頼掲示板を見る", "Open quest board"}:
+        if normalized in {_ui_text(self.config_data, "choice_quest_board"), "依頼掲示板を確認する", "依頼掲示板を見る", "Open quest board"}:
             self._open_quest_board_window()
             return True
         if normalized in {_ui_text(self.config_data, "choice_move"), "移動する", "Move"}:
@@ -3668,15 +3669,16 @@ class FantasiaApp(tk.Tk):
         destination = extra.get("destination") if isinstance(extra.get("destination"), dict) else {}
         pack = extra.get("objective_entities") if isinstance(extra.get("objective_entities"), dict) else {}
         entries = [entry for entry in pack.get("entries", []) if isinstance(entry, dict)] if isinstance(pack, dict) else []
-        location = str(destination.get("location") or extra.get("objective_location") or pack.get("location") or "-")
+        location = str(destination.get("location") or extra.get("objective_location") or pack.get("location") or "").strip()
         subnode_name = str(destination.get("objective_subnode_name") or extra.get("objective_subnode_name") or "")
         subnode_id = str(destination.get("objective_subnode_id") or extra.get("objective_subnode_id") or pack.get("subnode_id") or "")
-        subnode = subnode_name or subnode_id or "-"
+        subnode = self._quest_status_subnode_display_name(location, subnode_id, subnode_name) or "-"
+        location_display = location if location and not _quest_status_internal_place_id(location) else "-"
         lines = [
             f"{_ui_text(self.config_data, 'quest_status_name')}: {quest.name}",
             f"{_ui_text(self.config_data, 'quest_board_status')}: {quest.status}",
             f"{_ui_text(self.config_data, 'quest_board_danger')}: {extra.get('danger_level') or extra.get('planned_danger_level') or '-'}",
-            f"{_ui_text(self.config_data, 'quest_status_destination')}: {location}",
+            f"{_ui_text(self.config_data, 'quest_status_destination')}: {location_display}",
             f"{_ui_text(self.config_data, 'quest_status_subnode')}: {subnode}",
         ]
         remaining = self.engine.active_quest_remaining_time_label() if state.active_quest else ""
@@ -3699,8 +3701,12 @@ class FantasiaApp(tk.Tk):
         kind = str(entry.get("kind") or "")
         name = str(entry.get("name") or entry.get("display_alias") or role or kind or "-")
         status = str(entry.get("status") or "waiting")
-        location = str(entry.get("location") or "")
-        subnode = str(entry.get("subnode_id") or "")
+        location = str(entry.get("location") or "").strip()
+        subnode = self._quest_status_subnode_display_name(
+            location,
+            str(entry.get("subnode_id") or ""),
+            str(entry.get("subnode_name") or entry.get("objective_subnode_name") or ""),
+        )
         todo_map = {
             "rescue_target": {
                 "waiting": "救出対象を見つけて保護する",
@@ -3746,10 +3752,28 @@ class FantasiaApp(tk.Tk):
             },
         }
         todo = todo_map.get(role, {}).get(status) or todo_map.get(role, {}).get("waiting") or _ui_text(self.config_data, "quest_status_continue")
-        place = f" / {location}" if location else ""
+        place_location = location if location and not _quest_status_internal_place_id(location) else ""
+        place = f" / {place_location}" if place_location else ""
         if subnode:
             place += f" / {subnode}"
         return f"{name}: {todo} ({status}){place}"
+
+    def _quest_status_subnode_display_name(self, location: str, subnode_id: str, fallback_name: str = "") -> str:
+        location = str(location or "").strip()
+        subnode_id = str(subnode_id or "").strip()
+        fallback_name = str(fallback_name or "").strip()
+        if fallback_name and not _quest_status_internal_place_id(fallback_name):
+            return fallback_name
+        if location and subnode_id:
+            location_data = self.engine.state.world_data.locations.get(location)
+            graph = location_data.extra.get(SUBNODE_GRAPH_KEY) if location_data and isinstance(location_data.extra, dict) else None
+            nodes = graph.get("nodes") if isinstance(graph, dict) else None
+            node = nodes.get(subnode_id) if isinstance(nodes, dict) else None
+            if isinstance(node, dict):
+                name = str(node.get("name") or node.get("title") or "").strip()
+                if name and not _quest_status_internal_place_id(name):
+                    return name
+        return ""
 
     def _open_quest_board_window(self) -> None:
         if not self.engine.is_current_location_guild():
@@ -5578,8 +5602,6 @@ class FantasiaApp(tk.Tk):
     def _send_choice(self, choice: str) -> None:
         if self.current_task_id:
             return
-        if self._screen_mode() == "battle" and self._handle_battle_menu_choice(choice):
-            return
         if self._maybe_open_explicit_subscreen_choice(choice):
             return
         self._dismiss_active_cg_for_player_input()
@@ -6737,48 +6759,14 @@ class FantasiaApp(tk.Tk):
         return [fallback or "敵"]
 
     def _handle_battle_menu_choice(self, choice: str) -> bool:
-        if choice in {"戻る", "Back"}:
-            self.battle_choice_menu = ""
-            self._refresh_choices()
-            return True
-        if choice in {"攻撃", "スキル", "行動", "逃走"}:
-            allowed = {item for item in self.engine.state.choices if item in {"攻撃", "スキル", "行動", "逃走"}}
-            if allowed and choice not in allowed:
-                return False
-            self.battle_choice_menu = choice
-            self._refresh_choices()
-            return True
-        self.battle_choice_menu = ""
         return False
 
     def _battle_menu_choices(self) -> list[str]:
         encounter = self.engine.state.flags.get("active_encounter")
         if not isinstance(encounter, dict) or encounter.get("status") == "ended":
             return [choice for choice in self.engine.state.choices if choice.strip()]
-        menu = self.battle_choice_menu
-        if not menu:
-            visible = [choice for choice in self.engine.state.choices if choice in {"攻撃", "スキル", "行動", "逃走"}]
-            return visible or ["攻撃", "スキル", "行動", "逃走"]
-        if menu == "攻撃":
-            return [f"{target}を攻撃する" for target in self._battle_target_names(encounter)] + ["戻る"]
-        if menu == "スキル":
-            skills = self._player_battle_skills()
-            targets = self._battle_target_names(encounter)
-            choices: list[str] = []
-            for skill in skills:
-                for target in targets:
-                    choices.append(f"skill: {skill['name']} -> {target} (SP {skill['usesp']})")
-                    if len(choices) >= 4:
-                        break
-                if len(choices) >= 4:
-                    break
-            return choices + ["戻る"]
-        if menu == "行動":
-            actions = self._battle_free_actions(encounter)
-            return actions[:4] + ["戻る"]
-        if menu == "逃走":
-            return ["逃走する", "戻る"]
-        return ["攻撃", "スキル", "行動", "逃走"]
+        choices = [choice for choice in self.engine.state.choices if str(choice).strip()]
+        return choices or ["攻撃対象選択", "スキル一覧", "逃走する"]
 
     def _player_battle_skills(self) -> list[dict[str, object]]:
         player = self._player_character_dict()
@@ -6826,7 +6814,16 @@ class FantasiaApp(tk.Tk):
                 if self.engine.has_movement_options():
                     move_choice = _ui_text(self.config_data, "choice_move")
                     if move_choice not in choices:
-                        choices.insert(0, move_choice)
+                        quest_control_choices = {
+                            _ui_text(self.config_data, "choice_quest_board"),
+                            "依頼掲示板を確認する",
+                            "依頼達成を報告する",
+                            "現在の依頼を放棄する",
+                        }
+                        insert_at = 0
+                        while insert_at < len(choices) and str(choices[insert_at]).strip() in quest_control_choices:
+                            insert_at += 1
+                        choices.insert(insert_at, move_choice)
             if mode in {"exploration", "conversation"} and self._trade_target_character() is not None:
                 trade_choice = _ui_text(self.config_data, "game_trade")
                 if trade_choice not in choices:
@@ -8408,7 +8405,7 @@ UI_TEXT["ja"].update(
         "game_generating": "生成中",
         "task_generation_failed_log": "生成に失敗した",
         "choice_move": "移動する",
-        "choice_quest_board": "依頼掲示板を見る",
+        "choice_quest_board": "依頼掲示板を確認する",
         "move_window_title": "移動",
         "move_window_hint": "移動先を選択してください。",
         "move_window_confirm": "移動する",
@@ -9112,6 +9109,15 @@ def _subnode_map_node_detail(node: dict[str, object], data: dict[str, object], l
     if description:
         parts.append(description)
     return "\n".join(parts)
+
+
+def _quest_status_internal_place_id(value: object) -> bool:
+    text = str(value or "").strip().lower()
+    if not text or text == "-":
+        return False
+    if text in {"gate", "entrance", "entrance_b", "deepest", "depths", "default"}:
+        return True
+    return text.startswith(("main_", "side_", "quest:", "facility:", "home:", "capture:", "subarea:"))
 
 
 def _world_generation_progress_text(config_data, payload: dict[str, object]) -> str:
