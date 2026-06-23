@@ -621,7 +621,7 @@ def normalise_item(raw: Any, source: str = "", fallback_category: str = "junk") 
         item["item_uuid"] = str(data.get("uuid") or "")
     item["quantity"] = max(1, _safe_int(item.get("quantity", 1), 1))
     item["value"] = max(0, _safe_int(item.get("value", 0), 0))
-    item["stackable"] = bool(item.get("stackable", category not in EQUIPMENT_CATEGORIES))
+    item["stackable"] = bool(item.get("stackable", category not in EQUIPMENT_CATEGORIES)) and category not in EQUIPMENT_CATEGORIES
     item["tradable"] = bool(item.get("tradable", True))
     item["category_label"] = tr_enum("item_category", category, fallback=CATEGORY_LABELS.get(category, category))
     item["rarity"] = normalise_rarity(item.get("rarity") or rarity)
@@ -675,7 +675,8 @@ def can_add_item_stack(
             existing_item = normalise_item(existing, source=source)
             if _stack_key(existing_item) == key:
                 return True
-    return inventory_slot_count(inventory) < max(0, int(max_slots))
+    required_slots = max(1, _safe_int(item.get("quantity", 1), 1)) if not key else 1
+    return inventory_slot_count(inventory) + required_slots <= max(0, int(max_slots))
 
 
 def add_item_stack(
@@ -704,8 +705,64 @@ def add_item_stack(
                 existing["item_uuids"] = _item_uuid_list(existing_item)[:existing_quantity] + _item_uuid_list(item)[:item_quantity]
                 existing["item_uuid"] = existing["item_uuids"][0] if existing["item_uuids"] else _new_item_uuid()
                 return deepcopy(item)
+    if not key:
+        added = _append_nonstackable_items(inventory, item)
+        return deepcopy(added)
     inventory.append(item)
     return deepcopy(item)
+
+
+def _append_nonstackable_items(inventory: list[dict[str, Any]], item: dict[str, Any]) -> dict[str, Any]:
+    quantity = max(1, _safe_int(item.get("quantity", 1), 1))
+    source_uuids = _item_uuid_list(item)
+    existing_uuids, existing_instance_ids = _inventory_identity_sets(inventory)
+    added_summary = deepcopy(item)
+    added_summary["quantity"] = quantity
+    added_uuids: list[str] = []
+    category = normalise_category(str(item.get("category") or ""))
+    is_equipment = category in EQUIPMENT_CATEGORIES
+    for offset in range(quantity):
+        single = deepcopy(item)
+        single["quantity"] = 1
+        item_uuid = source_uuids[offset] if offset < len(source_uuids) else ""
+        if not item_uuid or item_uuid in existing_uuids:
+            item_uuid = _new_item_uuid()
+        single["item_uuid"] = item_uuid
+        single["item_uuids"] = [item_uuid]
+        existing_uuids.add(item_uuid)
+        added_uuids.append(item_uuid)
+        if is_equipment:
+            instance_id = str(single.get("instance_id") or "").strip()
+            if quantity > 1 or not instance_id or instance_id in existing_instance_ids:
+                instance_id = _new_item_instance_id(category, str(single.get("name") or ""))
+            single["instance_id"] = instance_id
+            existing_instance_ids.add(instance_id)
+            single["stackable"] = False
+        inventory.append(single)
+    added_summary["item_uuids"] = added_uuids
+    added_summary["item_uuid"] = added_uuids[0] if added_uuids else _new_item_uuid()
+    if is_equipment:
+        added_summary["stackable"] = False
+    return added_summary
+
+
+def _inventory_identity_sets(inventory: list[dict[str, Any]]) -> tuple[set[str], set[str]]:
+    uuids: set[str] = set()
+    instance_ids: set[str] = set()
+    for item in inventory:
+        if not isinstance(item, dict):
+            continue
+        item_uuid = str(item.get("item_uuid") or "").strip()
+        if item_uuid:
+            uuids.add(item_uuid)
+        for value in item.get("item_uuids", []) if isinstance(item.get("item_uuids"), list) else []:
+            uuid_text = str(value or "").strip()
+            if uuid_text:
+                uuids.add(uuid_text)
+        instance_id = str(item.get("instance_id") or "").strip()
+        if instance_id:
+            instance_ids.add(instance_id)
+    return uuids, instance_ids
 
 
 def take_item_stack(inventory: list[dict[str, Any]], index: int, quantity: int = 1) -> dict[str, Any] | None:

@@ -240,6 +240,34 @@ class TemplateWorldGenerator:
             location.extra["dungeon_subtype"] = dungeon_type
         templates = self._local_templates_for_target(dungeon_type, categories=("dungeon", "common"))
         if not templates:
+            requested_type = dungeon_type
+            dungeon_type = self._choose_dungeon_type(
+                " ".join(
+                    str(part or "")
+                    for part in (
+                        requested_type,
+                        location.name,
+                        location.description,
+                    )
+                ),
+                rng,
+            )
+            location.extra["main_node_subtype"] = dungeon_type
+            location.extra["dungeon_subtype"] = dungeon_type
+            location.extra["template_dungeon_subtype"] = dungeon_type
+            if requested_type and requested_type != dungeon_type:
+                location.extra["requested_dungeon_subtype"] = requested_type
+            templates = self._local_templates_for_target(dungeon_type, categories=("dungeon", "common"))
+        if not templates and dungeon_type != "ruin":
+            requested_type = str(location.extra.get("requested_dungeon_subtype") or dungeon_type)
+            dungeon_type = "ruin"
+            location.extra["main_node_subtype"] = dungeon_type
+            location.extra["dungeon_subtype"] = dungeon_type
+            location.extra["template_dungeon_subtype"] = dungeon_type
+            if requested_type and requested_type != dungeon_type:
+                location.extra["requested_dungeon_subtype"] = requested_type
+            templates = self._local_templates_for_target(dungeon_type, categories=("dungeon", "common"))
+        if not templates:
             return False
         graph = self._build_dungeon_graph(location, dungeon_type, templates, rng, source=source)
         location.extra[SUBNODE_GRAPH_KEY] = graph
@@ -798,10 +826,10 @@ class TemplateWorldGenerator:
             return "dungeon"
         folded = str(text or "").casefold()
         keyword_map = {
-            "forest": ("forest", "woods", "grove", "森", "樹海", "森林"),
-            "mountain": ("mountain", "mine", "peak", "山", "鉱山", "坑道"),
-            "ruin": ("ruin", "ruins", "ancient", "遺跡", "廃墟", "古代"),
-            "temple": ("temple", "shrine", "sanctuary", "神殿", "寺院", "聖域"),
+            "forest": ("forest", "woods", "grove", "lair", "nest", "den", "森", "樹海", "森林", "巣穴"),
+            "mountain": ("mountain", "mine", "peak", "cave", "cavern", "grotto", "quarry", "山", "鉱山", "坑道", "洞窟", "洞穴"),
+            "ruin": ("ruin", "ruins", "ancient", "labyrinth", "maze", "crypt", "tomb", "遺跡", "廃墟", "古代", "迷宮", "墓所"),
+            "temple": ("temple", "shrine", "sanctuary", "church", "holy", "神殿", "寺院", "聖域", "教会"),
         }
         scored = []
         for dungeon_type in types:

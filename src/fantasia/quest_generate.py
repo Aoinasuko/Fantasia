@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from .items import ITEM_CATEGORY_IDS, choose_item_template
 
-QUEST_PLAN_DUNGEON_SUBTYPES = ("forest", "mountain", "ruin", "cave", "mine", "labyrinth", "crypt", "lair")
+QUEST_PLAN_DUNGEON_SUBTYPES = ("forest", "mountain", "ruin", "temple")
 
 QUEST_PLAN_TYPES = ("rescue", "retrieve", "defeat", "delivery", "investigate", "procure")
 

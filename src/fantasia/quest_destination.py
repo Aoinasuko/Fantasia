@@ -3,6 +3,64 @@ from __future__ import annotations
 # Installed onto GameEngine by game._install_quest_modules().
 # Shared helpers are supplied from game.py at install time to avoid import cycles.
 
+QUEST_TEMPLATE_DUNGEON_SUBTYPES = {"forest", "mountain", "ruin", "temple"}
+
+QUEST_DUNGEON_SUBTYPE_ALIASES = {
+    "woods": "forest",
+    "wood": "forest",
+    "wilds": "forest",
+    "wilderness": "forest",
+    "lair": "forest",
+    "den": "forest",
+    "nest": "forest",
+    "cave": "mountain",
+    "cavern": "mountain",
+    "caverns": "mountain",
+    "grotto": "mountain",
+    "mine": "mountain",
+    "mines": "mountain",
+    "quarry": "mountain",
+    "mineshaft": "mountain",
+    "ruins": "ruin",
+    "old_ruin": "ruin",
+    "labyrinth": "ruin",
+    "maze": "ruin",
+    "crypt": "ruin",
+    "tomb": "ruin",
+    "grave": "ruin",
+    "shrine": "temple",
+    "sanctuary": "temple",
+    "church": "temple",
+    "holy_site": "temple",
+    "森": "forest",
+    "山": "mountain",
+    "洞窟": "mountain",
+    "洞穴": "mountain",
+    "鉱山": "mountain",
+    "坑道": "mountain",
+    "遺跡": "ruin",
+    "廃墟": "ruin",
+    "迷宮": "ruin",
+    "墓所": "ruin",
+    "巣穴": "forest",
+    "神殿": "temple",
+    "寺院": "temple",
+    "聖域": "temple",
+}
+
+
+def _quest_template_dungeon_subtype(value: Any) -> str:
+    text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if not text:
+        return ""
+    text = QUEST_DUNGEON_SUBTYPE_ALIASES.get(text, text)
+    if text in QUEST_TEMPLATE_DUNGEON_SUBTYPES:
+        return text
+    if text == "dungeon":
+        return "dungeon"
+    return ""
+
+
 def _active_quest_destination_location(self) -> str:
     quest = self._find_quest_by_name(self.state.active_quest) if self.state.active_quest else None
     if not quest or not isinstance(quest.extra, dict):
@@ -127,7 +185,7 @@ def _quest_anchor_location(self, origin: str, hint: dict[str, Any]) -> str:
 
 def _quest_hint_requests_dungeon(self, quest: QuestData, hint: dict[str, Any]) -> bool:
     kind = str(hint.get("location_kind") or "").strip().lower()
-    if kind in {"dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair", "forest", "mountain"}:
+    if _quest_template_dungeon_subtype(kind):
         return True
     text = " ".join(
         str(part or "")
@@ -141,37 +199,34 @@ def _quest_hint_requests_dungeon(self, quest: QuestData, hint: dict[str, Any]) -
             hint.get("objective_subnode_name"),
         )
     ).lower()
-    return any(word in text for word in ("dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair", "洞窟", "遺跡", "鉱山", "迷宮", "巣穴", "森", "山"))
+    return any(word in text for word in ("dungeon", "cave", "ruin", "labyrinth", "mine", "crypt", "lair", "temple", "shrine", "洞窟", "遺跡", "鉱山", "迷宮", "巣穴", "森", "山", "神殿", "寺院"))
 
 def _quest_dungeon_subtype(quest: QuestData, hint: dict[str, Any]) -> str:
-    kind = str(hint.get("location_kind") or "").strip().lower().replace("-", "_").replace(" ", "_")
-    aliases = {
-        "woods": "forest",
-        "wood": "forest",
-        "wilds": "forest",
-        "wilderness": "forest",
-        "cavern": "cave",
-        "caverns": "cave",
-        "ruins": "ruin",
-        "old_ruin": "ruin",
-        "mines": "mine",
-        "quarry": "mine",
-        "maze": "labyrinth",
-        "dungeon": "dungeon",
-    }
-    kind = aliases.get(kind, kind)
-    if kind in {"forest", "mountain", "ruin", "cave", "mine", "labyrinth", "crypt", "lair", "dungeon"}:
-        return kind
-    text = str(hint.get("source_text") or "").casefold()
+    for value in (
+        hint.get("location_kind"),
+        hint.get("dungeon_subtype"),
+        quest.extra.get("dungeon_subtype"),
+        quest.extra.get("quest_dungeon_subtype"),
+    ):
+        kind = _quest_template_dungeon_subtype(value)
+        if kind:
+            return kind
+    text = " ".join(
+        str(part or "")
+        for part in (
+            hint.get("source_text"),
+            hint.get("description"),
+            hint.get("objective_description"),
+            hint.get("objective_subnode_description"),
+            quest.name,
+            quest.overview,
+        )
+    ).casefold()
     checks = (
-        ("forest", ("forest", "woods", "grove", "swamp", "jungle")),
-        ("mountain", ("mountain", "peak", "ridge", "cliff", "ravine")),
-        ("ruin", ("ruin", "ruins", "temple", "shrine", "old fort", "ancient")),
-        ("cave", ("cave", "cavern", "grotto", "tunnel")),
-        ("mine", ("mine", "mineshaft", "quarry", "ore")),
-        ("labyrinth", ("labyrinth", "maze")),
-        ("crypt", ("crypt", "tomb", "grave")),
-        ("lair", ("lair", "nest", "den")),
+        ("temple", ("temple", "shrine", "sanctuary", "church", "holy", "神殿", "寺院", "聖域", "教会")),
+        ("mountain", ("mountain", "peak", "ridge", "cliff", "ravine", "cave", "cavern", "grotto", "tunnel", "mine", "mineshaft", "quarry", "ore", "山", "洞窟", "洞穴", "鉱山", "坑道")),
+        ("ruin", ("ruin", "ruins", "old fort", "ancient", "labyrinth", "maze", "crypt", "tomb", "grave", "遺跡", "廃墟", "迷宮", "墓所")),
+        ("forest", ("forest", "woods", "grove", "swamp", "jungle", "lair", "nest", "den", "森", "樹海", "巣穴")),
     )
     for subtype, markers in checks:
         if any(marker in text for marker in markers):
@@ -179,8 +234,8 @@ def _quest_dungeon_subtype(quest: QuestData, hint: dict[str, Any]) -> str:
     quest_type = str(quest.extra.get("quest_type") or quest.extra.get("objective_type") or "").strip().lower()
     return {
         "rescue": "ruin",
-        "retrieve": "cave",
-        "defeat": "lair",
+        "retrieve": "mountain",
+        "defeat": "forest",
         "delivery": "ruin",
         "investigate": "ruin",
         "procure": "forest",
@@ -200,17 +255,9 @@ def _quest_location_dungeon_subtype(location: LocationData | None) -> str:
         return ""
     extra = location.extra if isinstance(location.extra, dict) else {}
     for key in ("dungeon_subtype", "quest_dungeon_subtype", "main_node_subtype", "location_kind", "kind"):
-        value = str(extra.get(key) or "").strip().lower().replace("-", "_").replace(" ", "_")
+        value = _quest_template_dungeon_subtype(extra.get(key))
         if value:
-            return {
-                "woods": "forest",
-                "wood": "forest",
-                "wilderness": "forest",
-                "cavern": "cave",
-                "ruins": "ruin",
-                "mines": "mine",
-                "maze": "labyrinth",
-            }.get(value, value)
+            return value
     return "dungeon" if _quest_location_is_dungeon_target(location) else ""
 
 def _quest_dungeon_subtype_matches(location: LocationData, subtype: str) -> bool:
@@ -324,6 +371,37 @@ def _quest_dungeon_branch_anchor(self, origin: str, fallback: str = "") -> str:
         return fallback
     return origin if origin in world.locations else fallback
 
+def _ensure_quest_dungeon_template_graph(
+    self,
+    location: LocationData,
+    quest: QuestData,
+    subtype: str,
+    seed_text: str,
+) -> dict[str, Any]:
+    template_subtype = _quest_template_dungeon_subtype(subtype) or "dungeon"
+    location.extra["location_kind"] = "dungeon"
+    location.extra["main_node_type"] = "dungeon"
+    location.extra["main_node_subtype"] = template_subtype
+    location.extra["dungeon_subtype"] = template_subtype
+    location.extra["quest_dungeon_subtype"] = template_subtype
+    location.extra["template_dungeon_subtype"] = template_subtype
+    location.flags["dungeon"] = True
+    location.flags["dangerous"] = True
+    graph = location.extra.get(SUBNODE_GRAPH_KEY)
+    if (
+        isinstance(graph, dict)
+        and isinstance(graph.get("nodes"), dict)
+        and graph.get("nodes")
+        and str(graph.get("generated_by") or "").startswith("template_")
+    ):
+        return graph
+    self._install_local_dungeon_subnode_graph(
+        location,
+        random.Random(f"quest-template-dungeon|{self.state.world_name}|{quest.name}|{location.name}|{seed_text}"),
+    )
+    graph = location.extra.get(SUBNODE_GRAPH_KEY)
+    return graph if isinstance(graph, dict) else {}
+
 def _create_quest_dungeon_location(self, quest: QuestData, hint: dict[str, Any], origin: str, anchor: str) -> LocationData:
     world = self.state.world_data
     branch_anchor = self._quest_dungeon_branch_anchor(origin, anchor)
@@ -362,7 +440,7 @@ def _create_quest_dungeon_location(self, quest: QuestData, hint: dict[str, Any],
         anchor_location.flags["discovered"] = True
         anchor_node = self._set_location_graph_node(world, branch_anchor, location=anchor_location)
         anchor_node["discovered"] = True
-    self._install_local_dungeon_subnode_graph(location, random.Random(f"quest-dungeon|{world.world_name}|{quest.name}|{branch_anchor}"))
+    _ensure_quest_dungeon_template_graph(self, location, quest, subtype, branch_anchor)
     self._set_location_graph_node(world, location_name, kind=kind, danger=location.extra["danger_level"], location=location)
     if branch_anchor and branch_anchor != location_name:
         self._connect_world_locations_by_subnodes(
@@ -393,6 +471,7 @@ def _quest_destination_location(self, quest: QuestData, hint: dict[str, Any], or
         if resolved:
             location = world.locations[resolved]
             if _quest_dungeon_subtype_matches(location, subtype) or (_quest_location_is_dungeon_target(location) and subtype == "dungeon"):
+                _ensure_quest_dungeon_template_graph(self, location, quest, subtype, anchor)
                 if not self._world_neighbors_no_ensure(world, resolved) and anchor and anchor != resolved:
                     self._connect_world_locations(world, anchor, resolved)
                 return location
@@ -400,7 +479,9 @@ def _quest_destination_location(self, quest: QuestData, hint: dict[str, Any], or
     branch_anchor = self._quest_dungeon_branch_anchor(origin, anchor)
     existing = _find_nearby_quest_dungeon_by_subtype(self, origin, anchor, branch_anchor, subtype)
     if existing:
-        return world.locations[existing]
+        location = world.locations[existing]
+        _ensure_quest_dungeon_template_graph(self, location, quest, subtype, branch_anchor)
+        return location
     return self._create_quest_dungeon_location(quest, {**hint, "location_kind": subtype}, origin, anchor)
 
 def _find_world_location_by_name(self, name: str) -> str:

@@ -136,12 +136,12 @@ def _grant_quest_reward(self, quest: QuestData) -> dict[str, Any]:
     reward = quest.extra.get("reward")
     payload: dict[str, Any] = {}
     if isinstance(reward, dict):
-        payload.update(reward)
-        if reward.get("items") and not payload.get("item_add"):
+        payload.update({key: value for key, value in reward.items() if key not in {"items", "gold", "exp"}})
+        if reward.get("items"):
             payload["item_add"] = reward.get("items")
-        if reward.get("gold") is not None and not any(key in payload for key in ("receive_gold", "gain_gold", "gold_delta")):
+        if reward.get("gold") is not None:
             payload["receive_gold"] = reward.get("gold")
-        if reward.get("exp") is not None and not any(key in payload for key in ("reward_exp", "exp", "player_exp_delta")):
+        if reward.get("exp") is not None:
             payload["reward_exp"] = reward.get("exp")
     elif reward:
         payload["item_add"] = _as_list(reward)

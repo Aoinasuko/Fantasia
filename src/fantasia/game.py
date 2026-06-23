@@ -3128,14 +3128,14 @@ class GameEngine:
         equipment = self._player_equipment()
         inventory = self._player_inventory()
         equipped_ids = {
-            str(item.get("instance_id") or "")
+            str(item.get("item_uuid") or "")
             for item in equipment.values()
-            if isinstance(item, dict) and item.get("instance_id")
+            if isinstance(item, dict) and item.get("item_uuid")
         }
         for item in inventory:
             if not isinstance(item, dict):
                 continue
-            item_id = str(item.get("instance_id") or "")
+            item_id = str(item.get("item_uuid") or "")
             item["equipped"] = bool(item_id and item_id in equipped_ids)
             if item["equipped"]:
                 item["equipment_slot"] = equipment_slot_for_category(str(item.get("category") or ""))
@@ -3216,7 +3216,7 @@ class GameEngine:
         equipment = self._player_equipment()
         previous = equipment.get(slot) if isinstance(equipment.get(slot), dict) else {}
         if previous:
-            self._mark_inventory_equipped(str(previous.get("instance_id") or ""), False)
+            self._mark_inventory_equipped(str(previous.get("item_uuid") or ""), False)
         item["equipped"] = True
         item["equipment_slot"] = slot
         inventory[inventory_index] = item
@@ -3241,7 +3241,7 @@ class GameEngine:
             return {"changed": False, "line": ""}
         equipment[slot] = {}
         self.state.extra["equipment"] = equipment
-        self._mark_inventory_equipped(str(item.get("instance_id") or ""), False)
+        self._mark_inventory_equipped(str(item.get("item_uuid") or ""), False)
         self._sync_player_equipment()
         self._refresh_player_resource_caps_after_equipment_change()
         line = f"> [装備解除] {EQUIPMENT_SLOT_LABELS.get(slot, slot)}: {item.get('name')}"
@@ -3249,11 +3249,11 @@ class GameEngine:
         self.state.world_data.extra.setdefault("equipment_events", []).append(_strip_response_metadata(event))
         return event
 
-    def _mark_inventory_equipped(self, instance_id: str, equipped: bool) -> None:
-        if not instance_id:
+    def _mark_inventory_equipped(self, item_uuid: str, equipped: bool) -> None:
+        if not item_uuid:
             return
         for item in self._player_inventory():
-            if isinstance(item, dict) and str(item.get("instance_id") or "") == instance_id:
+            if isinstance(item, dict) and str(item.get("item_uuid") or "") == item_uuid:
                 item["equipped"] = equipped
 
     def _refresh_player_resource_caps_after_equipment_change(self) -> None:
@@ -10640,24 +10640,40 @@ class GameEngine:
             "wood": "forest",
             "wilds": "forest",
             "wilderness": "forest",
+            "lair": "forest",
+            "den": "forest",
+            "nest": "forest",
             "森": "forest",
             "山": "mountain",
-            "洞窟": "cave",
-            "洞穴": "cave",
+            "洞窟": "mountain",
+            "洞穴": "mountain",
             "遺跡": "ruin",
             "廃墟": "ruin",
-            "鉱山": "mine",
-            "迷宮": "labyrinth",
-            "墓所": "crypt",
-            "巣穴": "lair",
-            "cavern": "cave",
-            "caverns": "cave",
+            "鉱山": "mountain",
+            "迷宮": "ruin",
+            "墓所": "ruin",
+            "巣穴": "forest",
+            "神殿": "temple",
+            "寺院": "temple",
+            "聖域": "temple",
+            "cave": "mountain",
+            "cavern": "mountain",
+            "caverns": "mountain",
+            "grotto": "mountain",
             "ruins": "ruin",
-            "mines": "mine",
-            "maze": "labyrinth",
+            "mine": "mountain",
+            "mines": "mountain",
+            "quarry": "mountain",
+            "maze": "ruin",
+            "labyrinth": "ruin",
+            "crypt": "ruin",
+            "tomb": "ruin",
+            "shrine": "temple",
+            "sanctuary": "temple",
+            "church": "temple",
         }
         value = aliases.get(value, value)
-        if value in {"forest", "mountain", "ruin", "cave", "mine", "labyrinth", "crypt", "lair"}:
+        if value in {"forest", "mountain", "ruin", "temple"}:
             return value
         return "dungeon"
 
@@ -10666,11 +10682,7 @@ class GameEngine:
             "forest": "森",
             "mountain": "山道",
             "ruin": "遺跡",
-            "cave": "洞窟",
-            "mine": "鉱山",
-            "labyrinth": "迷宮",
-            "crypt": "墓所",
-            "lair": "巣穴",
+            "temple": "神殿",
             "dungeon": "ダンジョン",
         }
         label = labels.get(subtype, "ダンジョン")
