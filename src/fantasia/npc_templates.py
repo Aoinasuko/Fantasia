@@ -6,6 +6,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from .equipment_sets import build_equipment_from_set
 from .paths import NPC_TEMPLATE_DIR, ROOT
 from .skill_templates import choose_random_skill_templates, random_skill_mode
 
@@ -215,6 +216,7 @@ def _normalise_npc_template(raw: Any, source_path: Path) -> dict[str, Any] | Non
         "age_max": max(0, _safe_int(raw.get("age_max"), 0)),
         "usenamelist": bool(raw.get("usenamelist")),
         "rescued": bool(raw.get("rescued")),
+        "equipment": str(raw.get("equipment") or "").strip(),
         "random_skill": random_skill_mode(raw.get("random_skill")),
         "category": category,
         "level": max(0, _safe_int(raw.get("level"), 0)),
@@ -417,6 +419,7 @@ def npc_template_ai_context(template: dict[str, Any] | None) -> dict[str, Any]:
         "traits": template.get("traits") if template.get("traits_defined") else "generate_if_needed",
         "usenamelist": bool(template.get("usenamelist")),
         "rescued": bool(template.get("rescued")),
+        "equipment": template.get("equipment") or "",
         "random_skill": template.get("random_skill") or "none",
         "human_profile_context": _human_template_context(template),
     }
@@ -450,6 +453,7 @@ def npc_template_prompt_summaries(
                 "resistance": template.get("resistance") or [],
                 "usenamelist": bool(template.get("usenamelist")),
                 "rescued": bool(template.get("rescued")),
+                "equipment": template.get("equipment") or "",
                 "random_skill": template.get("random_skill") or "none",
             }
         )
@@ -506,6 +510,14 @@ def npc_template_to_character_payload(
     if boss:
         attack = max(1, int(round(attack * 1.25)))
         defense = max(0, int(round(defense * 1.25)))
+    equipment_set_id = str(template.get("equipment") or "").strip()
+    equipment_level = max(danger, _safe_int(template.get("level"), 0))
+    equipment = build_equipment_from_set(
+        equipment_set_id,
+        level=equipment_level,
+        seed=f"{seed}:equipment:{template.get('id')}:{danger_level}",
+        source="npc_equipment",
+    )
     attributes = {
         key: max(1, _safe_int((template.get("attributes") or {}).get(key), 10) + danger // 2)
         for key in NPC_TEMPLATE_ATTRIBUTE_KEYS
@@ -525,6 +537,7 @@ def npc_template_to_character_payload(
         "defense": max(0, defense),
         "attributes": attributes,
         "resistance": deepcopy(template.get("resistance") or []),
+        "equipment": equipment,
         "extra": {
             "npc_template_id": str(template.get("id") or ""),
             "npc_template_name": str(template.get("name") or ""),
@@ -532,6 +545,12 @@ def npc_template_to_character_payload(
             "npc_template_tag": tags,
             "npc_template_category": category,
             "npc_template_source": str(template.get("source_path") or ""),
+            "equipment_set_id": equipment_set_id,
+            "equipment_template_ids": [
+                str(item.get("template_id") or "")
+                for item in equipment.values()
+                if isinstance(item, dict) and str(item.get("template_id") or "").strip()
+            ],
             "human_template_context": deepcopy(human_profile_context),
             "tag": tags,
             "attacks": deepcopy(template.get("attacks") or []),
@@ -585,6 +604,14 @@ def merge_npc_template_payload(template_payload: dict[str, Any], raw_payload: An
             base = merged.setdefault(key, {})
             if isinstance(base, dict):
                 base.update(value)
+            continue
+        if key == "equipment":
+            if isinstance(value, dict):
+                merged[key] = value
+            elif value not in (None, "", [], {}):
+                extra = merged.setdefault("extra", {})
+                if isinstance(extra, dict):
+                    extra.setdefault("equipment_set_id", str(value or "").strip())
             continue
         if key in {"skills", "traits", "image_generation_prompt", "image_prompt"} and value in (None, ""):
             continue

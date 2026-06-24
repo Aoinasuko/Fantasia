@@ -34,6 +34,7 @@ from .combat_model import (
 )
 from .combat_resistance import damage_multiplier_for_element
 from .combat_roll import ability_roll, opposed_ability_roll
+from .items import calculate_equipment_summary
 
 
 HP_DAMAGE_SKILL_EFFECT_TYPES = {
@@ -306,11 +307,16 @@ def _resolve_attack(
     source: str,
 ) -> dict[str, Any]:
     engine._set_encounter_active_opponent(encounter, target)
+    weapon = _equipped_weapon_for_attack(engine, actor)
+    action_name = _weapon_attack_name(weapon, action_name)
+    element = _weapon_attack_element(weapon, element)
     hit_roll = opposed_ability_roll(actor, target, "dex", attacker_modifier=accuracy_modifier(actor.status_effects))
     actor_name = actor.name or "攻撃者"
     target_name = target.name or "相手"
     if not hit_roll.get("success"):
         calc = {"type": source, "hit": False, "element": element, "hit_roll": hit_roll, "damage": 0}
+        if weapon:
+            calc["weapon"] = _weapon_payload(weapon)
         narration = _narrate_combat_event(
             engine,
             {
@@ -318,6 +324,8 @@ def _resolve_attack(
                 "actor": actor_name,
                 "target": target_name,
                 "action": action_name,
+                "equipped_weapon": _weapon_payload(weapon),
+                "description_priority": _weapon_description_priority(weapon),
                 "result": calc,
             },
             f"{actor_name}の{action_name}は、{target_name}にかわされた。",
@@ -354,6 +362,8 @@ def _resolve_attack(
         "max_hp": result.get("max_hp"),
         "hit_roll": hit_roll,
     }
+    if weapon:
+        calc["weapon"] = _weapon_payload(weapon)
     if reflection:
         calc["thorns_reflection"] = reflection
     narration = _narrate_combat_event(
@@ -363,6 +373,8 @@ def _resolve_attack(
             "actor": actor_name,
             "target": target_name,
             "action": action_name,
+            "equipped_weapon": _weapon_payload(weapon),
+            "description_priority": _weapon_description_priority(weapon),
             "result": calc,
         },
         f"{actor_name}の{action_name}が{target_name}に命中した。",
@@ -1008,7 +1020,7 @@ def _resolve_enemy_turn(
     if action_type == "status_attack":
         attack_name, element = _enemy_attack_from_decision(opponent, decision)
         target = _enemy_special_target_from_decision(engine, decision)
-        response = _resolve_enemy_attack(engine, encounter, opponent, attack_name, element, target=target)
+        response = _resolve_enemy_attack(engine, encounter, opponent, attack_name, element, target=target, prefer_weapon=False)
         buff_type = str(decision.get("buff_type") or decision.get("status_type") or "restraint").strip()
         combat_result = response.get("game_combat_result") if isinstance(response, dict) else {}
         if isinstance(target, Character) and isinstance(combat_result, dict) and bool(combat_result.get("hit")):
@@ -1042,16 +1054,30 @@ def _resolve_enemy_attack(
     element: str,
     *,
     target: Character | None = None,
+    prefer_weapon: bool = True,
 ) -> dict[str, Any]:
     target = target if isinstance(target, Character) else _random_enemy_single_target(engine)
     if not isinstance(target, Character):
         return {"narration": f"{opponent.name}は攻撃の機を逃した。"}
+    weapon = _equipped_weapon_for_attack(engine, opponent) if prefer_weapon else None
+    attack_name = _weapon_attack_name(weapon, attack_name)
+    element = _weapon_attack_element(weapon, element)
     hit_roll = opposed_ability_roll(opponent, target, "dex", attacker_modifier=accuracy_modifier(opponent.status_effects))
     if not hit_roll.get("success"):
         calc = {"type": "enemy_attack", "hit": False, "target": target.name, "target_uuid": target.uuid, "element": element, "hit_roll": hit_roll, "damage": 0}
+        if weapon:
+            calc["weapon"] = _weapon_payload(weapon)
         narration = _narrate_combat_event(
             engine,
-            {"event": "enemy_attack_miss", "actor": opponent.name, "target": target.name, "action": attack_name, "result": calc},
+            {
+                "event": "enemy_attack_miss",
+                "actor": opponent.name,
+                "target": target.name,
+                "action": attack_name,
+                "equipped_weapon": _weapon_payload(weapon),
+                "description_priority": _weapon_description_priority(weapon),
+                "result": calc,
+            },
             f"{opponent.name}の{attack_name}は、{target.name}に届かなかった。",
         )
         return {"narration": narration, "game_combat_result": calc}
@@ -1087,11 +1113,21 @@ def _resolve_enemy_attack(
         "max_hp": event.get("max_hp"),
         "hit_roll": hit_roll,
     }
+    if weapon:
+        calc["weapon"] = _weapon_payload(weapon)
     if reflection:
         calc["thorns_reflection"] = reflection
     narration = _narrate_combat_event(
         engine,
-        {"event": "enemy_attack_hit", "actor": opponent.name, "target": target.name, "action": attack_name, "result": calc},
+        {
+            "event": "enemy_attack_hit",
+            "actor": opponent.name,
+            "target": target.name,
+            "action": attack_name,
+            "equipped_weapon": _weapon_payload(weapon),
+            "description_priority": _weapon_description_priority(weapon),
+            "result": calc,
+        },
         f"{opponent.name}の{attack_name}が{target.name}に命中した。",
     )
     return {"narration": narration, "game_combat_result": calc}
@@ -1527,20 +1563,65 @@ def _attack_value(engine: Any, actor: Character, encounter: dict[str, Any]) -> i
     if actor.flags.get("is_player") or actor.uuid == engine.state.player_uuid:
         return max(1, safe_int(actor.attack, 0) + safe_int(encounter.get("player_attack"), 0) + safe_int(encounter.get("player_attack_bonus"), 0))
     delta = stat_delta(actor.status_effects)
-    return max(1, safe_int(actor.attack, encounter.get("opponent_attack") or 1) + safe_int(delta.get("attack"), 0))
+    equipment = _equipment_summary_for(engine, actor) or {}
+    return max(1, safe_int(actor.attack, encounter.get("opponent_attack") or 1) + safe_int(equipment.get("attack"), 0) + safe_int(delta.get("attack"), 0))
 
 
 def _defense_value(engine: Any, actor: Character, encounter: dict[str, Any]) -> int:
     if actor.flags.get("is_player") or actor.uuid == engine.state.player_uuid:
         return max(0, safe_int(actor.defense, 0) + safe_int(encounter.get("player_defense"), 0) + safe_int(encounter.get("player_defense_bonus"), 0))
     delta = stat_delta(actor.status_effects)
-    return max(0, safe_int(actor.defense, encounter.get("opponent_defense") or 0) + safe_int(delta.get("defense"), 0))
+    equipment = _equipment_summary_for(engine, actor) or {}
+    return max(0, safe_int(actor.defense, encounter.get("opponent_defense") or 0) + safe_int(equipment.get("defense"), 0) + safe_int(delta.get("defense"), 0))
 
 
 def _equipment_summary_for(engine: Any, character: Character) -> dict[str, Any] | None:
     if character.flags.get("is_player") or character.uuid == engine.state.player_uuid:
         return engine.player_equipment_summary()
-    return None
+    equipment = character.equipment if isinstance(character.equipment, dict) else {}
+    return calculate_equipment_summary(equipment)
+
+
+def _equipped_weapon_for_attack(engine: Any, character: Character) -> dict[str, Any]:
+    if character.flags.get("is_player") or character.uuid == engine.state.player_uuid:
+        equipment = engine._player_equipment()
+    else:
+        equipment = character.equipment if isinstance(character.equipment, dict) else {}
+    weapon = equipment.get("weapon") if isinstance(equipment, dict) else None
+    if not isinstance(weapon, dict) or not weapon:
+        return {}
+    name = str(weapon.get("name") or weapon.get("item_name") or weapon.get("title") or "").strip()
+    return weapon if name else {}
+
+
+def _weapon_attack_name(weapon: dict[str, Any] | None, fallback: str) -> str:
+    name = str((weapon or {}).get("name") or (weapon or {}).get("item_name") or (weapon or {}).get("title") or "").strip()
+    if not name:
+        return str(fallback or "攻撃")
+    return f"{name}での攻撃"
+
+
+def _weapon_attack_element(weapon: dict[str, Any] | None, fallback: str) -> str:
+    element = str((weapon or {}).get("element") or (weapon or {}).get("damage_type") or "").strip()
+    return element or str(fallback or "physical")
+
+
+def _weapon_payload(weapon: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(weapon, dict) or not weapon:
+        return {}
+    return {
+        "name": str(weapon.get("name") or weapon.get("item_name") or weapon.get("title") or "").strip(),
+        "category": str(weapon.get("category") or "").strip(),
+        "element": str(weapon.get("element") or weapon.get("damage_type") or "").strip(),
+        "attack": safe_int(weapon.get("attack"), 0),
+        "template_id": str(weapon.get("template_id") or "").strip(),
+    }
+
+
+def _weapon_description_priority(weapon: dict[str, Any] | None) -> str:
+    if not isinstance(weapon, dict) or not weapon:
+        return ""
+    return "Normal attack narration must prioritize the equipped weapon. Describe the attack as using equipped_weapon.name instead of bare hands, claws, or a generic body attack."
 
 
 def _equipped_weapon_element(engine: Any) -> str:

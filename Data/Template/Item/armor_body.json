@@ -24,6 +24,7 @@
     "element": ""
   },
   {
+    "id": "armor_body_armor_chain",
     "name": "鎖帷子",
     "category": "armor_body",
     "level": 5,
@@ -35,6 +36,7 @@
     "element": ""
   },
   {
+    "id": "armor_body_armor_plate",
     "name": "鉄胸甲",
     "category": "armor_body",
     "level": 5,

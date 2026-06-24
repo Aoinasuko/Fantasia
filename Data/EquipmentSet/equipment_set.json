@@ -1,0 +1,159 @@
+[
+  {
+    "id": "fighter",
+    "weapon_medium": [
+      "weapon_medium_sword_wood",
+      "weapon_medium_hammar_wood",
+      "weapon_medium_sword_iron",
+      "weapon_medium_hammar_iron"
+    ],
+    "weapon_large": [
+      "weapon_large_sword_wood",
+      "weapon_large_battleaxe_wood",
+      "weapon_large_sword_iron",
+      "weapon_large_battleaxe_iron"
+    ],
+    "armor_shield": [
+      "armor_shield_small_wood",
+      "armor_shield_middle_wood",
+      "armor_shield_big_wood",
+      "armor_shield_small_iron",
+      "armor_shield_middle_iron",
+      "armor_shield_big_iron"
+    ],
+    "armor_head": [
+      "armor_head_wood",
+      "armor_head_wood_full",
+      "armor_head_iron",
+      "armor_head_iron_full"
+    ],
+    "armor_body": [
+      "armor_body_armor_leather",
+      "armor_body_armor_bikini",
+      "armor_body_armor_iron",
+      "armor_body_armor_chain",
+      "armor_body_armor_plate"
+    ],
+    "armor_arm": [
+      "armor_arm_armor_leather",
+      "armor_arm_armor_iron"
+    ],
+    "armor_leg": [
+      "armor_leg_armor_leather",
+      "armor_leg_armor_iron"
+    ]
+  },
+  {
+    "id": "archer",
+    "weapon_range": [
+      "weapon_range_bow",
+      "weapon_range_crossbow",
+      "weapon_range_knife"
+    ],
+    "armor_head": [
+      "armor_head_hat_leather",
+      "armor_head_hat_silk"
+    ],
+    "armor_body": [
+      "armor_body_armor_leather",
+      "armor_body_armor_chain"
+    ],
+    "armor_arm": [
+      "armor_arm_armor_leather"
+    ],
+    "armor_leg": [
+      "armor_leg_armor_leather"
+    ],
+    "armor_cloth": [
+      "armor_cloth_cape"
+    ]
+  },
+  {
+    "id": "wizard",
+    "weapon_small": [
+      "weapon_small_dagger_wood",
+      "weapon_small_dagger_iron"
+    ],
+    "armor_head": [
+      "armor_head_hat_silk"
+    ],
+    "armor_cloth": [
+      "armor_cloth_cloth",
+      "armor_cloth_cape",
+      "armor_cloth_robe"
+    ],
+    "accessory_ring": [
+      "accessory_ring_wood",
+      "accessory_ring_silver",
+      "accessory_ring_gold",
+      "accessory_ring_protect"
+    ],
+    "accessory_amulet": [
+      "accessory_amulet_travel",
+      "accessory_amulet_fairy",
+      "accessory_amulet_element"
+    ]
+  },
+  {
+    "id": "lancer",
+    "weapon_long": [
+      "weapon_long_spear_wood",
+      "weapon_long_naginata_wood",
+      "weapon_long_spear_iron",
+      "weapon_long_naginata_iron"
+    ],
+    "armor_shield": [
+      "armor_shield_small_wood",
+      "armor_shield_middle_wood",
+      "armor_shield_small_iron",
+      "armor_shield_middle_iron"
+    ],
+    "armor_head": [
+      "armor_head_wood",
+      "armor_head_iron"
+    ],
+    "armor_body": [
+      "armor_body_armor_leather",
+      "armor_body_armor_chain",
+      "armor_body_armor_plate",
+      "armor_body_armor_iron"
+    ],
+    "armor_arm": [
+      "armor_arm_armor_leather",
+      "armor_arm_armor_iron"
+    ],
+    "armor_leg": [
+      "armor_leg_armor_leather",
+      "armor_leg_armor_iron"
+    ]
+  },
+  {
+    "id": "thief",
+    "weapon_small": [
+      "weapon_small_dagger_wood",
+      "weapon_small_axe_wood",
+      "weapon_small_dagger_iron",
+      "weapon_small_axe_iron"
+    ],
+    "armor_head": [
+      "armor_head_hat_leather"
+    ],
+    "armor_body": [
+      "armor_body_armor_leather"
+    ],
+    "armor_arm": [
+      "armor_arm_armor_leather"
+    ],
+    "armor_leg": [
+      "armor_leg_armor_leather"
+    ],
+    "armor_cloth": [
+      "armor_cloth_cloth",
+      "armor_cloth_cape"
+    ],
+    "accessory_ring": [
+      "accessory_ring_wood",
+      "accessory_ring_silver"
+    ]
+  }
+]

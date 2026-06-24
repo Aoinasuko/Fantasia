@@ -929,10 +929,12 @@ def _cached_enemy_template_payload(
     )
     if isinstance(fresh.get("skills"), list):
         payload["skills"] = deepcopy(fresh.get("skills") or [])
+    if isinstance(fresh.get("equipment"), dict):
+        payload["equipment"] = deepcopy(fresh.get("equipment") or {})
     payload_extra = payload.setdefault("extra", {})
     fresh_extra = fresh.get("extra") if isinstance(fresh.get("extra"), dict) else {}
     if isinstance(payload_extra, dict):
-        for key in ("random_skill", "random_skill_template_ids"):
+        for key in ("random_skill", "random_skill_template_ids", "equipment_set_id", "equipment_template_ids"):
             if key in fresh_extra:
                 payload_extra[key] = deepcopy(fresh_extra[key])
         payload_extra["spawn_danger_level"] = _clamp_world_danger(danger_level)

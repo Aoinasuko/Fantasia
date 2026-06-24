@@ -53,7 +53,8 @@
       }
     ],
     "random_skill": "fighter",
-    "tag": []
+    "tag": [],
+    "equipment": "thief" 
   },
   {
     "id": "goblin_bow",
@@ -117,7 +118,8 @@
       }
     ],
     "random_skill": "fighter",
-    "tag": []
+    "tag": [],
+    "equipment": "archer" 
   },
   {
     "id": "thief",
@@ -163,7 +165,8 @@
     "random_skill": "fighter",
     "tag": [
       "human"
-    ]
+    ],
+    "equipment": "thief" 
   },
   {
     "id": "goblin_scout",
@@ -197,7 +200,8 @@
       }
     ],
     "random_skill": "fighter",
-    "tag": []
+    "tag": [],
+    "equipment": "lancer"
   },
   {
     "id": "hobgoblin",
@@ -231,7 +235,8 @@
       }
     ],
     "random_skill": "fighter",
-    "tag": []
+    "tag": [],
+    "equipment": "fighter"
   },
   {
     "id": "kobold",
@@ -265,7 +270,8 @@
       }
     ],
     "random_skill": "fighter",
-    "tag": []
+    "tag": [],
+    "equipment": "thief"
   },
   {
     "id": "orc",
@@ -299,56 +305,8 @@
       }
     ],
     "random_skill": "fighter",
-    "tag": []
-  },
-  {
-    "id": "human_thief",
-    "name": "ヒューマンシーフ",
-    "role": "人間の盗賊",
-    "look": "軽装で短剣を隠し持つ人間。",
-    "personality": "隙を見て物資を奪い、危険なら逃げる。",
-    "usenamelist": true,
-    "image_prompt": [
-      "human thief",
-      "fantasy RPG enemy"
-    ],
-    "gender": "none",
-    "age": "adult",
-    "category": "enemy_common",
-    "level": 0,
-    "atk": 6,
-    "def": 3,
-    "attributes": {
-      "str": 5,
-      "dex": 9,
-      "con": 5,
-      "int": 6,
-      "wis": 6,
-      "cha": 5
-    },
-    "attacks": [
-      {
-        "name": "拳で殴る",
-        "type": "physical"
-      }
-    ],
-    "skills": [
-      {
-        "name": "スニークスタブ",
-        "desc": "素早く短剣で刺し、敵単体に物理ダメージを与える。",
-        "usesp": 3,
-        "power": 1,
-        "ability": "dex",
-        "element": "physical",
-        "type": [
-          "damage_hp_single"
-        ]
-      }
-    ],
-    "random_skill": "fighter",
-    "tag": [
-      "human"
-    ]
+    "tag": [],
+    "equipment": "fighter"
   },
   {
     "id": "human_bandit",
@@ -384,7 +342,8 @@
     "random_skill": "fighter",
     "tag": [
       "human"
-    ]
+    ],
+    "equipment": "fighter"
   },
   {
     "id": "skeleton_soldier",
@@ -423,7 +382,8 @@
       }
     ],
     "random_skill": "fighter",
-    "tag": []
+    "tag": [],
+    "equipment": "fighter"
   },
   {
     "id": "lizardman",
@@ -457,7 +417,8 @@
       }
     ],
     "random_skill": "fighter",
-    "tag": []
+    "tag": [],
+    "equipment": "lancer"
   },
   {
     "id": "young_troll",
@@ -497,55 +458,7 @@
       }
     ],
     "random_skill": "fighter",
-    "tag": []
-  },
-  {
-    "id": "human_archer",
-    "name": "ヒューマンアーチャー",
-    "role": "人間の射手",
-    "look": "革鎧と弓を持つ人間の戦闘員。",
-    "personality": "距離を取りながら矢で牽制する。",
-    "usenamelist": true,
-    "image_prompt": [
-      "human archer",
-      "fantasy RPG enemy"
-    ],
-    "gender": "none",
-    "age": "adult",
-    "category": "enemy_common",
-    "level": 0,
-    "atk": 6,
-    "def": 3,
-    "attributes": {
-      "str": 5,
-      "dex": 9,
-      "con": 5,
-      "int": 5,
-      "wis": 6,
-      "cha": 5
-    },
-    "attacks": [
-      {
-        "name": "短剣で斬る",
-        "type": "physical"
-      }
-    ],
-    "skills": [
-      {
-        "name": "アローショット",
-        "desc": "弓で狙い撃ち、敵単体に物理ダメージを与える。",
-        "usesp": 3,
-        "power": 1,
-        "ability": "dex",
-        "element": "physical",
-        "type": [
-          "damage_hp_single"
-        ]
-      }
-    ],
-    "random_skill": "fighter",
-    "tag": [
-      "human"
-    ]
+    "tag": [],
+    "equipment": "fighter"
   }
 ]

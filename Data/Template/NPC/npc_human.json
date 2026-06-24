@@ -152,7 +152,8 @@
     "random_skill": "none",
     "tag": [
       "human"
-    ]
+    ],
+    "equipment": "fighter" 
   },
   {
     "id": "elf_child",
@@ -212,7 +213,8 @@
     "random_skill": "magic",
     "tag": [
       "human"
-    ]
+    ],
+    "equipment": "archer" 
   },
   {
     "id": "warrior",
@@ -255,7 +257,8 @@
     "random_skill": "fighter",
     "tag": [
       "human"
-    ]
+    ],
+    "equipment": "fighter" 
   },
   {
     "id": "priest",
@@ -298,7 +301,8 @@
     "random_skill": "magic",
     "tag": [
       "human"
-    ]
+    ],
+    "equipment": "wizard" 
   },
   {
     "id": "wizard",
@@ -352,6 +356,7 @@
     "random_skill": "magic",
     "tag": [
       "human"
-    ]
+    ],
+    "equipment": "wizard" 
   }
 ]
