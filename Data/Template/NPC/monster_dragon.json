@@ -47,7 +47,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "ice_dragon",
@@ -97,7 +98,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "lightning_dragon",
@@ -147,7 +149,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "earth_dragon",
@@ -197,7 +200,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "wind_dragon",
@@ -247,7 +251,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "water_dragon",
@@ -297,7 +302,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "poison_dragon",
@@ -347,7 +353,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "young_dragon",
@@ -378,7 +385,8 @@
         "name": "小さな竜の牙で噛む",
         "type": "physical"
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "wyvern",
@@ -434,7 +442,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "shell_dragon",
@@ -471,6 +480,7 @@
         "name": "硬い甲殻",
         "desc": "硬い殻で傷を受けにくい。"
       }
-    ]
+    ],
+    "random_skill": "both"
   }
 ]

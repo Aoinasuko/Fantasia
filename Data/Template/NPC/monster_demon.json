@@ -34,7 +34,8 @@
         "type": "dark",
         "amount": 0.2
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "horned_demon",
@@ -65,7 +66,8 @@
         "name": "角で突き上げる",
         "type": "physical"
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "flame_demon",
@@ -115,7 +117,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "ice_demon",
@@ -165,7 +168,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "shadow_demon",
@@ -215,7 +219,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "familiar_imp",
@@ -252,7 +257,8 @@
         "type": "dark",
         "amount": 0.2
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "succubus",
@@ -302,7 +308,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "incubus",
@@ -352,7 +359,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "lilim",
@@ -402,7 +410,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "both"
   },
   {
     "id": "nightmare_demon",
@@ -452,6 +461,7 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "both"
   }
 ]

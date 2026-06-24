@@ -51,7 +51,8 @@
           "absorption_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "red_slime",
@@ -101,7 +102,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "blue_slime",
@@ -151,7 +153,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "yellow_slime",
@@ -201,7 +204,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "poison_slime",
@@ -251,7 +255,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "acid_slime",
@@ -301,7 +306,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "ice_slime",
@@ -351,7 +357,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "fire_slime",
@@ -401,7 +408,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "mud_slime",
@@ -451,7 +459,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "rock_slime",
@@ -501,7 +510,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "shadow_slime",
@@ -551,6 +561,7 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   }
 ]

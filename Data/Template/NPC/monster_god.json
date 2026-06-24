@@ -10,13 +10,14 @@
     "atk": 100,
     "def": 100,
     "attributes": {
-      "str": 16, 
+      "str": 16,
       "dex": 16,
       "con": 16,
       "int": 16,
       "wis": 16,
       "cha": 16
-    }
+    },
+    "random_skill": "both"
   },
   {
     "id": "goddess",
@@ -29,12 +30,13 @@
     "atk": 100,
     "def": 100,
     "attributes": {
-      "str": 16, 
+      "str": 16,
       "dex": 16,
       "con": 16,
       "int": 16,
       "wis": 16,
       "cha": 16
-    }
+    },
+    "random_skill": "both"
   }
 ]

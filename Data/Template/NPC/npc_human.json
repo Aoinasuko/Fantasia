@@ -12,7 +12,7 @@
     "atk": 2,
     "def": 2,
     "attributes": {
-      "str": 6, 
+      "str": 6,
       "dex": 6,
       "con": 6,
       "int": 4,
@@ -20,8 +20,12 @@
       "cha": 4
     },
     "attacks": [
-      {"name": "拳で殴る", "type": "physical"}
-    ]
+      {
+        "name": "拳で殴る",
+        "type": "physical"
+      }
+    ],
+    "random_skill": "none"
   },
   {
     "id": "female_child",
@@ -36,7 +40,7 @@
     "atk": 2,
     "def": 2,
     "attributes": {
-      "str": 4, 
+      "str": 4,
       "dex": 4,
       "con": 6,
       "int": 6,
@@ -44,8 +48,12 @@
       "cha": 6
     },
     "attacks": [
-      {"name": "拳で殴る", "type": "physical"}
-    ]
+      {
+        "name": "拳で殴る",
+        "type": "physical"
+      }
+    ],
+    "random_skill": "none"
   },
   {
     "id": "male_residents",
@@ -60,7 +68,7 @@
     "atk": 2,
     "def": 2,
     "attributes": {
-      "str": 8, 
+      "str": 8,
       "dex": 8,
       "con": 8,
       "int": 6,
@@ -68,8 +76,12 @@
       "cha": 6
     },
     "attacks": [
-      {"name": "拳で殴る", "type": "physical"}
-    ]
+      {
+        "name": "拳で殴る",
+        "type": "physical"
+      }
+    ],
+    "random_skill": "none"
   },
   {
     "id": "female_residents",
@@ -84,7 +96,7 @@
     "atk": 2,
     "def": 2,
     "attributes": {
-      "str": 6, 
+      "str": 6,
       "dex": 6,
       "con": 8,
       "int": 8,
@@ -92,8 +104,12 @@
       "cha": 8
     },
     "attacks": [
-      {"name": "拳で殴る", "type": "physical"}
-    ]
+      {
+        "name": "拳で殴る",
+        "type": "physical"
+      }
+    ],
+    "random_skill": "none"
   },
   {
     "id": "traveling_merchant",
@@ -108,7 +124,7 @@
     "atk": 2,
     "def": 2,
     "attributes": {
-      "str": 6, 
+      "str": 6,
       "dex": 6,
       "con": 8,
       "int": 8,
@@ -116,8 +132,12 @@
       "cha": 8
     },
     "attacks": [
-      {"name": "自衛用の剣で切る", "type": "physical"}
-    ]
+      {
+        "name": "自衛用の剣で切る",
+        "type": "physical"
+      }
+    ],
+    "random_skill": "none"
   },
   {
     "id": "elf_child",
@@ -131,7 +151,7 @@
     "atk": 4,
     "def": 2,
     "attributes": {
-      "str": 6, 
+      "str": 6,
       "dex": 8,
       "con": 8,
       "int": 8,
@@ -139,8 +159,12 @@
       "cha": 8
     },
     "attacks": [
-      {"name": "自衛用の弓で矢を放つ", "type": "physical"}
-    ]
+      {
+        "name": "自衛用の弓で矢を放つ",
+        "type": "physical"
+      }
+    ],
+    "random_skill": "none"
   },
   {
     "id": "elf_residents",
@@ -154,7 +178,7 @@
     "atk": 6,
     "def": 2,
     "attributes": {
-      "str": 6, 
+      "str": 6,
       "dex": 10,
       "con": 8,
       "int": 8,
@@ -162,8 +186,12 @@
       "cha": 8
     },
     "attacks": [
-      {"name": "自衛用の弓で矢を放つ", "type": "physical"}
-    ]
+      {
+        "name": "自衛用の弓で矢を放つ",
+        "type": "physical"
+      }
+    ],
+    "random_skill": "magic"
   },
   {
     "id": "warrior",
@@ -177,7 +205,7 @@
     "atk": 8,
     "def": 6,
     "attributes": {
-      "str": 10, 
+      "str": 10,
       "dex": 8,
       "con": 8,
       "int": 8,
@@ -185,11 +213,25 @@
       "cha": 8
     },
     "attacks": [
-      {"name": "剣で切る", "type": "physical"}
+      {
+        "name": "剣で切る",
+        "type": "physical"
+      }
     ],
     "skills": [
-      {"name": "全力攻撃", "desc": "強烈な一撃を敵に叩き込む。", "usesp": 3, "power": 2, "ability": "str", "element": "physical", "type": ["damage_hp_single"]}
-    ]
+      {
+        "name": "全力攻撃",
+        "desc": "強烈な一撃を敵に叩き込む。",
+        "usesp": 3,
+        "power": 2,
+        "ability": "str",
+        "element": "physical",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ],
+    "random_skill": "fighter"
   },
   {
     "id": "priest",
@@ -203,7 +245,7 @@
     "atk": 6,
     "def": 4,
     "attributes": {
-      "str": 8, 
+      "str": 8,
       "dex": 8,
       "con": 8,
       "int": 10,
@@ -211,11 +253,25 @@
       "cha": 8
     },
     "attacks": [
-      {"name": "槌で殴る", "type": "physical"}
+      {
+        "name": "槌で殴る",
+        "type": "physical"
+      }
     ],
     "skills": [
-      {"name": "治癒魔法", "desc": "味方単体のHPを回復する。", "usesp": 3, "power": 1, "ability": "int", "element": "light", "type": ["heal_single"]}
-    ]
+      {
+        "name": "治癒魔法",
+        "desc": "味方単体のHPを回復する。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "int",
+        "element": "light",
+        "type": [
+          "heal_single"
+        ]
+      }
+    ],
+    "random_skill": "magic"
   },
   {
     "id": "wizard",
@@ -229,7 +285,7 @@
     "atk": 6,
     "def": 4,
     "attributes": {
-      "str": 8, 
+      "str": 8,
       "dex": 8,
       "con": 8,
       "int": 8,
@@ -237,11 +293,35 @@
       "cha": 8
     },
     "attacks": [
-      {"name": "杖で殴る", "type": "physical"}
+      {
+        "name": "杖で殴る",
+        "type": "physical"
+      }
     ],
     "skills": [
-      {"name": "火球魔法", "desc": "火球を飛ばし、敵にダメージを与える。", "usesp": 3, "power": 1, "ability": "wis", "element": "fire", "type": ["damage_hp_single"]},
-      {"name": "氷魔法", "desc": "氷を飛ばし、敵にダメージを与える。", "usesp": 3, "power": 1, "ability": "wis", "element": "ice", "type": ["damage_hp_single"]}
-    ]
+      {
+        "name": "火球魔法",
+        "desc": "火球を飛ばし、敵にダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "wis",
+        "element": "fire",
+        "type": [
+          "damage_hp_single"
+        ]
+      },
+      {
+        "name": "氷魔法",
+        "desc": "氷を飛ばし、敵にダメージを与える。",
+        "usesp": 3,
+        "power": 1,
+        "ability": "wis",
+        "element": "ice",
+        "type": [
+          "damage_hp_single"
+        ]
+      }
+    ],
+    "random_skill": "magic"
   }
 ]

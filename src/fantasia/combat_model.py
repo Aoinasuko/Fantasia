@@ -40,6 +40,7 @@ COMBAT_BUFF_TYPES = {
     "paralysis",
     "psychosis",
     "restraint",
+    "taunt",
 }
 
 

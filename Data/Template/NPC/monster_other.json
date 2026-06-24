@@ -47,7 +47,8 @@
           }
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "tentacle_mass",
@@ -78,7 +79,8 @@
         "name": "触手で打つ",
         "type": "physical"
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "shadow_mass",
@@ -128,7 +130,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "devouring_mist",
@@ -178,7 +181,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "flesh_lump",
@@ -209,7 +213,8 @@
         "name": "肉塊で押し潰す",
         "type": "physical"
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "eyeball_orb",
@@ -253,7 +258,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "floating_skull",
@@ -290,7 +296,8 @@
         "type": "poison",
         "amount": 0.5
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "parasite_spore",
@@ -340,7 +347,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "living_chain",
@@ -371,7 +379,8 @@
         "name": "鎖で打ち据える",
         "type": "physical"
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "mirror_wraith",
@@ -425,7 +434,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "hollow_hand",
@@ -456,6 +466,7 @@
         "name": "指で掴みかかる",
         "type": "physical"
       }
-    ]
+    ],
+    "random_skill": "none"
   }
 ]

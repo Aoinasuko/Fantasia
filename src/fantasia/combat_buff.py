@@ -30,6 +30,36 @@ def has_buff_type(statuses: Any, effect_type: str) -> bool:
     return any(buff_effects(buff, effect_type) for buff in combat_buffs(statuses))
 
 
+def status_has_taunt(statuses: Any) -> bool:
+    if has_buff_type(statuses, "taunt"):
+        return True
+    taunt_terms = {"taunt", "Taunt", "挑発"}
+    for raw in as_list(statuses):
+        if isinstance(raw, dict):
+            direct_values = [
+                raw.get("type"),
+                raw.get("id"),
+                raw.get("effect_id"),
+                raw.get("effect_type"),
+                raw.get("status_id"),
+                raw.get("name"),
+                raw.get("status"),
+                raw.get("condition"),
+            ]
+            for value in direct_values:
+                text = str(value or "").strip()
+                if text in taunt_terms or text.casefold() == "taunt":
+                    return True
+            for entry in as_list(raw.get("type")):
+                if combat_effect_type(entry).casefold() == "taunt":
+                    return True
+        else:
+            text = str(raw or "").strip()
+            if text in taunt_terms or text.casefold() == "taunt":
+                return True
+    return False
+
+
 def status_blocks_attack(statuses: Any) -> bool:
     return has_buff_type(statuses, "restraint")
 

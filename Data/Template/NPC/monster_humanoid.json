@@ -51,7 +51,8 @@
         "name": "弱気",
         "desc": "自身が劣勢になると、戦意を失い相手に助けを求める。"
       }
-    ]
+    ],
+    "random_skill": "fighter"
   },
   {
     "id": "goblin_bow",
@@ -113,7 +114,8 @@
         "name": "弱気",
         "desc": "自身が劣勢になると、戦意を失い相手に助けを求める。"
       }
-    ]
+    ],
+    "random_skill": "fighter"
   },
   {
     "id": "thief",
@@ -155,7 +157,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "fighter"
   },
   {
     "id": "goblin_scout",
@@ -187,7 +190,8 @@
         "name": "短槍で突く",
         "type": "physical"
       }
-    ]
+    ],
+    "random_skill": "fighter"
   },
   {
     "id": "hobgoblin",
@@ -219,7 +223,8 @@
         "name": "棍棒で殴る",
         "type": "physical"
       }
-    ]
+    ],
+    "random_skill": "fighter"
   },
   {
     "id": "kobold",
@@ -251,7 +256,8 @@
         "name": "短剣で斬る",
         "type": "physical"
       }
-    ]
+    ],
+    "random_skill": "fighter"
   },
   {
     "id": "orc",
@@ -283,7 +289,8 @@
         "name": "斧で叩き斬る",
         "type": "physical"
       }
-    ]
+    ],
+    "random_skill": "fighter"
   },
   {
     "id": "human_thief",
@@ -328,7 +335,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "fighter"
   },
   {
     "id": "human_bandit",
@@ -360,7 +368,8 @@
         "name": "山刀で叩き斬る",
         "type": "physical"
       }
-    ]
+    ],
+    "random_skill": "fighter"
   },
   {
     "id": "skeleton_soldier",
@@ -397,7 +406,8 @@
         "type": "poison",
         "amount": 0.5
       }
-    ]
+    ],
+    "random_skill": "fighter"
   },
   {
     "id": "lizardman",
@@ -429,7 +439,8 @@
         "name": "槍で突く",
         "type": "physical"
       }
-    ]
+    ],
+    "random_skill": "fighter"
   },
   {
     "id": "young_troll",
@@ -467,7 +478,8 @@
         "name": "しぶとい体",
         "desc": "分厚い体で倒れにくい。"
       }
-    ]
+    ],
+    "random_skill": "fighter"
   },
   {
     "id": "human_archer",
@@ -512,6 +524,7 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "fighter"
   }
 ]

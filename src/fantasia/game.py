@@ -35,6 +35,7 @@ from .combat_buff import (
     status_blocks_attack as _combat_status_blocks_attack,
     status_blocks_escape as _combat_status_blocks_escape,
     status_blocks_skill as _combat_status_blocks_skill,
+    status_has_taunt as _combat_status_has_taunt,
     tick_buffs as _combat_tick_buffs,
 )
 from .combat_model import combat_effect_type, combat_skill_sp_cost, normalise_combat_skill
@@ -5092,6 +5093,9 @@ class GameEngine:
             display_level = int(item.get("level") or display_level)
         if level_ups:
             lines.append(f"> [成長] HP {old_max_hp}->{new_max_hp} / SP {old_max_sp}->{new_max_sp}")
+        companion_events = self._apply_party_companion_exp_share(gained, source=source, reason=reason, encounter=encounter)
+        for companion_event in companion_events:
+            lines.extend(str(line) for line in companion_event.get("lines", []) if str(line).strip())
         event = {
             "source": source,
             "reason": reason,
@@ -5103,11 +5107,32 @@ class GameEngine:
             "old_exp": old_exp,
             "new_exp": exp,
             "level_ups": level_ups,
+            "companion_events": companion_events,
             "lines": lines,
             "changed": True,
         }
         self.state.world_data.extra.setdefault("exp_events", []).append(_strip_response_metadata(event))
         return event
+
+    def _apply_party_companion_exp_share(
+        self,
+        amount: Any,
+        *,
+        source: str,
+        reason: str = "",
+        encounter: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        gained = max(0, self._hp_number(amount, 0))
+        if gained <= 0:
+            return []
+        events: list[dict[str, Any]] = []
+        for companion in self._party_companions():
+            if not isinstance(companion, Character):
+                continue
+            event = self._apply_character_exp(companion, gained, source=f"{source}:party_share", reason=reason, encounter=encounter)
+            if event.get("changed"):
+                events.append(event)
+        return events
 
     def _apply_character_exp(
         self,
@@ -5133,11 +5158,20 @@ class GameEngine:
         old_current_hp = max(0, min(old_max_hp, _safe_int(character.current_hp, old_max_hp)))
         old_max_sp = max(1, _safe_int(character.max_sp, _character_calculated_max_sp(character, max_hp=old_max_hp)))
         old_current_sp = max(0, min(old_max_sp, _safe_int(character.current_sp, old_max_sp)))
+        old_attack = max(0, _safe_int(character.attack, 0))
+        old_defense = max(0, _safe_int(character.defense, 0))
         level_ups: list[dict[str, Any]] = []
         while level < PLAYER_MAX_LEVEL and exp >= self._exp_to_next(level):
             exp -= self._exp_to_next(level)
             level += 1
-            level_ups.append({"level": level, "attribute_gains": self._raise_random_character_attributes(character)})
+            level_ups.append(
+                {
+                    "level": level,
+                    "attribute_gains": self._raise_random_character_attributes(character),
+                    "attack_gain": random.randint(1, 2),
+                    "defense_gain": random.randint(1, 2),
+                }
+            )
         if level >= PLAYER_MAX_LEVEL:
             level = PLAYER_MAX_LEVEL
             exp = min(exp, max_exp_bar)
@@ -5150,6 +5184,8 @@ class GameEngine:
         new_max_sp = old_max_sp
         if level_ups:
             attrs = _character_runtime_attributes(character)
+            character.attack = old_attack + sum(_safe_int(item.get("attack_gain"), 0) for item in level_ups)
+            character.defense = old_defense + sum(_safe_int(item.get("defense_gain"), 0) for item in level_ups)
             new_max_hp = max(old_max_hp + 1, 8 + level * 3 + attrs["con"] * 2 + attrs["str"] // 2 + attrs["will"] // 3)
             new_max_hp = max(10, new_max_hp)
             new_max_sp = max(old_max_sp + 1, int(new_max_hp * 0.45) + attrs["magic"] + attrs["will"] + level * 2)
@@ -5162,6 +5198,8 @@ class GameEngine:
         character.extra["max_hp"] = character.max_hp
         character.extra["current_sp"] = character.current_sp
         character.extra["max_sp"] = character.max_sp
+        character.extra["attack"] = character.attack
+        character.extra["defense"] = character.defense
         self._sync_companion_party_entry(character)
         if encounter is not None:
             self._sync_encounter_character_after_exp(encounter, character)
@@ -5175,6 +5213,7 @@ class GameEngine:
             display_level = int(item.get("level") or display_level)
         if level_ups:
             lines.append(f"> [Stats] {character.name}: HP {old_max_hp}->{new_max_hp} / SP {old_max_sp}->{new_max_sp}")
+            lines.append(f"> [Stats] {character.name}: ATK {old_attack}->{character.attack} / DEF {old_defense}->{character.defense}")
         event = {
             "source": source,
             "reason": reason,
@@ -5926,16 +5965,27 @@ class GameEngine:
     def _encounter_has_surrendered_opponents(self, encounter: dict[str, Any]) -> bool:
         return any(self._character_has_surrendered(character, encounter) for character in self._living_encounter_opponents(encounter))
 
+    def _taunting_encounter_opponents(self, encounter: dict[str, Any]) -> list[Character]:
+        return [
+            character
+            for character in self._living_encounter_opponents(encounter)
+            if _combat_status_has_taunt(character.status_effects)
+        ]
+
+    def _encounter_target_candidates_for_player(self, encounter: dict[str, Any]) -> list[Character]:
+        taunting = self._taunting_encounter_opponents(encounter)
+        return taunting or self._living_encounter_opponents(encounter)
+
     def _select_encounter_target_from_action(self, encounter: dict[str, Any], action: str) -> Character | None:
-        living = self._living_encounter_opponents(encounter)
-        if not living:
+        candidates = self._encounter_target_candidates_for_player(encounter)
+        if not candidates:
             return None
         target = _clean_generated_name(_extract_attack_target(action), "", kind="monster")
         if not target:
             target = str(action or "").strip()
         folded = target.casefold()
         if folded:
-            for character in living:
+            for character in candidates:
                 terms = _character_reference_terms(character)
                 terms.extend(_as_str_list(character.flags.get("aliases")))
                 terms.extend(_as_str_list(character.extra.get("aliases")))
@@ -5948,12 +5998,12 @@ class GameEngine:
                         return character
         active_uuid = str(encounter.get("active_opponent_uuid") or encounter.get("opponent_uuid") or "")
         active_name = str(encounter.get("active_opponent_name") or encounter.get("opponent_name") or "")
-        for character in living:
+        for character in candidates:
             if (active_uuid and str(character.uuid) == active_uuid) or (active_name and character.name == active_name):
                 self._set_encounter_active_opponent(encounter, character)
                 return character
-        self._set_encounter_active_opponent(encounter, living[0])
-        return living[0]
+        self._set_encounter_active_opponent(encounter, candidates[0])
+        return candidates[0]
 
     def _character_from_reference(self, name: str = "", uuid: str = "") -> Character | None:
         uuid = str(uuid or "").strip()
@@ -13289,7 +13339,7 @@ class GameEngine:
         return "enemy"
 
     def _combat_attack_target_choices(self, encounter: dict[str, Any]) -> list[str]:
-        choices = [f"{COMBAT_CHOICE_ATTACK_PREFIX}{character.name}" for character in self._living_encounter_opponents(encounter)]
+        choices = [f"{COMBAT_CHOICE_ATTACK_PREFIX}{character.name}" for character in self._encounter_target_candidates_for_player(encounter)]
         return choices + [COMBAT_CHOICE_BACK]
 
     def _combat_skill_choices(self) -> list[str]:
@@ -13309,7 +13359,7 @@ class GameEngine:
             choices = [f"{COMBAT_CHOICE_TARGET_PREFIX}プレイヤー"]
             choices.extend(f"{COMBAT_CHOICE_TARGET_PREFIX}{character.name}" for character in self._party_companions())
             return choices + [COMBAT_CHOICE_BACK]
-        choices = [f"{COMBAT_CHOICE_TARGET_PREFIX}{character.name}" for character in self._living_encounter_opponents(encounter)]
+        choices = [f"{COMBAT_CHOICE_TARGET_PREFIX}{character.name}" for character in self._encounter_target_candidates_for_player(encounter)]
         return choices + [COMBAT_CHOICE_BACK]
 
     def _select_player_skill_target_from_action(

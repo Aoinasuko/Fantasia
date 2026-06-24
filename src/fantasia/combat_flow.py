@@ -4,7 +4,7 @@ import random
 from typing import Any
 
 from .character import Character
-from .combat_buff import effective_attributes, stat_delta, status_blocks_attack, status_blocks_escape, status_blocks_skill
+from .combat_buff import effective_attributes, stat_delta, status_blocks_attack, status_blocks_escape, status_blocks_skill, status_has_taunt
 from .combat_llm_tool import (
     apply_combat_response_tools,
     combat_enemy_tool_instruction,
@@ -346,8 +346,10 @@ def _resolve_skill(
     effects = as_list(skill.get("type"))
     hp_damage_effect_count = _skill_hp_damage_effect_count(effects)
     targets = [target] if isinstance(target, Character) else []
-    if not targets and any(combat_effect_type(effect).endswith("_single") for effect in effects):
-        targets = engine._living_encounter_opponents(encounter)
+    if _is_player_side_actor(engine, actor) and _skill_has_enemy_single_offense(effects):
+        targets = _constrain_enemy_targets_for_actor(engine, encounter, actor, targets)
+    if not targets and _skill_has_enemy_single_offense(effects):
+        targets = _enemy_targets_for_actor(engine, encounter, actor)
     narration_bits: list[str] = []
     calc_results: list[dict[str, Any]] = []
     for effect in effects:
@@ -718,17 +720,21 @@ def _select_ally_skill_target(
             if isinstance(wounded, Character):
                 return wounded
         return companion
-    target = _match_character_by_text(engine._living_encounter_opponents(encounter), target_name)
+    taunting = _taunting_enemies(engine, encounter)
+    candidates = taunting or engine._living_encounter_opponents(encounter)
+    target = _match_character_by_text(candidates, target_name)
     return target if isinstance(target, Character) else _select_ally_enemy_target(engine, encounter, decision)
 
 
 def _select_ally_enemy_target(engine: Any, encounter: dict[str, Any], decision: dict[str, Any]) -> Character | None:
     target_name = str(decision.get("target_name") or decision.get("target") or decision.get("opponent") or "").strip()
-    target = _match_character_by_text(engine._living_encounter_opponents(encounter), target_name)
+    taunting = _taunting_enemies(engine, encounter)
+    candidates = taunting or engine._living_encounter_opponents(encounter)
+    target = _match_character_by_text(candidates, target_name)
     if isinstance(target, Character):
         engine._set_encounter_active_opponent(encounter, target)
         return target
-    living = engine._living_encounter_opponents(encounter)
+    living = candidates
     if not living:
         return None
     engine._set_encounter_active_opponent(encounter, living[0])
@@ -759,6 +765,18 @@ def _ally_targets(engine: Any) -> list[Character]:
     return [item for item in targets if safe_int(item.current_hp, 1) > 0]
 
 
+def _characters_with_taunt(characters: list[Character]) -> list[Character]:
+    return [character for character in characters if status_has_taunt(character.status_effects)]
+
+
+def _taunting_allies(engine: Any) -> list[Character]:
+    return _characters_with_taunt(_ally_targets(engine))
+
+
+def _taunting_enemies(engine: Any, encounter: dict[str, Any]) -> list[Character]:
+    return _characters_with_taunt(engine._living_encounter_opponents(encounter))
+
+
 def _wounded_ally_target(engine: Any) -> Character | None:
     wounded: list[tuple[float, Character]] = []
     for character in _ally_targets(engine):
@@ -780,14 +798,51 @@ def _skill_has_ally_effect(skill: dict[str, Any]) -> bool:
     )
 
 
+def _skill_has_enemy_single_offense(effects: Any) -> bool:
+    return any(
+        combat_effect_type(effect)
+        in {
+            "damage_hp_single",
+            "damage_sp_single",
+            "absorption_single",
+            "effect_enemy_single",
+        }
+        for effect in as_list(effects)
+    )
+
+
 def _is_player_side_actor(engine: Any, actor: Character) -> bool:
     if actor.flags.get("is_player") or actor.uuid == engine.state.player_uuid:
         return True
     return any(companion.uuid == actor.uuid for companion in engine._party_companions())
 
 
+def _enemy_targets_for_actor(engine: Any, encounter: dict[str, Any], actor: Character) -> list[Character]:
+    if _is_player_side_actor(engine, actor):
+        taunting = _taunting_enemies(engine, encounter)
+        if taunting:
+            return taunting
+    return engine._living_encounter_opponents(encounter)
+
+
+def _constrain_enemy_targets_for_actor(
+    engine: Any,
+    encounter: dict[str, Any],
+    actor: Character,
+    targets: list[Character],
+) -> list[Character]:
+    if not _is_player_side_actor(engine, actor):
+        return targets
+    taunting = _taunting_enemies(engine, encounter)
+    if not taunting:
+        return targets
+    filtered = [target for target in targets if any(target.uuid == taunter.uuid for taunter in taunting)]
+    return filtered or taunting[:1]
+
+
 def _random_enemy_single_target(engine: Any) -> Character | None:
-    targets = _ally_targets(engine)
+    taunting = _taunting_allies(engine)
+    targets = taunting or _ally_targets(engine)
     return random.choice(targets) if targets else None
 
 

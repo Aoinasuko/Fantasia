@@ -1,0 +1,82 @@
+[
+  {
+    "id": "taunt",
+    "name": "挑発",
+    "desc": "挑発を行い、敵の狙いを集める。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "con",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "taunt",
+        "amount": 1,
+        "duration": 3,
+        "name": "挑発",
+        "desc": "敵の狙いを集める。"
+      }
+    ]
+  },
+  {
+    "id": "patience",
+    "name": "防御態勢",
+    "desc": "防御態勢を取り、一時的に防御力を高める。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "con",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "delta_def",
+        "amount": 10,
+        "duration": 3,
+        "name": "防御態勢",
+        "desc": "防御態勢を取り、一時的に防御力が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "warcry",
+    "name": "ウォークライ",
+    "desc": "気合を高め、一時的に攻撃力を高める。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "str",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "delta_atk",
+        "amount": 10,
+        "duration": 3,
+        "name": "ウォークライ",
+        "desc": "気合を高め、一時的に攻撃力が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "regen",
+    "name": "リジェネ",
+    "desc": "再生力を高め、一時的にターン終了時にHPを回復する。",
+    "category": "magic",
+    "usesp": 3,
+    "power": 1,
+    "ability": "wis",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "regen_hp",
+        "amount": 10,
+        "duration": 3,
+        "name": "リジェネ",
+        "desc": "再生力を高め、一時的にターン終了時にHPを回復する。"
+      }
+    ]
+  }
+]

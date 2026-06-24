@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .paths import NPC_TEMPLATE_DIR, ROOT
+from .skill_templates import choose_random_skill_templates, random_skill_mode
 
 
 NPC_TEMPLATE_CATEGORY_IDS = (
@@ -133,6 +134,27 @@ def _normalise_resistance(value: Any) -> list[dict[str, Any]]:
     return result
 
 
+def _merge_skill_entries(existing: Any, additions: Any) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    seen_names: set[str] = set()
+    for item in [*_as_list(existing), *_as_list(additions)]:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        template_id = str(item.get("id") or item.get("skill_template_id") or item.get("template_id") or "").strip()
+        if template_id and template_id in seen_ids:
+            continue
+        if name and name in seen_names:
+            continue
+        result.append(deepcopy(item))
+        if template_id:
+            seen_ids.add(template_id)
+        if name:
+            seen_names.add(name)
+    return result
+
+
 def _normalise_npc_template(raw: Any, source_path: Path) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
@@ -159,6 +181,7 @@ def _normalise_npc_template(raw: Any, source_path: Path) -> dict[str, Any] | Non
         "age_max": max(0, _safe_int(raw.get("age_max"), 0)),
         "usenamelist": bool(raw.get("usenamelist")),
         "rescued": bool(raw.get("rescued")),
+        "random_skill": random_skill_mode(raw.get("random_skill")),
         "category": category,
         "level": max(0, _safe_int(raw.get("level"), 0)),
         "atk": max(0, _safe_int(raw.get("atk"), 0)),
@@ -358,6 +381,7 @@ def npc_template_ai_context(template: dict[str, Any] | None) -> dict[str, Any]:
         "traits": template.get("traits") if template.get("traits_defined") else "generate_if_needed",
         "usenamelist": bool(template.get("usenamelist")),
         "rescued": bool(template.get("rescued")),
+        "random_skill": template.get("random_skill") or "none",
     }
 
 
@@ -384,6 +408,7 @@ def npc_template_prompt_summaries(
                 "resistance": template.get("resistance") or [],
                 "usenamelist": bool(template.get("usenamelist")),
                 "rescued": bool(template.get("rescued")),
+                "random_skill": template.get("random_skill") or "none",
             }
         )
     return summaries
@@ -479,8 +504,22 @@ def npc_template_to_character_payload(
         payload["flags"]["enemy_npc"] = True
         payload["flags"]["hostile"] = bool(True if hostile is None else hostile)
         payload["extra"]["hostile"] = bool(True if hostile is None else hostile)
-    if template.get("skills_defined"):
-        payload["skills"] = deepcopy(template.get("skills") or [])
+    base_skills = deepcopy(template.get("skills") or []) if template.get("skills_defined") else []
+    random_skills = choose_random_skill_templates(
+        template.get("random_skill"),
+        seed=f"{seed}:random-skills:{template.get('id')}:{danger_level}",
+        existing_skills=base_skills,
+        max_count=3,
+    )
+    if template.get("skills_defined") or random_skills:
+        payload["skills"] = _merge_skill_entries(base_skills, random_skills)
+    payload["extra"]["random_skill"] = template.get("random_skill") or "none"
+    if random_skills:
+        payload["extra"]["random_skill_template_ids"] = [
+            str(skill.get("skill_template_id") or skill.get("id") or "")
+            for skill in random_skills
+            if str(skill.get("skill_template_id") or skill.get("id") or "").strip()
+        ]
     if template.get("traits_defined"):
         payload["traits"] = deepcopy(template.get("traits") or [])
     return payload

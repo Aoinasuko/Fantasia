@@ -29,6 +29,7 @@
         "type": "physical"
       }
     ],
+    "random_skill": "none",
     "skills": [
       {
         "name": "吸血",
@@ -84,7 +85,8 @@
         "name": "飛行",
         "desc": "空を飛んでおり、近接攻撃が届きにくい。"
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "wolf",
@@ -115,7 +117,8 @@
         "name": "牙で噛んで攻撃",
         "type": "physical"
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "forest_wolf",
@@ -152,7 +155,8 @@
         "name": "群れの狩り",
         "desc": "仲間と連携して獲物を追い込む。"
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "wildcat",
@@ -183,7 +187,8 @@
         "name": "爪で切り裂く",
         "type": "physical"
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "giant_rat",
@@ -214,7 +219,8 @@
         "name": "前歯で噛みつく",
         "type": "physical"
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "giant_spider",
@@ -264,7 +270,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "venom_moth",
@@ -314,7 +321,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "horned_rabbit",
@@ -345,7 +353,8 @@
         "name": "角で突く",
         "type": "physical"
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "cave_snake",
@@ -395,7 +404,8 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "iron_beetle",
@@ -432,7 +442,8 @@
         "name": "硬い甲殻",
         "desc": "厚い甲殻で傷を受けにくい。"
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "black_crow",
@@ -469,7 +480,8 @@
         "name": "飛行",
         "desc": "空を飛んで攻撃を避けやすい。"
       }
-    ]
+    ],
+    "random_skill": "none"
   },
   {
     "id": "killer_bee_swarm",
@@ -525,6 +537,7 @@
           "damage_hp_single"
         ]
       }
-    ]
+    ],
+    "random_skill": "none"
   }
 ]

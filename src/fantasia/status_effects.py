@@ -20,6 +20,7 @@ STATUS_EFFECT_IDS = (
     "SendLLM",
     "Atk_Mod",
     "Def_Mod",
+    "Taunt",
 )
 
 STATUS_IMMUNITY_EFFECT_IDS = (
@@ -41,6 +42,7 @@ STATUS_EFFECT_LABELS_JA = {
     "SendLLM": "特殊効果",
     "Atk_Mod": "攻撃力変化",
     "Def_Mod": "防御力変化",
+    "Taunt": "挑発",
 }
 
 STATUS_EFFECT_LABELS_EN = {
@@ -53,6 +55,7 @@ STATUS_EFFECT_LABELS_EN = {
     "SendLLM": "LLM effect",
     "Atk_Mod": "Attack modifier",
     "Def_Mod": "Defense modifier",
+    "Taunt": "Taunt",
 }
 
 STATUS_EFFECT_DESCRIPTIONS_JA = {
@@ -65,6 +68,7 @@ STATUS_EFFECT_DESCRIPTIONS_JA = {
     "SendLLM": "LLMに渡す効果文のみを持つ。",
     "Atk_Mod": "攻撃力が上昇または減少する。",
     "Def_Mod": "防御力が上昇または減少する。",
+    "Taunt": "攻撃対象を引きつける。",
 }
 
 STATUS_EFFECT_ALIASES = {
@@ -118,6 +122,10 @@ STATUS_EFFECT_ALIASES = {
     "defense_modifier": "Def_Mod",
     "defense_up": "Def_Mod",
     "defense_down": "Def_Mod",
+    "taunt": "Taunt",
+    "provoke": "Taunt",
+    "provocation": "Taunt",
+    "aggro": "Taunt",
     "hpダメージ": "HP_Damage",
     "毒": "HP_Damage",
     "出血": "HP_Damage",
@@ -144,6 +152,7 @@ STATUS_EFFECT_ALIASES = {
     "防御力変化": "Def_Mod",
     "防御力上昇": "Def_Mod",
     "防御力低下": "Def_Mod",
+    "挑発": "Taunt",
 }
 
 
