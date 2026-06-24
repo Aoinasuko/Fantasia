@@ -1,2 +1,405 @@
 [
+  {
+    "id": "ally_guard_order",
+    "name": "守備指示",
+    "desc": "味方単体に守りを固める指示を出し、防御力を高める。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "con",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "delta_def",
+        "amount": 8,
+        "duration": 3,
+        "name": "守備指示",
+        "desc": "防御力が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "ally_iron_skin",
+    "name": "鉄皮の激励",
+    "desc": "味方単体に耐える呼吸を教え、受けるダメージを抑える。",
+    "category": "fighter",
+    "usesp": 4,
+    "power": 1,
+    "ability": "con",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "damage_taken_mod",
+        "amount": -2,
+        "duration": 3,
+        "name": "鉄皮の激励",
+        "desc": "受けるダメージが減少している。"
+      }
+    ]
+  },
+  {
+    "id": "ally_guided_strike",
+    "name": "狙撃指示",
+    "desc": "味方単体に攻撃の狙いを伝え、命中精度を高める。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "accuracy_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "狙撃指示",
+        "desc": "命中精度が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "ally_battle_shout",
+    "name": "戦意鼓舞",
+    "desc": "味方単体を鼓舞し、攻撃力を高める。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "str",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "delta_atk",
+        "amount": 6,
+        "duration": 3,
+        "name": "戦意鼓舞",
+        "desc": "攻撃力が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "ally_steady_hands",
+    "name": "手元の安定",
+    "desc": "味方単体の動きを整え、器用さを高める。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "dex_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "手元の安定",
+        "desc": "器用さが高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "ally_strengthening_grip",
+    "name": "握力強化",
+    "desc": "味方単体の武器を握る力を高め、筋力を強化する。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "str",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "str_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "握力強化",
+        "desc": "筋力が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "ally_shield_cover",
+    "name": "盾越しの援護",
+    "desc": "味方単体に反撃の機会を作り、攻撃を受けた相手へ反射ダメージを与える。",
+    "category": "fighter",
+    "usesp": 4,
+    "power": 1,
+    "ability": "con",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "thorns",
+        "amount": 2,
+        "duration": 3,
+        "name": "盾越しの援護",
+        "desc": "攻撃を受けたときに一部を反射する。"
+      }
+    ]
+  },
+  {
+    "id": "ally_body_conditioning",
+    "name": "体幹調整",
+    "desc": "味方単体の姿勢を整え、耐久を高める。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "con",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "con_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "体幹調整",
+        "desc": "耐久が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "ally_nimble_step",
+    "name": "軽快歩法",
+    "desc": "味方単体の足運びを軽くし、器用さを高める。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "dex_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "軽快歩法",
+        "desc": "器用さが高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "ally_warrior_resolve",
+    "name": "戦士の気付け",
+    "desc": "味方単体の闘志を呼び起こし、HPを徐々に回復する。",
+    "category": "fighter",
+    "usesp": 4,
+    "power": 1,
+    "ability": "con",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "regen_hp",
+        "amount": 4,
+        "duration": 3,
+        "name": "戦士の気付け",
+        "desc": "ターン終了時にHPを回復する。"
+      }
+    ]
+  },
+  {
+    "id": "ally_light_regen",
+    "name": "癒光付与",
+    "desc": "味方単体に癒しの光を付与し、HPを徐々に回復する。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "wis",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "regen_hp",
+        "amount": 6,
+        "duration": 3,
+        "name": "癒光付与",
+        "desc": "ターン終了時にHPを回復する。"
+      }
+    ]
+  },
+  {
+    "id": "ally_mana_touch",
+    "name": "マナタッチ",
+    "desc": "味方単体の魔力循環を助け、SPを徐々に回復する。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "wis",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "regen_sp",
+        "amount": 5,
+        "duration": 3,
+        "name": "マナタッチ",
+        "desc": "ターン終了時にSPを回復する。"
+      }
+    ]
+  },
+  {
+    "id": "ally_arcane_intellect",
+    "name": "知慧付与",
+    "desc": "味方単体に魔術的な洞察を与え、知力を高める。",
+    "category": "magic",
+    "usesp": 3,
+    "power": 1,
+    "ability": "int",
+    "element": "arcane",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "int_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "知慧付与",
+        "desc": "知力が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "ally_oracle_wisdom",
+    "name": "神託の導き",
+    "desc": "味方単体に静かな導きを与え、判断を高める。",
+    "category": "magic",
+    "usesp": 3,
+    "power": 1,
+    "ability": "wis",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "wis_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "神託の導き",
+        "desc": "判断が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "ally_charm_blessing",
+    "name": "魅力の祝福",
+    "desc": "味方単体に人を惹きつける輝きを与え、魅力を高める。",
+    "category": "magic",
+    "usesp": 3,
+    "power": 1,
+    "ability": "cha",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "cha_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "魅力の祝福",
+        "desc": "魅力が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "ally_flame_ward",
+    "name": "火除けの護り",
+    "desc": "味方単体に火の守りを与え、火炎耐性を高める。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "int",
+    "element": "fire",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "element_res_mod",
+        "element": "fire",
+        "amount": 2,
+        "duration": 3,
+        "name": "火除けの護り",
+        "desc": "火炎属性への耐性が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "ally_frost_ward",
+    "name": "氷除けの護り",
+    "desc": "味方単体に氷の守りを与え、氷結耐性を高める。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "int",
+    "element": "ice",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "element_res_mod",
+        "element": "ice",
+        "amount": 2,
+        "duration": 3,
+        "name": "氷除けの護り",
+        "desc": "氷結属性への耐性が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "ally_storm_ward",
+    "name": "雷除けの護り",
+    "desc": "味方単体に雷の守りを与え、雷撃耐性を高める。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "int",
+    "element": "lightning",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "element_res_mod",
+        "element": "lightning",
+        "amount": 2,
+        "duration": 3,
+        "name": "雷除けの護り",
+        "desc": "雷撃属性への耐性が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "ally_holy_barrier",
+    "name": "聖なる障壁",
+    "desc": "味方単体を聖なる障壁で包み、受けるダメージを抑える。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "wis",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "damage_taken_mod",
+        "amount": -1,
+        "duration": 3,
+        "name": "聖なる障壁",
+        "desc": "受けるダメージが減少している。"
+      }
+    ]
+  },
+  {
+    "id": "ally_mirror_skin",
+    "name": "鏡肌の祝福",
+    "desc": "味方単体に反射の祝福を与え、攻撃を受けた相手へ反射ダメージを与える。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "int",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_ally_single",
+        "buff_type": "thorns",
+        "amount": 1,
+        "duration": 3,
+        "name": "鏡肌の祝福",
+        "desc": "攻撃を受けたときに一部を反射する。"
+      }
+    ]
+  }
 ]

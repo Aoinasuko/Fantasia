@@ -78,5 +78,327 @@
         "desc": "再生力を高め、一時的にターン終了時にHPを回復する。"
       }
     ]
+  },
+  {
+    "id": "self_adrenaline_focus",
+    "name": "アドレナリン集中",
+    "desc": "神経を研ぎ澄ませ、自身の命中精度を高める。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "accuracy_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "アドレナリン集中",
+        "desc": "命中精度が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "self_iron_guard",
+    "name": "鉄壁の構え",
+    "desc": "急所を守る構えを取り、自身が受けるダメージを抑える。",
+    "category": "fighter",
+    "usesp": 4,
+    "power": 1,
+    "ability": "con",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "damage_taken_mod",
+        "amount": -2,
+        "duration": 3,
+        "name": "鉄壁の構え",
+        "desc": "受けるダメージが減少している。"
+      }
+    ]
+  },
+  {
+    "id": "self_spiked_guard",
+    "name": "棘の構え",
+    "desc": "反撃を意識した構えを取り、自身を攻撃した相手へ反射ダメージを与える。",
+    "category": "fighter",
+    "usesp": 4,
+    "power": 1,
+    "ability": "con",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "thorns",
+        "amount": 2,
+        "duration": 3,
+        "name": "棘の構え",
+        "desc": "攻撃を受けたときに一部を反射する。"
+      }
+    ]
+  },
+  {
+    "id": "self_bracing_footwork",
+    "name": "足さばき",
+    "desc": "足運びを整え、自身の器用さを高める。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "dex_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "足さばき",
+        "desc": "器用さが高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "self_mighty_stance",
+    "name": "剛力の構え",
+    "desc": "全身に力を込め、自身の筋力を高める。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "str",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "str_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "剛力の構え",
+        "desc": "筋力が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "self_vital_breath",
+    "name": "生命呼吸",
+    "desc": "呼吸を整え、自身の耐久を高める。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "con",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "con_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "生命呼吸",
+        "desc": "耐久が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "self_second_wind",
+    "name": "セカンドウィンド",
+    "desc": "戦いの呼吸を取り戻し、自身のHPを徐々に回復する。",
+    "category": "fighter",
+    "usesp": 4,
+    "power": 1,
+    "ability": "con",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "regen_hp",
+        "amount": 6,
+        "duration": 3,
+        "name": "セカンドウィンド",
+        "desc": "ターン終了時にHPを回復する。"
+      }
+    ]
+  },
+  {
+    "id": "self_enduring_guard",
+    "name": "不屈の防御",
+    "desc": "守りを固め、自身の防御力を高める。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "con",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "delta_def",
+        "amount": 6,
+        "duration": 3,
+        "name": "不屈の防御",
+        "desc": "防御力が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "self_mana_flow",
+    "name": "マナ循環",
+    "desc": "体内の魔力を巡らせ、自身のSPを徐々に回復する。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "wis",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "regen_sp",
+        "amount": 5,
+        "duration": 3,
+        "name": "マナ循環",
+        "desc": "ターン終了時にSPを回復する。"
+      }
+    ]
+  },
+  {
+    "id": "self_mirror_ward",
+    "name": "鏡面結界",
+    "desc": "薄い結界をまとい、自身を攻撃した相手へ反射ダメージを与える。",
+    "category": "magic",
+    "usesp": 5,
+    "power": 1,
+    "ability": "int",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "thorns",
+        "amount": 2,
+        "duration": 3,
+        "name": "鏡面結界",
+        "desc": "攻撃を受けたときに一部を反射する。"
+      }
+    ]
+  },
+  {
+    "id": "self_arcane_focus",
+    "name": "魔力集中",
+    "desc": "思考を魔術に集中し、自身の知力を高める。",
+    "category": "magic",
+    "usesp": 3,
+    "power": 1,
+    "ability": "int",
+    "element": "arcane",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "int_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "魔力集中",
+        "desc": "知力が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "self_spirit_sight",
+    "name": "霊視",
+    "desc": "周囲の気配を読み取り、自身の判断を高める。",
+    "category": "magic",
+    "usesp": 3,
+    "power": 1,
+    "ability": "wis",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "wis_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "霊視",
+        "desc": "判断が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "self_fire_ward",
+    "name": "火炎耐性",
+    "desc": "火の加護をまとい、自身の火炎耐性を高める。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "int",
+    "element": "fire",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "element_res_mod",
+        "element": "fire",
+        "amount": 2,
+        "duration": 3,
+        "name": "火炎耐性",
+        "desc": "火炎属性への耐性が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "self_frost_ward",
+    "name": "氷結耐性",
+    "desc": "氷の加護をまとい、自身の氷結耐性を高める。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "int",
+    "element": "ice",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "element_res_mod",
+        "element": "ice",
+        "amount": 2,
+        "duration": 3,
+        "name": "氷結耐性",
+        "desc": "氷結属性への耐性が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "self_wind_veil",
+    "name": "風のヴェール",
+    "desc": "風の守りをまとい、自身が受けるダメージを抑える。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "wis",
+    "element": "wind",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "damage_taken_mod",
+        "amount": -1,
+        "duration": 3,
+        "name": "風のヴェール",
+        "desc": "受けるダメージが減少している。"
+      }
+    ]
+  },
+  {
+    "id": "self_luminous_aura",
+    "name": "光輝のオーラ",
+    "desc": "柔らかな光をまとい、自身の魅力を高める。",
+    "category": "magic",
+    "usesp": 3,
+    "power": 1,
+    "ability": "cha",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_self",
+        "buff_type": "cha_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "光輝のオーラ",
+        "desc": "魅力が高まっている。"
+      }
+    ]
   }
 ]

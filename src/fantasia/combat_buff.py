@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .combat_model import (
+    COMBAT_PRIMARY_ATTRIBUTE_IDS,
     as_list,
     character_attributes,
     combat_effect_type,
@@ -28,6 +29,14 @@ def buff_effects(buff: dict[str, Any], effect_type: str = "") -> list[dict[str, 
 
 def has_buff_type(statuses: Any, effect_type: str) -> bool:
     return any(buff_effects(buff, effect_type) for buff in combat_buffs(statuses))
+
+
+def buff_amount(statuses: Any, effect_type: str) -> int:
+    total = 0
+    for buff in combat_buffs(statuses):
+        for effect in buff_effects(buff, effect_type):
+            total += safe_int(effect.get("amount"), 0)
+    return total
 
 
 def status_has_taunt(statuses: Any) -> bool:
@@ -61,15 +70,15 @@ def status_has_taunt(statuses: Any) -> bool:
 
 
 def status_blocks_attack(statuses: Any) -> bool:
-    return has_buff_type(statuses, "restraint")
+    return has_buff_type(statuses, "restraint") or has_buff_type(statuses, "stun")
 
 
 def status_blocks_escape(statuses: Any) -> bool:
-    return has_buff_type(statuses, "restraint")
+    return has_buff_type(statuses, "restraint") or has_buff_type(statuses, "stun")
 
 
 def status_blocks_skill(statuses: Any) -> bool:
-    return has_buff_type(statuses, "psychosis")
+    return has_buff_type(statuses, "psychosis") or has_buff_type(statuses, "stun")
 
 
 def effective_attributes(character: Any) -> dict[str, int]:
@@ -78,6 +87,13 @@ def effective_attributes(character: Any) -> dict[str, int]:
     if has_buff_type(statuses, "paralysis"):
         attrs["str"] = max(1, attrs["str"] // 2)
         attrs["dex"] = max(1, attrs["dex"] // 2)
+    for buff in combat_buffs(statuses):
+        for effect in buff_effects(buff):
+            effect_type = combat_effect_type(effect)
+            if effect_type.endswith("_mod"):
+                ability = effect_type[: -len("_mod")]
+                if ability in COMBAT_PRIMARY_ATTRIBUTE_IDS:
+                    attrs[ability] = max(1, attrs.get(ability, 1) + safe_int(effect.get("amount"), 0))
     return attrs
 
 
@@ -92,6 +108,33 @@ def stat_delta(statuses: Any) -> dict[str, int]:
             elif effect_type == "delta_def":
                 result["defense"] += amount
     return result
+
+
+def accuracy_modifier(statuses: Any) -> int:
+    return buff_amount(statuses, "accuracy_mod")
+
+
+def damage_taken_modifier(statuses: Any) -> int:
+    return buff_amount(statuses, "damage_taken_mod")
+
+
+def damage_taken_multiplier(statuses: Any) -> float:
+    return max(0.0, 1.0 + damage_taken_modifier(statuses) * 0.1)
+
+
+def element_resistance_modifier(statuses: Any, element: Any) -> int:
+    element_id = str(element or "physical").strip().casefold() or "physical"
+    total = 0
+    for buff in combat_buffs(statuses):
+        for effect in buff_effects(buff, "element_res_mod"):
+            target = str(effect.get("element") or effect.get("target_element") or effect.get("element_type") or "all").strip().casefold()
+            if target in {"", "all", "any", element_id}:
+                total += safe_int(effect.get("amount"), 0)
+    return total
+
+
+def thorns_modifier(statuses: Any) -> int:
+    return max(0, buff_amount(statuses, "thorns"))
 
 
 def tick_buffs(

@@ -1,2 +1,405 @@
 [
+  {
+    "id": "party_rallying_cry",
+    "name": "号令",
+    "desc": "パーティ全体を鼓舞し、攻撃力を高める。",
+    "category": "fighter",
+    "usesp": 5,
+    "power": 1,
+    "ability": "cha",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "delta_atk",
+        "amount": 4,
+        "duration": 3,
+        "name": "号令",
+        "desc": "攻撃力が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "party_shield_wall",
+    "name": "盾壁陣",
+    "desc": "パーティ全体で守りを固め、防御力を高める。",
+    "category": "fighter",
+    "usesp": 5,
+    "power": 1,
+    "ability": "con",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "delta_def",
+        "amount": 4,
+        "duration": 3,
+        "name": "盾壁陣",
+        "desc": "防御力が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "party_marching_order",
+    "name": "進軍号令",
+    "desc": "パーティ全体に攻撃の合図を送り、命中精度を高める。",
+    "category": "fighter",
+    "usesp": 4,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "accuracy_mod",
+        "amount": 1,
+        "duration": 3,
+        "name": "進軍号令",
+        "desc": "命中精度が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "party_hold_line",
+    "name": "戦列維持",
+    "desc": "パーティ全体の隊列を整え、受けるダメージを抑える。",
+    "category": "fighter",
+    "usesp": 5,
+    "power": 1,
+    "ability": "con",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "damage_taken_mod",
+        "amount": -1,
+        "duration": 3,
+        "name": "戦列維持",
+        "desc": "受けるダメージが減少している。"
+      }
+    ]
+  },
+  {
+    "id": "party_spiked_formation",
+    "name": "棘陣形",
+    "desc": "パーティ全体で反撃の陣形を取り、攻撃を受けた相手へ反射ダメージを与える。",
+    "category": "fighter",
+    "usesp": 5,
+    "power": 1,
+    "ability": "con",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "thorns",
+        "amount": 1,
+        "duration": 3,
+        "name": "棘陣形",
+        "desc": "攻撃を受けたときに一部を反射する。"
+      }
+    ]
+  },
+  {
+    "id": "party_battle_rhythm",
+    "name": "戦闘リズム",
+    "desc": "パーティ全体の呼吸を合わせ、器用さを高める。",
+    "category": "fighter",
+    "usesp": 4,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "dex_mod",
+        "amount": 1,
+        "duration": 3,
+        "name": "戦闘リズム",
+        "desc": "器用さが高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "party_muscle_drive",
+    "name": "筋力駆動",
+    "desc": "パーティ全体に力の入れ方を共有し、筋力を高める。",
+    "category": "fighter",
+    "usesp": 4,
+    "power": 1,
+    "ability": "str",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "str_mod",
+        "amount": 1,
+        "duration": 3,
+        "name": "筋力駆動",
+        "desc": "筋力が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "party_endurance_drill",
+    "name": "耐久訓練",
+    "desc": "パーティ全体に耐える姿勢を取らせ、耐久を高める。",
+    "category": "fighter",
+    "usesp": 4,
+    "power": 1,
+    "ability": "con",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "con_mod",
+        "amount": 1,
+        "duration": 3,
+        "name": "耐久訓練",
+        "desc": "耐久が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "party_vanguard_focus",
+    "name": "前衛集中",
+    "desc": "パーティ全体の狙いを前方に集め、命中精度を大きく高める。",
+    "category": "fighter",
+    "usesp": 5,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "accuracy_mod",
+        "amount": 2,
+        "duration": 2,
+        "name": "前衛集中",
+        "desc": "命中精度が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "party_war_banner",
+    "name": "戦旗掲揚",
+    "desc": "パーティ全体の士気を掲げ、魅力を高める。",
+    "category": "fighter",
+    "usesp": 4,
+    "power": 1,
+    "ability": "cha",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "cha_mod",
+        "amount": 1,
+        "duration": 3,
+        "name": "戦旗掲揚",
+        "desc": "魅力が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "party_regen_field",
+    "name": "再生領域",
+    "desc": "パーティ全体を癒しの場で包み、HPを徐々に回復する。",
+    "category": "magic",
+    "usesp": 6,
+    "power": 1,
+    "ability": "wis",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "regen_hp",
+        "amount": 4,
+        "duration": 3,
+        "name": "再生領域",
+        "desc": "ターン終了時にHPを回復する。"
+      }
+    ]
+  },
+  {
+    "id": "party_mana_circle",
+    "name": "マナサークル",
+    "desc": "パーティ全体の魔力循環を整え、SPを徐々に回復する。",
+    "category": "magic",
+    "usesp": 6,
+    "power": 1,
+    "ability": "wis",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "regen_sp",
+        "amount": 4,
+        "duration": 3,
+        "name": "マナサークル",
+        "desc": "ターン終了時にSPを回復する。"
+      }
+    ]
+  },
+  {
+    "id": "party_arcane_mind",
+    "name": "叡智の円環",
+    "desc": "パーティ全体に魔術的な知見を巡らせ、知力を高める。",
+    "category": "magic",
+    "usesp": 5,
+    "power": 1,
+    "ability": "int",
+    "element": "arcane",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "int_mod",
+        "amount": 1,
+        "duration": 3,
+        "name": "叡智の円環",
+        "desc": "知力が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "party_spirit_guidance",
+    "name": "精霊の導き",
+    "desc": "パーティ全体に精霊の助言を授け、判断を高める。",
+    "category": "magic",
+    "usesp": 5,
+    "power": 1,
+    "ability": "wis",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "wis_mod",
+        "amount": 1,
+        "duration": 3,
+        "name": "精霊の導き",
+        "desc": "判断が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "party_light_chorus",
+    "name": "光の合唱",
+    "desc": "パーティ全体に明るい響きをまとわせ、魅力を高める。",
+    "category": "magic",
+    "usesp": 5,
+    "power": 1,
+    "ability": "cha",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "cha_mod",
+        "amount": 1,
+        "duration": 3,
+        "name": "光の合唱",
+        "desc": "魅力が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "party_flame_barrier",
+    "name": "火炎障壁",
+    "desc": "パーティ全体に火の障壁を張り、火炎耐性を高める。",
+    "category": "magic",
+    "usesp": 6,
+    "power": 1,
+    "ability": "int",
+    "element": "fire",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "element_res_mod",
+        "element": "fire",
+        "amount": 1,
+        "duration": 3,
+        "name": "火炎障壁",
+        "desc": "火炎属性への耐性が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "party_frost_barrier",
+    "name": "氷結障壁",
+    "desc": "パーティ全体に氷の障壁を張り、氷結耐性を高める。",
+    "category": "magic",
+    "usesp": 6,
+    "power": 1,
+    "ability": "int",
+    "element": "ice",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "element_res_mod",
+        "element": "ice",
+        "amount": 1,
+        "duration": 3,
+        "name": "氷結障壁",
+        "desc": "氷結属性への耐性が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "party_storm_barrier",
+    "name": "雷光障壁",
+    "desc": "パーティ全体に雷の障壁を張り、雷撃耐性を高める。",
+    "category": "magic",
+    "usesp": 6,
+    "power": 1,
+    "ability": "int",
+    "element": "lightning",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "element_res_mod",
+        "element": "lightning",
+        "amount": 1,
+        "duration": 3,
+        "name": "雷光障壁",
+        "desc": "雷撃属性への耐性が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "party_all_elements_ward",
+    "name": "全属性結界",
+    "desc": "パーティ全体を薄い結界で包み、属性攻撃への耐性を高める。",
+    "category": "magic",
+    "usesp": 7,
+    "power": 1,
+    "ability": "wis",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "element_res_mod",
+        "amount": 1,
+        "duration": 3,
+        "name": "全属性結界",
+        "desc": "属性攻撃への耐性が高まっている。"
+      }
+    ]
+  },
+  {
+    "id": "party_lunar_veil",
+    "name": "月光のヴェール",
+    "desc": "パーティ全体に月光の守りをまとわせ、受けるダメージを抑える。",
+    "category": "magic",
+    "usesp": 6,
+    "power": 1,
+    "ability": "wis",
+    "element": "light",
+    "type": [
+      {
+        "type": "effect_ally_party",
+        "buff_type": "damage_taken_mod",
+        "amount": -1,
+        "duration": 3,
+        "name": "月光のヴェール",
+        "desc": "受けるダメージが減少している。"
+      }
+    ]
+  }
 ]

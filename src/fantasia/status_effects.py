@@ -9,6 +9,14 @@ INCAPACITATED_STATUS_ID = "Inoperable"
 INCAPACITATED_STATUS_NAME = "行動不能"
 SURRENDERED_STATUS_ID = "surrendered"
 FLED_STATUS_ID = "fled"
+ATTRIBUTE_STATUS_EFFECT_IDS = (
+    "str_mod",
+    "dex_mod",
+    "con_mod",
+    "int_mod",
+    "wis_mod",
+    "cha_mod",
+)
 
 STATUS_EFFECT_IDS = (
     "HP_Damage",
@@ -21,6 +29,12 @@ STATUS_EFFECT_IDS = (
     "Atk_Mod",
     "Def_Mod",
     "Taunt",
+    "accuracy_mod",
+    "damage_taken_mod",
+    "element_res_mod",
+    "stun",
+    "thorns",
+    *ATTRIBUTE_STATUS_EFFECT_IDS,
 )
 
 STATUS_IMMUNITY_EFFECT_IDS = (
@@ -30,6 +44,7 @@ STATUS_IMMUNITY_EFFECT_IDS = (
     "Silence",
     "Psychosis",
     "Inoperable",
+    "stun",
 )
 
 STATUS_EFFECT_LABELS_JA = {
@@ -43,6 +58,17 @@ STATUS_EFFECT_LABELS_JA = {
     "Atk_Mod": "攻撃力変化",
     "Def_Mod": "防御力変化",
     "Taunt": "挑発",
+    "accuracy_mod": "命中変化",
+    "damage_taken_mod": "被ダメージ変化",
+    "element_res_mod": "属性耐性変化",
+    "stun": "スタン",
+    "thorns": "反射",
+    "str_mod": "筋力変化",
+    "dex_mod": "器用変化",
+    "con_mod": "耐久変化",
+    "int_mod": "知力変化",
+    "wis_mod": "判断変化",
+    "cha_mod": "魅力変化",
 }
 
 STATUS_EFFECT_LABELS_EN = {
@@ -56,6 +82,17 @@ STATUS_EFFECT_LABELS_EN = {
     "Atk_Mod": "Attack modifier",
     "Def_Mod": "Defense modifier",
     "Taunt": "Taunt",
+    "accuracy_mod": "Accuracy modifier",
+    "damage_taken_mod": "Damage taken modifier",
+    "element_res_mod": "Element resistance modifier",
+    "stun": "Stun",
+    "thorns": "Thorns",
+    "str_mod": "Strength modifier",
+    "dex_mod": "Dexterity modifier",
+    "con_mod": "Constitution modifier",
+    "int_mod": "Intelligence modifier",
+    "wis_mod": "Wisdom modifier",
+    "cha_mod": "Charisma modifier",
 }
 
 STATUS_EFFECT_DESCRIPTIONS_JA = {
@@ -69,6 +106,17 @@ STATUS_EFFECT_DESCRIPTIONS_JA = {
     "Atk_Mod": "攻撃力が上昇または減少する。",
     "Def_Mod": "防御力が上昇または減少する。",
     "Taunt": "攻撃対象を引きつける。",
+    "accuracy_mod": "命中判定に補正を加える。",
+    "damage_taken_mod": "受けるHPダメージが上昇または減少する。",
+    "element_res_mod": "指定属性、または全属性への耐性が上昇または減少する。",
+    "stun": "攻撃、スキル、逃走ができなくなる。",
+    "thorns": "受けたHPダメージの一部を攻撃者へ反射する。",
+    "str_mod": "筋力が上昇または減少する。",
+    "dex_mod": "器用が上昇または減少する。",
+    "con_mod": "耐久が上昇または減少する。",
+    "int_mod": "知力が上昇または減少する。",
+    "wis_mod": "判断が上昇または減少する。",
+    "cha_mod": "魅力が上昇または減少する。",
 }
 
 STATUS_EFFECT_ALIASES = {
@@ -89,8 +137,8 @@ STATUS_EFFECT_ALIASES = {
     "paralysis": "Paralysis",
     "paralyzed": "Paralysis",
     "paralysed": "Paralysis",
-    "stun": "Paralysis",
-    "stunned": "Paralysis",
+    "stun": "stun",
+    "stunned": "stun",
     "silence": "Silence",
     "silent": "Silence",
     "mute": "Silence",
@@ -126,6 +174,50 @@ STATUS_EFFECT_ALIASES = {
     "provoke": "Taunt",
     "provocation": "Taunt",
     "aggro": "Taunt",
+    "accuracy_mod": "accuracy_mod",
+    "accuracy_up": "accuracy_mod",
+    "accuracy_down": "accuracy_mod",
+    "hit_mod": "accuracy_mod",
+    "hit_rate_mod": "accuracy_mod",
+    "damage_taken_mod": "damage_taken_mod",
+    "vulnerability": "damage_taken_mod",
+    "damage_reduction": "damage_taken_mod",
+    "element_res_mod": "element_res_mod",
+    "element_resistance_mod": "element_res_mod",
+    "resistance_mod": "element_res_mod",
+    "thorns": "thorns",
+    "thorn": "thorns",
+    "reflect_damage": "thorns",
+    "strength_mod": "str_mod",
+    "strength_up": "str_mod",
+    "strength_down": "str_mod",
+    "str_up": "str_mod",
+    "str_down": "str_mod",
+    "dexterity_mod": "dex_mod",
+    "dexterity_up": "dex_mod",
+    "dexterity_down": "dex_mod",
+    "dex_up": "dex_mod",
+    "dex_down": "dex_mod",
+    "constitution_mod": "con_mod",
+    "constitution_up": "con_mod",
+    "constitution_down": "con_mod",
+    "con_up": "con_mod",
+    "con_down": "con_mod",
+    "intelligence_mod": "int_mod",
+    "intelligence_up": "int_mod",
+    "intelligence_down": "int_mod",
+    "int_up": "int_mod",
+    "int_down": "int_mod",
+    "wisdom_mod": "wis_mod",
+    "wisdom_up": "wis_mod",
+    "wisdom_down": "wis_mod",
+    "wis_up": "wis_mod",
+    "wis_down": "wis_mod",
+    "charisma_mod": "cha_mod",
+    "charisma_up": "cha_mod",
+    "charisma_down": "cha_mod",
+    "cha_up": "cha_mod",
+    "cha_down": "cha_mod",
     "hpダメージ": "HP_Damage",
     "毒": "HP_Damage",
     "出血": "HP_Damage",
@@ -135,7 +227,7 @@ STATUS_EFFECT_ALIASES = {
     "mpダメージ": "SP_Damage",
     "麻痺": "Paralysis",
     "しびれ": "Paralysis",
-    "スタン": "Paralysis",
+    "スタン": "stun",
     "沈黙": "Silence",
     "精神異常": "Psychosis",
     "混乱": "Psychosis",
@@ -153,6 +245,34 @@ STATUS_EFFECT_ALIASES = {
     "防御力上昇": "Def_Mod",
     "防御力低下": "Def_Mod",
     "挑発": "Taunt",
+    "命中変化": "accuracy_mod",
+    "命中上昇": "accuracy_mod",
+    "命中低下": "accuracy_mod",
+    "被ダメージ変化": "damage_taken_mod",
+    "被ダメージ上昇": "damage_taken_mod",
+    "被ダメージ低下": "damage_taken_mod",
+    "属性耐性変化": "element_res_mod",
+    "属性耐性上昇": "element_res_mod",
+    "属性耐性低下": "element_res_mod",
+    "反射": "thorns",
+    "筋力変化": "str_mod",
+    "筋力上昇": "str_mod",
+    "筋力低下": "str_mod",
+    "器用変化": "dex_mod",
+    "器用上昇": "dex_mod",
+    "器用低下": "dex_mod",
+    "耐久変化": "con_mod",
+    "耐久上昇": "con_mod",
+    "耐久低下": "con_mod",
+    "知力変化": "int_mod",
+    "知力上昇": "int_mod",
+    "知力低下": "int_mod",
+    "判断変化": "wis_mod",
+    "判断上昇": "wis_mod",
+    "判断低下": "wis_mod",
+    "魅力変化": "cha_mod",
+    "魅力上昇": "cha_mod",
+    "魅力低下": "cha_mod",
 }
 
 
@@ -406,6 +526,9 @@ def _normalise_status_effect(value: Any, *, source: str = "") -> dict[str, Any]:
         "expires_day",
         "notes",
         "combat_state",
+        "element",
+        "target_element",
+        "element_type",
     ):
         item = data.get(key) if key in data else preset.get(key)
         if item not in (None, "", [], {}):
@@ -800,6 +923,16 @@ def _status_effect_merge_key(effect: dict[str, Any]) -> str:
     return f"{_status_effect_id(effect)}|{str(effect.get('name') or '').casefold()}"
 
 
+def _merge_status_power(existing_power: Any, new_power: Any) -> int:
+    existing = _safe_int(existing_power, 0)
+    new = _safe_int(new_power, 0)
+    if existing < 0 and new < 0:
+        return min(existing, new)
+    if existing > 0 and new > 0:
+        return max(existing, new)
+    return new if new != 0 else existing
+
+
 def _merge_status_effect(status_list: list[dict[str, Any]], effect: dict[str, Any]) -> None:
     effect_key = _status_effect_merge_key(effect)
     for existing in status_list:
@@ -809,7 +942,7 @@ def _merge_status_effect(status_list: list[dict[str, Any]], effect: dict[str, An
         existing_duration = _safe_int(existing.get("duration"), 0)
         effect_duration = _safe_int(effect.get("duration"), 0)
         existing["duration"] = -1 if -1 in {existing_duration, effect_duration} else max(existing_duration, effect_duration)
-        existing["power"] = max(_safe_int(existing.get("power"), 0), _safe_int(effect.get("power"), 0))
+        existing["power"] = _merge_status_power(existing.get("power"), effect.get("power"))
         return
     status_list.append(effect)
 

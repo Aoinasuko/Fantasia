@@ -16,18 +16,26 @@ def roll_2d6(rng: random.Random | None = None) -> int:
     return dice.randint(1, 6) + dice.randint(1, 6)
 
 
-def ability_roll(character: Any, ability: str = "dex", rng: random.Random | None = None) -> dict[str, int | str]:
+def ability_roll(
+    character: Any,
+    ability: str = "dex",
+    rng: random.Random | None = None,
+    *,
+    modifier: int = 0,
+) -> dict[str, int | str]:
     ability_id = normalise_combat_ability(ability, "dex")
     attrs = effective_attributes(character)
     score = attrs.get(ability_id, 10)
     dice = roll_2d6(rng)
     bonus = ability_bonus(score)
+    modifier = safe_int(modifier, 0)
     return {
         "ability": ability_id,
         "score": score,
         "dice": dice,
         "bonus": bonus,
-        "total": dice + bonus,
+        "modifier": modifier,
+        "total": dice + bonus + modifier,
     }
 
 
@@ -36,9 +44,12 @@ def opposed_ability_roll(
     defender: Any,
     ability: str = "dex",
     rng: random.Random | None = None,
+    *,
+    attacker_modifier: int = 0,
+    defender_modifier: int = 0,
 ) -> dict[str, Any]:
-    attack_roll = ability_roll(attacker, ability, rng)
-    defense_roll = ability_roll(defender, ability, rng)
+    attack_roll = ability_roll(attacker, ability, rng, modifier=attacker_modifier)
+    defense_roll = ability_roll(defender, ability, rng, modifier=defender_modifier)
     return {
         "attacker": attack_roll,
         "defender": defense_roll,

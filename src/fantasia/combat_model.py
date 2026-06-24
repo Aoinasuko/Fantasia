@@ -4,6 +4,8 @@ from typing import Any
 
 
 COMBAT_ABILITY_IDS = ("str", "dex", "con", "int", "wis", "cha", "magic", "will")
+COMBAT_PRIMARY_ATTRIBUTE_IDS = ("str", "dex", "con", "int", "wis", "cha")
+COMBAT_ATTRIBUTE_MOD_BUFF_TYPES = {f"{ability}_mod" for ability in COMBAT_PRIMARY_ATTRIBUTE_IDS}
 COMBAT_DEFAULT_ATTRIBUTES = {
     "str": 10,
     "dex": 10,
@@ -30,8 +32,11 @@ COMBAT_SKILL_EFFECT_TYPES = {
     "effect_ally_party",
 }
 COMBAT_BUFF_TYPES = {
+    "accuracy_mod",
     "delta_atk",
     "delta_def",
+    "damage_taken_mod",
+    "element_res_mod",
     "regen_hp",
     "regen_sp",
     "decrease_hp",
@@ -40,7 +45,10 @@ COMBAT_BUFF_TYPES = {
     "paralysis",
     "psychosis",
     "restraint",
+    "stun",
     "taunt",
+    "thorns",
+    *COMBAT_ATTRIBUTE_MOD_BUFF_TYPES,
 }
 
 
@@ -104,11 +112,21 @@ def normalise_effect_items(value: Any, *, allowed: set[str]) -> list[dict[str, A
             effect_type = str(data.get("type") or "").strip()
         else:
             continue
+        lowered_type = effect_type.lower()
+        if lowered_type in allowed:
+            effect_type = lowered_type
         if effect_type not in allowed:
             continue
         data["type"] = effect_type
         result.append(data)
     return result
+
+
+def normalise_combat_buff_type(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if text in COMBAT_BUFF_TYPES:
+        return text
+    return ""
 
 
 def normalise_combat_skill(value: Any) -> dict[str, Any]:
@@ -134,10 +152,19 @@ def normalise_combat_skill(value: Any) -> dict[str, Any]:
 def normalise_combat_buff(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {}
-    name = str(value.get("name") or "").strip()
-    if not name:
-        return {}
+    name = str(value.get("name") or value.get("effect_id") or value.get("effect_type") or value.get("status_id") or "").strip()
     effects = normalise_effect_items(value.get("type"), allowed=COMBAT_BUFF_TYPES)
+    if not effects:
+        effect_type = normalise_combat_buff_type(value.get("effect_id") or value.get("effect_type") or value.get("status_id") or value.get("id"))
+        if effect_type:
+            amount = value.get("amount", value.get("power", value.get("value", value.get("effect_amount", 0))))
+            effect = {"type": effect_type, "amount": safe_int(amount, 0)}
+            for key in ("element", "target_element", "element_type"):
+                if value.get(key) not in (None, "", [], {}):
+                    effect[key] = value.get(key)
+            effects = [effect]
+    if not name:
+        name = str(effects[0].get("type") if effects else "").strip()
     if not effects:
         return {}
     amount = value.get("amount")

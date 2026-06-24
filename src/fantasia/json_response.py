@@ -92,7 +92,8 @@ class ManagerSchema:
             lines.append(
                 "- 状態付与が必要な場合は status_effects/player_status_effects/character_status_effects に、"
                 "name, description, remove_condition, power, duration, effect_id, llm_effect を持つオブジェクトを返してください。"
-                "duration は残り時間、-1 は永続です。effect_id は HP_Damage/SP_Damage/Paralysis/Silence/Psychosis/Inoperable/SendLLM/Atk_Mod/Def_Mod のいずれかです。"
+                "duration は残り時間、-1 は永続です。effect_id は HP_Damage/SP_Damage/Paralysis/Silence/Psychosis/Inoperable/SendLLM/Atk_Mod/Def_Mod/accuracy_mod/damage_taken_mod/element_res_mod/stun/thorns/str_mod/dex_mod/con_mod/int_mod/wis_mod/cha_mod のいずれかです。"
+                "accuracy_mod は命中に加算、damage_taken_mod/element_res_mod/thorns は1につき10%として扱います。element_res_mod は element を省略すると全属性、指定するとその属性だけに効きます。"
                 "効果IDで決められない描写や補助効果は llm_effect に書いてください。行動不能系は effect_id=Inoperable にし、表示名は攻撃手段に合う具体名と説明にしてください。"
             )
         if any(field.name == "npc_action" for field in self.fields):
@@ -1592,7 +1593,8 @@ def schema_instruction(manager_name: str) -> str:
             "- The game executes only tool judgements whose confidence is exactly 1.0. 0.99 or missing confidence is not executed.\n"
             "- Set confidence to 1.0 only when the state change is definitely intended by the action and current context.\n"
             "- Use start_combat only when combat actually begins now. Mentioning danger, an enemy, traces of an attack, a threat, or an option to fight is not enough.\n"
-            "- For the status_effects tool, arguments must be {\"status_effects\":[{\"effect_id\":\"HP_Damage/SP_Damage/Paralysis/Silence/Psychosis/Inoperable/SendLLM/Atk_Mod/Def_Mod\",...}]}; entries without effect_id are ignored.\n"
+            "- For the status_effects tool, arguments must be {\"status_effects\":[{\"effect_id\":\"HP_Damage/SP_Damage/Paralysis/Silence/Psychosis/Inoperable/SendLLM/Atk_Mod/Def_Mod/accuracy_mod/damage_taken_mod/element_res_mod/stun/thorns/str_mod/dex_mod/con_mod/int_mod/wis_mod/cha_mod\",...}]}; entries without effect_id are ignored.\n"
+            "- accuracy_mod adds its amount to hit rolls. damage_taken_mod, element_res_mod, and thorns use 10% per amount. element_res_mod may include element or target_element; omit it for all elements.\n"
             "- Supported tool names: move_player, status_effects, hp_effects, sp_effects, gold_delta, hunger_delta, "
             "exp_delta, time_passage, game_over, npc_change_relationship, npc_move, npc_join_party, npc_remove_party, npc_dead, "
             "npc_capture_player, npc_update_memory, npc_update_description, world_home_construction, world_mainnode_reveal, world_subnode_reveal, "

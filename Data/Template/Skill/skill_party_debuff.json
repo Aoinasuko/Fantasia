@@ -1,2 +1,405 @@
 [
+  {
+    "id": "enemy_party_sweeping_feint",
+    "name": "一斉足払い",
+    "desc": "敵パーティ全体の足元を崩し、器用さを低下させる。",
+    "category": "fighter",
+    "usesp": 5,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "dex_mod",
+        "amount": -1,
+        "duration": 3,
+        "name": "一斉足払い",
+        "desc": "器用さが低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_battle_roar",
+    "name": "戦場の咆哮",
+    "desc": "敵パーティ全体を威圧し、攻撃力を低下させる。",
+    "category": "fighter",
+    "usesp": 5,
+    "power": 1,
+    "ability": "cha",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "delta_atk",
+        "amount": -4,
+        "duration": 3,
+        "name": "戦場の咆哮",
+        "desc": "攻撃力が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_guard_break",
+    "name": "守勢崩し",
+    "desc": "敵パーティ全体の守りを揺さぶり、防御力を低下させる。",
+    "category": "fighter",
+    "usesp": 5,
+    "power": 1,
+    "ability": "str",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "delta_def",
+        "amount": -4,
+        "duration": 3,
+        "name": "守勢崩し",
+        "desc": "防御力が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_dust_cloud",
+    "name": "砂塵巻き",
+    "desc": "敵パーティ全体の視界を乱し、命中精度を低下させる。",
+    "category": "fighter",
+    "usesp": 5,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "accuracy_mod",
+        "amount": -1,
+        "duration": 3,
+        "name": "砂塵巻き",
+        "desc": "命中精度が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_shattering_charge",
+    "name": "粉砕突撃",
+    "desc": "敵パーティ全体の体勢を崩し、受けるダメージを増加させる。",
+    "category": "fighter",
+    "usesp": 6,
+    "power": 1,
+    "ability": "str",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "damage_taken_mod",
+        "amount": 1,
+        "duration": 3,
+        "name": "粉砕突撃",
+        "desc": "受けるダメージが増加している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_disruptive_command",
+    "name": "攪乱号令",
+    "desc": "敵パーティ全体の連携を乱し、判断を低下させる。",
+    "category": "fighter",
+    "usesp": 5,
+    "power": 1,
+    "ability": "cha",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "wis_mod",
+        "amount": -1,
+        "duration": 3,
+        "name": "攪乱号令",
+        "desc": "判断が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_weapon_tangle",
+    "name": "武器絡め",
+    "desc": "敵パーティ全体の武器運びを乱し、筋力を低下させる。",
+    "category": "fighter",
+    "usesp": 5,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "str_mod",
+        "amount": -1,
+        "duration": 3,
+        "name": "武器絡め",
+        "desc": "筋力が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_low_sweep",
+    "name": "低空薙ぎ",
+    "desc": "敵パーティ全体の姿勢を低く崩し、耐久を低下させる。",
+    "category": "fighter",
+    "usesp": 5,
+    "power": 1,
+    "ability": "str",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "con_mod",
+        "amount": -1,
+        "duration": 3,
+        "name": "低空薙ぎ",
+        "desc": "耐久が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_counter_suppression",
+    "name": "反撃封じ",
+    "desc": "敵パーティ全体の反撃姿勢を崩し、反射効果を弱める。",
+    "category": "fighter",
+    "usesp": 5,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "thorns",
+        "amount": -1,
+        "duration": 3,
+        "name": "反撃封じ",
+        "desc": "反射の力が弱まっている。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_shockwave_stun",
+    "name": "衝撃波",
+    "desc": "敵パーティ全体へ衝撃を走らせ、一時的に行動を止める。",
+    "category": "fighter",
+    "usesp": 8,
+    "power": 1,
+    "ability": "str",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "stun",
+        "amount": 1,
+        "duration": 1,
+        "name": "衝撃波",
+        "desc": "行動できない。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_fog_of_doubt",
+    "name": "疑念の霧",
+    "desc": "敵パーティ全体の思考を曇らせ、知力を低下させる。",
+    "category": "magic",
+    "usesp": 6,
+    "power": 1,
+    "ability": "int",
+    "element": "arcane",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "int_mod",
+        "amount": -1,
+        "duration": 3,
+        "name": "疑念の霧",
+        "desc": "知力が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_gloom_chant",
+    "name": "薄闇の詠唱",
+    "desc": "敵パーティ全体の心を沈ませ、魅力を低下させる。",
+    "category": "magic",
+    "usesp": 6,
+    "power": 1,
+    "ability": "cha",
+    "element": "dark",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "cha_mod",
+        "amount": -1,
+        "duration": 3,
+        "name": "薄闇の詠唱",
+        "desc": "魅力が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_curse_of_fragility",
+    "name": "脆弱の波動",
+    "desc": "敵パーティ全体を脆くし、受けるダメージを増加させる。",
+    "category": "magic",
+    "usesp": 7,
+    "power": 1,
+    "ability": "wis",
+    "element": "dark",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "damage_taken_mod",
+        "amount": 1,
+        "duration": 3,
+        "name": "脆弱の波動",
+        "desc": "受けるダメージが増加している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_flame_vulnerability",
+    "name": "火傷の烙印",
+    "desc": "敵パーティ全体に火の烙印を刻み、火炎耐性を低下させる。",
+    "category": "magic",
+    "usesp": 6,
+    "power": 1,
+    "ability": "int",
+    "element": "fire",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "element_res_mod",
+        "element": "fire",
+        "amount": -1,
+        "duration": 3,
+        "name": "火傷の烙印",
+        "desc": "火炎属性への耐性が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_frost_vulnerability",
+    "name": "凍傷の烙印",
+    "desc": "敵パーティ全体に氷の烙印を刻み、氷結耐性を低下させる。",
+    "category": "magic",
+    "usesp": 6,
+    "power": 1,
+    "ability": "int",
+    "element": "ice",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "element_res_mod",
+        "element": "ice",
+        "amount": -1,
+        "duration": 3,
+        "name": "凍傷の烙印",
+        "desc": "氷結属性への耐性が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_storm_vulnerability",
+    "name": "雷傷の烙印",
+    "desc": "敵パーティ全体に雷の烙印を刻み、雷撃耐性を低下させる。",
+    "category": "magic",
+    "usesp": 6,
+    "power": 1,
+    "ability": "int",
+    "element": "lightning",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "element_res_mod",
+        "element": "lightning",
+        "amount": -1,
+        "duration": 3,
+        "name": "雷傷の烙印",
+        "desc": "雷撃属性への耐性が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_all_resistance_break",
+    "name": "耐性崩壊",
+    "desc": "敵パーティ全体の魔力防壁を乱し、属性耐性を低下させる。",
+    "category": "magic",
+    "usesp": 7,
+    "power": 1,
+    "ability": "wis",
+    "element": "dark",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "element_res_mod",
+        "amount": -1,
+        "duration": 3,
+        "name": "耐性崩壊",
+        "desc": "属性攻撃への耐性が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_mana_drain_field",
+    "name": "魔力漏出場",
+    "desc": "敵パーティ全体の魔力を乱し、SPを徐々に減少させる。",
+    "category": "magic",
+    "usesp": 7,
+    "power": 1,
+    "ability": "int",
+    "element": "arcane",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "decrease_sp",
+        "amount": 3,
+        "duration": 3,
+        "name": "魔力漏出場",
+        "desc": "ターン終了時にSPが減少する。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_slowing_miasma",
+    "name": "鈍化の瘴気",
+    "desc": "敵パーティ全体を重い瘴気で包み、器用さを低下させる。",
+    "category": "magic",
+    "usesp": 6,
+    "power": 1,
+    "ability": "int",
+    "element": "dark",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "dex_mod",
+        "amount": -1,
+        "duration": 3,
+        "name": "鈍化の瘴気",
+        "desc": "器用さが低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_party_black_silence",
+    "name": "黒き静寂",
+    "desc": "敵パーティ全体の集中を沈め、命中精度を低下させる。",
+    "category": "magic",
+    "usesp": 6,
+    "power": 1,
+    "ability": "wis",
+    "element": "dark",
+    "type": [
+      {
+        "type": "effect_enemy_party",
+        "buff_type": "accuracy_mod",
+        "amount": -1,
+        "duration": 3,
+        "name": "黒き静寂",
+        "desc": "命中精度が低下している。"
+      }
+    ]
+  }
 ]

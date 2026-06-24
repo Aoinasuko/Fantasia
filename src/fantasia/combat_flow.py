@@ -4,7 +4,18 @@ import random
 from typing import Any
 
 from .character import Character
-from .combat_buff import effective_attributes, stat_delta, status_blocks_attack, status_blocks_escape, status_blocks_skill, status_has_taunt
+from .combat_buff import (
+    accuracy_modifier,
+    damage_taken_multiplier,
+    effective_attributes,
+    element_resistance_modifier,
+    stat_delta,
+    status_blocks_attack,
+    status_blocks_escape,
+    status_blocks_skill,
+    status_has_taunt,
+    thorns_modifier,
+)
 from .combat_llm_tool import (
     apply_combat_response_tools,
     combat_enemy_tool_instruction,
@@ -39,6 +50,13 @@ def resolve_player_attack(engine: Any, action: str, input_type: str, encounter: 
     target = engine._select_encounter_target_from_action(encounter, action)
     if not isinstance(player, Character) or not isinstance(target, Character):
         return _finish_without_enemy_turn(engine, action, input_type, encounter, "攻撃対象を見失った。")
+    if status_blocks_attack(player.status_effects):
+        response = {
+            "narration": "体が動かず、攻撃できなかった。",
+            "choices": engine._encounter_choices(encounter),
+            "game_combat_result": {"type": "player_attack_blocked"},
+        }
+        return finish_combat_round(engine, action, input_type, encounter, response, "combat_player_attack")
     response = _resolve_attack(
         engine,
         encounter,
@@ -57,6 +75,13 @@ def resolve_player_skill(engine: Any, action: str, input_type: str, encounter: d
     skill = normalise_combat_skill(engine._find_player_skill(engine._extract_skill_name_for_combat(action)))
     if not isinstance(player, Character) or not skill:
         return _finish_without_enemy_turn(engine, action, input_type, encounter, f"スキル「{action}」は使用できない。")
+    if status_blocks_skill(player.status_effects):
+        response = {
+            "narration": "体が動かず、スキルを使えなかった。",
+            "choices": engine._encounter_choices(encounter),
+            "game_combat_result": {"type": "player_skill_blocked"},
+        }
+        return finish_combat_round(engine, action, input_type, encounter, response, "combat_player_skill")
     cost = combat_skill_sp_cost(skill)
     current_sp = safe_int(encounter.get("player_sp"), 0)
     if cost > current_sp:
@@ -79,6 +104,14 @@ def resolve_player_escape(engine: Any, action: str, input_type: str, encounter: 
     player = engine.player_character()
     if not isinstance(player, Character):
         return _finish_without_enemy_turn(engine, action, input_type, encounter, "逃走しようとしたが、足がすくんだ。")
+    if status_blocks_escape(player.status_effects):
+        response = {
+            "narration": "体が動かず、逃げ出せなかった。",
+            "finished": False,
+            "choices": engine._encounter_choices(encounter),
+            "game_combat_result": {"type": "player_flee_blocked"},
+        }
+        return finish_combat_round(engine, action, input_type, encounter, response, "combat_player_escape")
     player_roll = ability_roll(player, "dex")
     enemy_rolls = [ability_roll(opponent, "dex") for opponent in engine._acting_encounter_opponents(encounter)]
     success = all(safe_int(player_roll.get("total"), 0) >= safe_int(enemy.get("total"), 0) for enemy in enemy_rolls)
@@ -273,7 +306,7 @@ def _resolve_attack(
     source: str,
 ) -> dict[str, Any]:
     engine._set_encounter_active_opponent(encounter, target)
-    hit_roll = opposed_ability_roll(actor, target, "dex")
+    hit_roll = opposed_ability_roll(actor, target, "dex", attacker_modifier=accuracy_modifier(actor.status_effects))
     actor_name = actor.name or "攻撃者"
     target_name = target.name or "相手"
     if not hit_roll.get("success"):
@@ -294,10 +327,14 @@ def _resolve_attack(
     defense = _defense_value(engine, target, encounter)
     attrs = effective_attributes(actor)
     strength_factor = max(0.5, attrs.get("str", 10) / 10.0)
-    multiplier = damage_multiplier_for_element(target, element, _equipment_summary_for(engine, target))
+    multiplier, multiplier_calc = _element_damage_multiplier(target, element, _equipment_summary_for(engine, target))
     base = max(1, attack - defense)
-    damage = 0 if multiplier <= 0 else max(1, int(round(base * strength_factor * multiplier)))
+    damage_before_taken_modifier = 0 if multiplier <= 0 else max(1, int(round(base * strength_factor * multiplier)))
+    damage, taken_calc = _apply_damage_taken_modifier(target, damage_before_taken_modifier)
     result = engine._apply_opponent_hp_delta(encounter, -damage, source=source, reason=action_name)
+    if result.get("lines"):
+        encounter.setdefault("pending_resource_lines", []).extend(str(line) for line in result.get("lines", []))
+    reflection = _apply_thorns_reflection(engine, encounter, actor, target, _actual_hp_damage(result, damage), source=source, reason=action_name)
     calc = {
         "type": source,
         "hit": True,
@@ -308,12 +345,17 @@ def _resolve_attack(
         "str": attrs.get("str", 10),
         "strength_factor": round(strength_factor, 3),
         "resistance_multiplier": round(multiplier, 3),
+        **multiplier_calc,
+        "damage_before_taken_modifier": damage_before_taken_modifier,
+        **taken_calc,
         "damage": damage,
         "old_hp": result.get("old_hp"),
         "new_hp": result.get("new_hp"),
         "max_hp": result.get("max_hp"),
         "hit_roll": hit_roll,
     }
+    if reflection:
+        calc["thorns_reflection"] = reflection
     narration = _narrate_combat_event(
         engine,
         {
@@ -325,8 +367,6 @@ def _resolve_attack(
         },
         f"{actor_name}の{action_name}が{target_name}に命中した。",
     )
-    if result.get("lines"):
-        encounter.setdefault("pending_resource_lines", []).extend(str(line) for line in result.get("lines", []))
     calc["narration"] = narration
     engine.state.world_data.extra.setdefault("combat_events", []).append(dict(calc))
     return {"narration": narration, "choices": engine._encounter_choices(encounter), "game_combat_result": calc}
@@ -428,6 +468,7 @@ def _apply_skill_hp_damage(
     result = engine._apply_opponent_hp_delta(encounter, -amount, source=source, reason=str(skill.get("name") or "skill"))
     if result.get("lines"):
         encounter.setdefault("pending_resource_lines", []).extend(str(line) for line in result.get("lines", []))
+    reflection = _apply_thorns_reflection(engine, encounter, actor, target, _actual_hp_damage(result, amount), source=source, reason=str(skill.get("name") or "skill"))
     calc = {
         "type": combat_effect_type(effect),
         "target": target.name,
@@ -438,6 +479,8 @@ def _apply_skill_hp_damage(
         "max_hp": result.get("max_hp"),
     }
     calc.update(calculation)
+    if reflection:
+        calc["thorns_reflection"] = reflection
     if combat_effect_type(effect).startswith("absorption"):
         calc["absorb_heal"] = max(1, amount // 2)
     return calc
@@ -489,13 +532,17 @@ def _apply_skill_buff(target: Character, skill: dict[str, Any], effect: Any) -> 
         effect = {}
     buff_type = str(effect.get("buff_type") or effect.get("status_type") or "send_llm").strip()
     amount = safe_int(effect.get("amount"), 1)
+    buff_effect = {"type": buff_type, "amount": amount}
+    for key in ("element", "target_element", "element_type"):
+        if effect.get(key) not in (None, "", [], {}):
+            buff_effect[key] = effect.get(key)
     buff = normalise_combat_buff(
         {
             "name": str(effect.get("name") or f"{skill.get('name')}の影響"),
             "desc": str(effect.get("desc") or skill.get("desc") or ""),
             "duration": safe_int(effect.get("duration"), 1),
             "condition_cancell": str(effect.get("condition_cancell") or "時間経過、治療、または状況の解消。"),
-            "type": [{"type": buff_type, "amount": amount}],
+            "type": [buff_effect],
         }
     )
     if buff:
@@ -999,7 +1046,7 @@ def _resolve_enemy_attack(
     target = target if isinstance(target, Character) else _random_enemy_single_target(engine)
     if not isinstance(target, Character):
         return {"narration": f"{opponent.name}は攻撃の機を逃した。"}
-    hit_roll = opposed_ability_roll(opponent, target, "dex")
+    hit_roll = opposed_ability_roll(opponent, target, "dex", attacker_modifier=accuracy_modifier(opponent.status_effects))
     if not hit_roll.get("success"):
         calc = {"type": "enemy_attack", "hit": False, "target": target.name, "target_uuid": target.uuid, "element": element, "hit_roll": hit_roll, "damage": 0}
         narration = _narrate_combat_event(
@@ -1012,11 +1059,13 @@ def _resolve_enemy_attack(
     defense = _defense_value(engine, target, encounter)
     attrs = effective_attributes(opponent)
     strength_factor = max(0.5, attrs.get("str", 10) / 10.0)
-    multiplier = damage_multiplier_for_element(target, element, _equipment_summary_for(engine, target))
+    multiplier, multiplier_calc = _element_damage_multiplier(target, element, _equipment_summary_for(engine, target))
     base = max(1, attack - defense)
-    damage = 0 if multiplier <= 0 else max(1, int(round(base * strength_factor * multiplier)))
+    damage_before_taken_modifier = 0 if multiplier <= 0 else max(1, int(round(base * strength_factor * multiplier)))
+    damage, taken_calc = _apply_damage_taken_modifier(target, damage_before_taken_modifier)
     event = _apply_character_hp_delta(engine, encounter, target, -damage, source="enemy_attack", reason=opponent.name)
     _append_resource_event_lines(encounter, event)
+    reflection = _apply_thorns_reflection(engine, encounter, opponent, target, _actual_hp_damage(event, damage), source="enemy_attack", reason=attack_name)
     calc = {
         "type": "enemy_attack",
         "hit": True,
@@ -1029,12 +1078,17 @@ def _resolve_enemy_attack(
         "str": attrs.get("str", 10),
         "strength_factor": round(strength_factor, 3),
         "resistance_multiplier": round(multiplier, 3),
+        **multiplier_calc,
+        "damage_before_taken_modifier": damage_before_taken_modifier,
+        **taken_calc,
         "damage": damage,
         "old_hp": event.get("old_hp"),
         "new_hp": event.get("new_hp"),
         "max_hp": event.get("max_hp"),
         "hit_roll": hit_roll,
     }
+    if reflection:
+        calc["thorns_reflection"] = reflection
     narration = _narrate_combat_event(
         engine,
         {"event": "enemy_attack_hit", "actor": opponent.name, "target": target.name, "action": attack_name, "result": calc},
@@ -1067,7 +1121,11 @@ def _resolve_enemy_skill(engine: Any, encounter: dict[str, Any], opponent: Chara
             )
             event = _apply_character_hp_delta(engine, encounter, target, -amount, source="enemy_skill", reason=str(skill.get("name") or ""))
             _append_resource_event_lines(encounter, event)
-            results.append({"type": effect_type, "target": target.name, "target_uuid": target.uuid, "amount": amount, "old_hp": event.get("old_hp"), "new_hp": event.get("new_hp"), **calculation})
+            reflection = _apply_thorns_reflection(engine, encounter, opponent, target, _actual_hp_damage(event, amount), source="enemy_skill", reason=str(skill.get("name") or ""))
+            result_item = {"type": effect_type, "target": target.name, "target_uuid": target.uuid, "amount": amount, "old_hp": event.get("old_hp"), "new_hp": event.get("new_hp"), **calculation}
+            if reflection:
+                result_item["thorns_reflection"] = reflection
+            results.append(result_item)
             if effect_type.startswith("absorption"):
                 heal_event = _apply_character_hp_delta(engine, encounter, opponent, max(1, amount // 2), source="enemy_skill", reason=str(skill.get("name") or ""))
                 _append_resource_event_lines(encounter, heal_event)
@@ -1085,7 +1143,11 @@ def _resolve_enemy_skill(engine: Any, encounter: dict[str, Any], opponent: Chara
             )
             event = engine._apply_player_hp_delta(-amount, source="enemy_skill", reason=str(skill.get("name") or ""), encounter=encounter)
             _append_resource_event_lines(encounter, event)
-            results.append({"type": effect_type, "target": player.name, "amount": amount, "old_hp": event.get("old_hp"), "new_hp": event.get("new_hp"), **calculation})
+            reflection = _apply_thorns_reflection(engine, encounter, opponent, player, _actual_hp_damage(event, amount), source="enemy_skill", reason=str(skill.get("name") or ""))
+            result_item = {"type": effect_type, "target": player.name, "amount": amount, "old_hp": event.get("old_hp"), "new_hp": event.get("new_hp"), **calculation}
+            if reflection:
+                result_item["thorns_reflection"] = reflection
+            results.append(result_item)
             if effect_type.startswith("absorption"):
                 heal_event = _apply_character_hp_delta(engine, encounter, opponent, max(1, amount // 2), source="enemy_skill", reason=str(skill.get("name") or ""))
                 _append_resource_event_lines(encounter, heal_event)
@@ -1272,20 +1334,24 @@ def _skill_hp_damage_amount(
 ) -> tuple[int, dict[str, Any]]:
     base = _skill_base_amount(actor, skill)
     element = str(skill.get("element") or "physical").strip() or "physical"
-    multiplier = damage_multiplier_for_element(target, element, equipment_summary)
+    multiplier, multiplier_calc = _element_damage_multiplier(target, element, equipment_summary)
     count = max(1, safe_int(effect_count, 1))
     after_resistance = 0 if multiplier <= 0 else int(round(base * multiplier))
     before_mitigation = 0 if multiplier <= 0 else int(round(after_resistance / count))
     mitigation_type, mitigation = _skill_hp_damage_mitigation(engine, encounter, target, element)
-    amount = 0 if multiplier <= 0 else max(1, before_mitigation - mitigation)
+    damage_after_mitigation = 0 if multiplier <= 0 else max(1, before_mitigation - mitigation)
+    amount, taken_calc = _apply_damage_taken_modifier(target, damage_after_mitigation)
     return amount, {
         "base_amount": base,
         "resistance_multiplier": round(multiplier, 3),
+        **multiplier_calc,
         "damage_effect_count": count,
         "effect_multiplier": round(1 / count, 3),
         "damage_before_mitigation": before_mitigation,
         "mitigation_type": mitigation_type,
         "mitigation": mitigation,
+        "damage_after_mitigation": damage_after_mitigation,
+        **taken_calc,
     }
 
 
@@ -1397,6 +1463,64 @@ def _append_resource_event_lines(encounter: dict[str, Any], event: dict[str, Any
     line = event.get("line")
     if str(line or "").strip():
         encounter.setdefault("pending_resource_lines", []).append(str(line))
+
+
+def _element_damage_multiplier(
+    target: Character,
+    element: Any,
+    equipment_summary: dict[str, Any] | None = None,
+) -> tuple[float, dict[str, Any]]:
+    base = damage_multiplier_for_element(target, element, equipment_summary)
+    modifier = element_resistance_modifier(target.status_effects, element)
+    adjusted = max(0.0, base - modifier * 0.1)
+    return adjusted, {
+        "base_resistance_multiplier": round(base, 3),
+        "element_res_mod": modifier,
+    }
+
+
+def _apply_damage_taken_modifier(target: Character, amount: int) -> tuple[int, dict[str, Any]]:
+    amount = max(0, safe_int(amount, 0))
+    modifier = damage_taken_multiplier(target.status_effects)
+    if amount <= 0 or modifier <= 0:
+        return 0, {"damage_taken_multiplier": round(modifier, 3)}
+    return max(1, int(round(amount * modifier))), {"damage_taken_multiplier": round(modifier, 3)}
+
+
+def _actual_hp_damage(event: dict[str, Any], fallback: int = 0) -> int:
+    actual = event.get("actual_delta", event.get("delta"))
+    damage = abs(safe_int(actual, 0))
+    if damage <= 0:
+        damage = max(0, safe_int(fallback, 0))
+    return damage
+
+
+def _apply_thorns_reflection(
+    engine: Any,
+    encounter: dict[str, Any],
+    attacker: Character,
+    defender: Character,
+    damage: int,
+    *,
+    source: str,
+    reason: str = "",
+) -> dict[str, Any]:
+    modifier = thorns_modifier(defender.status_effects)
+    damage = max(0, safe_int(damage, 0))
+    if modifier <= 0 or damage <= 0:
+        return {}
+    reflected = max(1, int(round(damage * modifier * 0.1)))
+    event = _apply_character_hp_delta(engine, encounter, attacker, -reflected, source=f"{source}:thorns", reason=reason or defender.name)
+    _append_resource_event_lines(encounter, event)
+    return {
+        "source": defender.name,
+        "target": attacker.name,
+        "thorns_mod": modifier,
+        "base_damage": damage,
+        "amount": reflected,
+        "old_hp": event.get("old_hp"),
+        "new_hp": event.get("new_hp"),
+    }
 
 
 def _attack_value(engine: Any, actor: Character, encounter: dict[str, Any]) -> int:

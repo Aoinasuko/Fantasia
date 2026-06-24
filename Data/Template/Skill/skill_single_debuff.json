@@ -1,2 +1,405 @@
 [
+  {
+    "id": "enemy_ankle_cut",
+    "name": "足払い",
+    "desc": "敵単体の足元を崩し、器用さを低下させる。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "dex_mod",
+        "amount": -2,
+        "duration": 3,
+        "name": "足払い",
+        "desc": "器用さが低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_armor_break",
+    "name": "鎧砕き",
+    "desc": "敵単体の守りを崩し、防御力を低下させる。",
+    "category": "fighter",
+    "usesp": 4,
+    "power": 1,
+    "ability": "str",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "delta_def",
+        "amount": -8,
+        "duration": 3,
+        "name": "鎧砕き",
+        "desc": "防御力が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_disarming_feint",
+    "name": "武装崩し",
+    "desc": "敵単体の攻撃姿勢を乱し、攻撃力を低下させる。",
+    "category": "fighter",
+    "usesp": 4,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "delta_atk",
+        "amount": -8,
+        "duration": 3,
+        "name": "武装崩し",
+        "desc": "攻撃力が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_blinding_sand",
+    "name": "砂かけ",
+    "desc": "敵単体の視界を乱し、命中精度を低下させる。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "accuracy_mod",
+        "amount": -2,
+        "duration": 3,
+        "name": "砂かけ",
+        "desc": "命中精度が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_pressure_point",
+    "name": "急所圧迫",
+    "desc": "敵単体の力の流れを止め、筋力を低下させる。",
+    "category": "fighter",
+    "usesp": 4,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "str_mod",
+        "amount": -2,
+        "duration": 3,
+        "name": "急所圧迫",
+        "desc": "筋力が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_body_slam_stagger",
+    "name": "体当たり崩し",
+    "desc": "敵単体を強く揺さぶり、耐久を低下させる。",
+    "category": "fighter",
+    "usesp": 4,
+    "power": 1,
+    "ability": "str",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "con_mod",
+        "amount": -2,
+        "duration": 3,
+        "name": "体当たり崩し",
+        "desc": "耐久が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_intimidating_glare",
+    "name": "威圧の眼光",
+    "desc": "敵単体を威圧し、受けるダメージを増加させる。",
+    "category": "fighter",
+    "usesp": 4,
+    "power": 1,
+    "ability": "cha",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "damage_taken_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "威圧の眼光",
+        "desc": "受けるダメージが増加している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_shield_hook",
+    "name": "盾絡め",
+    "desc": "敵単体の反撃姿勢を崩し、反射効果を弱める。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "dex",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "thorns",
+        "amount": -2,
+        "duration": 3,
+        "name": "盾絡め",
+        "desc": "反射の力が弱まっている。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_stunning_blow",
+    "name": "気絶打ち",
+    "desc": "敵単体へ衝撃を与え、一時的に行動を止める。",
+    "category": "fighter",
+    "usesp": 5,
+    "power": 1,
+    "ability": "str",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "stun",
+        "amount": 1,
+        "duration": 1,
+        "name": "気絶打ち",
+        "desc": "行動できない。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_mocking_shout",
+    "name": "嘲笑の叫び",
+    "desc": "敵単体の集中を乱し、判断を低下させる。",
+    "category": "fighter",
+    "usesp": 3,
+    "power": 1,
+    "ability": "cha",
+    "element": "physical",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "wis_mod",
+        "amount": -2,
+        "duration": 3,
+        "name": "嘲笑の叫び",
+        "desc": "判断が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_mind_cloud",
+    "name": "思考霞",
+    "desc": "敵単体の思考を曇らせ、知力を低下させる。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "int",
+    "element": "arcane",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "int_mod",
+        "amount": -2,
+        "duration": 3,
+        "name": "思考霞",
+        "desc": "知力が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_soul_doubt",
+    "name": "魂の疑念",
+    "desc": "敵単体の心に迷いを植え付け、判断を低下させる。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "wis",
+    "element": "dark",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "wis_mod",
+        "amount": -2,
+        "duration": 3,
+        "name": "魂の疑念",
+        "desc": "判断が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_fear_hex",
+    "name": "恐怖の呪い",
+    "desc": "敵単体に恐怖を刻み、魅力を低下させる。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "cha",
+    "element": "dark",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "cha_mod",
+        "amount": -2,
+        "duration": 3,
+        "name": "恐怖の呪い",
+        "desc": "魅力が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_burning_mark",
+    "name": "焦熱の印",
+    "desc": "敵単体に火の印を刻み、火炎耐性を低下させる。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "int",
+    "element": "fire",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "element_res_mod",
+        "element": "fire",
+        "amount": -2,
+        "duration": 3,
+        "name": "焦熱の印",
+        "desc": "火炎属性への耐性が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_frost_bind",
+    "name": "氷縛の印",
+    "desc": "敵単体に氷の印を刻み、氷結耐性を低下させる。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "int",
+    "element": "ice",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "element_res_mod",
+        "element": "ice",
+        "amount": -2,
+        "duration": 3,
+        "name": "氷縛の印",
+        "desc": "氷結属性への耐性が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_thunder_seal",
+    "name": "雷縛の印",
+    "desc": "敵単体に雷の印を刻み、雷撃耐性を低下させる。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "int",
+    "element": "lightning",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "element_res_mod",
+        "element": "lightning",
+        "amount": -2,
+        "duration": 3,
+        "name": "雷縛の印",
+        "desc": "雷撃属性への耐性が低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_gravity_snare",
+    "name": "重力の枷",
+    "desc": "敵単体を重い魔力で縛り、器用さを低下させる。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "int",
+    "element": "arcane",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "dex_mod",
+        "amount": -2,
+        "duration": 3,
+        "name": "重力の枷",
+        "desc": "器用さが低下している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_mana_leak",
+    "name": "マナ漏出",
+    "desc": "敵単体の魔力を乱し、SPを徐々に減少させる。",
+    "category": "magic",
+    "usesp": 5,
+    "power": 1,
+    "ability": "int",
+    "element": "arcane",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "decrease_sp",
+        "amount": 5,
+        "duration": 3,
+        "name": "マナ漏出",
+        "desc": "ターン終了時にSPが減少する。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_curse_of_fragility",
+    "name": "脆弱の呪い",
+    "desc": "敵単体を脆くし、受けるダメージを増加させる。",
+    "category": "magic",
+    "usesp": 5,
+    "power": 1,
+    "ability": "wis",
+    "element": "dark",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "damage_taken_mod",
+        "amount": 2,
+        "duration": 3,
+        "name": "脆弱の呪い",
+        "desc": "受けるダメージが増加している。"
+      }
+    ]
+  },
+  {
+    "id": "enemy_silencing_gloom",
+    "name": "沈黙の薄闇",
+    "desc": "敵単体の精神を沈め、命中精度を低下させる。",
+    "category": "magic",
+    "usesp": 4,
+    "power": 1,
+    "ability": "wis",
+    "element": "dark",
+    "type": [
+      {
+        "type": "effect_enemy_single",
+        "buff_type": "accuracy_mod",
+        "amount": -2,
+        "duration": 3,
+        "name": "沈黙の薄闇",
+        "desc": "命中精度が低下している。"
+      }
+    ]
+  }
 ]
