@@ -1314,7 +1314,7 @@ def _skill_base_amount(actor: Character, skill: dict[str, Any]) -> int:
     ability = str(skill.get("ability") or "str")
     score = max(1, safe_int(attrs.get(ability), 10))
     power = combat_skill_power(skill)
-    return max(1, int(round(3 * score * power * random.uniform(0.5, 1.5))))
+    return max(1, int(round(2 * score * power * random.uniform(0.5, 1.0))))
 
 
 def _skill_hp_damage_effect_count(effects: Any) -> int:
