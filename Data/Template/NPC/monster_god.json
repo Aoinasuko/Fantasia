@@ -17,7 +17,8 @@
       "wis": 16,
       "cha": 16
     },
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "goddess",
@@ -37,6 +38,7 @@
       "wis": 16,
       "cha": 16
     },
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   }
 ]

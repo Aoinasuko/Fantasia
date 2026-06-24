@@ -48,7 +48,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "tentacle_mass",
@@ -80,7 +81,8 @@
         "type": "physical"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "shadow_mass",
@@ -131,7 +133,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "devouring_mist",
@@ -182,7 +185,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "flesh_lump",
@@ -214,7 +218,8 @@
         "type": "physical"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "eyeball_orb",
@@ -259,7 +264,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "floating_skull",
@@ -297,7 +303,8 @@
         "amount": 0.5
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "parasite_spore",
@@ -348,7 +355,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "living_chain",
@@ -380,7 +388,8 @@
         "type": "physical"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "mirror_wraith",
@@ -435,7 +444,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "hollow_hand",
@@ -467,6 +477,7 @@
         "type": "physical"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   }
 ]

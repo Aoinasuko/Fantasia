@@ -180,8 +180,12 @@ def _finish_quest(self, quest: QuestData, status: str, source: str, response: di
         if quest.name not in self.state.completed_quests:
             self.state.completed_quests.append(quest.name)
         event["reward"] = self._grant_quest_reward(quest)
+        if quest.extra.get("temporary_objective_subnode_id") and hasattr(self, "_cleanup_quest_temporary_objective_subnodes"):
+            event["temporary_objective_cleanup"] = self._cleanup_quest_temporary_objective_subnodes(quest, source=source)
     elif final_status in {"failed", "abandoned", "cancelled"}:
         event["objectives"] = self._close_quest_objectives(quest, final_status, source=source)
+        if hasattr(self, "_cleanup_quest_temporary_objective_subnodes"):
+            event["temporary_objective_cleanup"] = self._cleanup_quest_temporary_objective_subnodes(quest, source=source)
     quest.flags["finished"] = True
     quest.flags["finish_source"] = source
     quest.log.append(event)

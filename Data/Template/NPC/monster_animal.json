@@ -48,7 +48,8 @@
         "name": "飛行",
         "desc": "空を飛んでおり、近接攻撃が届きにくい。"
       }
-    ]
+    ],
+    "tag": []
   },
   {
     "id": "bigfly",
@@ -86,7 +87,8 @@
         "desc": "空を飛んでおり、近接攻撃が届きにくい。"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "wolf",
@@ -118,7 +120,8 @@
         "type": "physical"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "forest_wolf",
@@ -156,7 +159,8 @@
         "desc": "仲間と連携して獲物を追い込む。"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "wildcat",
@@ -188,7 +192,8 @@
         "type": "physical"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "giant_rat",
@@ -220,7 +225,8 @@
         "type": "physical"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "giant_spider",
@@ -271,7 +277,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "venom_moth",
@@ -322,7 +329,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "horned_rabbit",
@@ -354,7 +362,8 @@
         "type": "physical"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "cave_snake",
@@ -405,7 +414,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "iron_beetle",
@@ -443,7 +453,8 @@
         "desc": "厚い甲殻で傷を受けにくい。"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "black_crow",
@@ -481,7 +492,8 @@
         "desc": "空を飛んで攻撃を避けやすい。"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "killer_bee_swarm",
@@ -538,6 +550,7 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   }
 ]

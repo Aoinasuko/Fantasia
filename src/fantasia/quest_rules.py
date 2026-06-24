@@ -200,6 +200,11 @@ def _quest_anchor_kind_from_text(text: str, destination_kind: str) -> str:
 def _quest_location_kind_label(kind: str) -> str:
     return {
         "dungeon": "ダンジョン",
+        "forest": "森",
+        "mountain": "山岳",
+        "ruin": "遺跡",
+        "temple": "神殿",
+        "cave": "洞窟",
         "wilderness": "森",
         "road": "街道",
         "crossroad": "分岐路",
@@ -220,13 +225,13 @@ def _quest_destination_name(quest: QuestData, hint: dict[str, Any], origin: str,
         label = "森"
     elif kind == "dungeon" and any(word in text for word in ("洞窟", "cave", "cavern")):
         label = "洞窟"
-    if anchor_kind == "road" and anchor_name:
-        return f"{str(origin or anchor_name).strip()}近郊の街道沿いの{label}"
-    if anchor_kind == "crossroad" and anchor_name:
-        return f"{str(origin or anchor_name).strip()}近郊の分岐路そばの{label}"
-    if anchor_name:
-        return f"{anchor_name}近くの{label}"
-    return f"{quest.name}の{label}"
+    if kind in {"dungeon", "forest", "mountain", "ruin", "temple", "cave"}:
+        return f"忘れられた{label}"
+    if anchor_kind == "road":
+        return f"街道沿いの{label}"
+    if anchor_kind == "crossroad":
+        return f"分かれ道の{label}"
+    return f"名もなき{label}"
 
 def _quest_objective_name_from_text(text: str) -> str:
     lowered = str(text or "").casefold()

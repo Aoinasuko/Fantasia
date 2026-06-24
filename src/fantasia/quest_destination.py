@@ -49,6 +49,8 @@ QUEST_DUNGEON_SUBTYPE_ALIASES = {
     "聖域": "temple",
 }
 
+QUEST_TEMP_OBJECTIVE_PREFIX = "quest_tmp:"
+
 
 def _quest_template_dungeon_subtype(value: Any) -> str:
     text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
@@ -60,6 +62,17 @@ def _quest_template_dungeon_subtype(value: Any) -> str:
     if text == "dungeon":
         return "dungeon"
     return ""
+
+
+def _quest_dungeon_subtype_label(subtype: str) -> str:
+    return {
+        "forest": "森",
+        "mountain": "山岳",
+        "ruin": "遺跡",
+        "temple": "神殿",
+        "cave": "洞窟",
+        "dungeon": "ダンジョン",
+    }.get(str(subtype or "").strip().lower(), "ダンジョン")
 
 
 def _active_quest_destination_location(self) -> str:
@@ -94,6 +107,8 @@ def _ensure_quest_destination(self, quest: QuestData, response: dict[str, Any] |
                 existing["dungeon_subtype"] = _quest_location_dungeon_subtype(location)
                 existing["objective_subnode_id"] = subnode.get("id") or existing.get("objective_subnode_id") or ""
                 existing["objective_subnode_name"] = subnode.get("name") or existing.get("objective_subnode_name") or ""
+                if subnode.get("quest_temporary_objective"):
+                    existing["temporary_objective_subnode"] = True
                 quest.extra["destination"] = existing
                 quest.extra["objective_location"] = location_name
                 quest.extra["objective_subnode_id"] = str(existing.get("objective_subnode_id") or "")
@@ -114,6 +129,7 @@ def _ensure_quest_destination(self, quest: QuestData, response: dict[str, Any] |
         "objective_subnode_id": str(subnode.get("id") or ""),
         "objective_subnode_name": str(subnode.get("name") or ""),
         "objective_subnode_description": str(subnode.get("description") or ""),
+        "temporary_objective_subnode": bool(subnode.get("quest_temporary_objective")),
         "source": "quest_destination_resolver",
     }
     quest.extra["destination"] = destination
@@ -175,7 +191,7 @@ def _quest_anchor_location(self, origin: str, hint: dict[str, Any]) -> str:
                 world,
                 f"{world.locations.get(origin, LocationData(name=origin)).name}近くの{_quest_location_kind_label(anchor_kind)}",
             )
-            anchor_location = world.ensure_location(anchor_name, f"{origin}から目的地へ向かう途中にある{_quest_location_kind_label(anchor_kind)}。")
+            anchor_location = world.ensure_location(anchor_name, f"{origin}から外へ続く{_quest_location_kind_label(anchor_kind)}。")
             anchor_location.extra["location_kind"] = anchor_kind
             anchor_location.extra["danger_level"] = 0
             anchor_location.flags["discovered"] = True
@@ -270,6 +286,20 @@ def _quest_dungeon_subtype_matches(location: LocationData, subtype: str) -> bool
         return True
     return _quest_location_dungeon_subtype(location) == requested
 
+def _quest_location_is_highway_anchor(location: LocationData | None) -> bool:
+    if location is None or _is_settlement_location(location) or _quest_location_is_dungeon_target(location):
+        return False
+    extra = location.extra if isinstance(location.extra, dict) else {}
+    values = {
+        str(extra.get("main_node_type") or "").strip().lower(),
+        str(extra.get("category") or "").strip().lower(),
+        str(extra.get("location_kind") or "").strip().lower(),
+        str(extra.get("kind") or "").strip().lower(),
+        str(extra.get("main_node_subtype") or "").strip().lower(),
+    }
+    return bool(values & {"single", "highway", "road", "crossroad", "coast", "plain", "river", "landmark", "wilderness"})
+
+
 def _quest_destination_candidate_locations(self, origin: str, anchor: str, branch_anchor: str) -> list[str]:
     world = self.state.world_data
     seeds = _dedupe_strs([branch_anchor, anchor, origin, self.state.current_location, world.starting_location])
@@ -291,57 +321,53 @@ def _quest_destination_candidate_locations(self, origin: str, anchor: str, branc
 
 def _find_nearby_quest_dungeon_by_subtype(self, origin: str, anchor: str, branch_anchor: str, subtype: str) -> str:
     world = self.state.world_data
-    for name in _quest_destination_candidate_locations(self, origin, anchor, branch_anchor):
+    candidates = [branch_anchor, *self._world_neighbors_no_ensure(world, branch_anchor)]
+    for name in _dedupe_strs(candidates):
+        if name == origin or name == anchor:
+            continue
         location = world.locations.get(name)
         if location and _quest_dungeon_subtype_matches(location, subtype):
             return name
     return ""
 
-def _quest_existing_dungeon_objective_subnode(
-    self,
-    location: LocationData,
-    graph: dict[str, Any],
-    quest: QuestData,
-    hint: dict[str, Any],
-) -> dict[str, Any]:
+
+def _quest_temporary_objective_subnode_id(quest: QuestData) -> str:
+    return f"{QUEST_TEMP_OBJECTIVE_PREFIX}{_world_location_name_key(quest.name) or 'objective'}"
+
+
+def _quest_temporary_objective_parent(self, location: LocationData, graph: dict[str, Any], quest: QuestData) -> str:
     nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
     if not nodes:
-        return {}
-    node_name, description = self._quest_objective_subnode_display(quest, hint)
-    rng = random.Random(f"quest-objective-subnode|{self.state.world_name}|{location.name}|{quest.name}")
-    blocked_kinds = {"entrance", "exit", "gate", "external"}
+        return ""
+    rng = random.Random(f"quest-temporary-objective-parent|{self.state.world_name}|{location.name}|{quest.name}")
+    blocked_ids = {DUNGEON_ENTRY_SUBNODE_ID, DUNGEON_DEEPEST_SUBNODE_ID}
+    blocked_kinds = {"entrance", "exit", "gate", "external", "deepest", "quest_objective"}
     candidates: list[str] = []
-    fallback: list[str] = []
     for node_id, node in nodes.items():
         if not isinstance(node, dict):
             continue
         node_id_text = str(node_id)
         node_kind = str(node.get("kind") or "").strip().lower()
-        if node_id_text == DUNGEON_ENTRY_SUBNODE_ID or node.get("world_map_exit") or node_kind in blocked_kinds:
+        if node_id_text in blocked_ids or node_kind in blocked_kinds:
             continue
-        if node.get("quest_objective") and str(node.get("quest_name") or "") != quest.name:
-            fallback.append(node_id_text)
+        if node.get("quest_temporary_objective") or node_id_text.startswith(QUEST_TEMP_OBJECTIVE_PREFIX):
+            continue
+        if node.get("quest_objective"):
             continue
         candidates.append(node_id_text)
     if not candidates:
-        candidates = [node_id for node_id in (DUNGEON_DEEPEST_SUBNODE_ID, "main_02", "main_01") if node_id in nodes]
+        candidates = [
+            str(node_id)
+            for node_id, node in nodes.items()
+            if str(node_id) not in blocked_ids
+            and isinstance(node, dict)
+            and not node.get("quest_temporary_objective")
+            and not str(node_id).startswith(QUEST_TEMP_OBJECTIVE_PREFIX)
+        ]
     if not candidates:
-        candidates = fallback
-    if not candidates:
-        candidates = [str(node_id) for node_id in nodes if str(node_id) != DUNGEON_ENTRY_SUBNODE_ID]
-    if not candidates:
-        return {}
+        return DUNGEON_ENTRY_SUBNODE_ID if DUNGEON_ENTRY_SUBNODE_ID in nodes else self._subnode_anchor(graph, prefer_deep=False)
     candidates = sorted(_dedupe_strs(candidates))
-    node_id = candidates[rng.randrange(len(candidates))]
-    node = nodes.get(node_id)
-    if not isinstance(node, dict):
-        return {}
-    node.setdefault("id", node_id)
-    node["quest_name"] = quest.name
-    node["quest_objective"] = True
-    node["quest_objective_name"] = node_name
-    node["quest_objective_description"] = description
-    return node
+    return candidates[rng.randrange(len(candidates))]
 
 def _quest_dungeon_branch_anchor(self, origin: str, fallback: str = "") -> str:
     world = self.state.world_data
@@ -369,9 +395,51 @@ def _quest_dungeon_branch_anchor(self, origin: str, fallback: str = "") -> str:
                 if name in world.locations:
                     return name
     fallback_location = world.locations.get(fallback)
-    if fallback_location and str(fallback_location.extra.get("main_node_type") or "") == "single":
+    if _quest_location_is_highway_anchor(fallback_location):
         return fallback
-    return origin if origin in world.locations else fallback
+    frontier: list[tuple[str, int]] = [(origin, 0), (fallback, 0)]
+    seen: set[str] = set()
+    while frontier:
+        name, depth = frontier.pop(0)
+        if not name or name in seen or name not in world.locations:
+            continue
+        seen.add(name)
+        if _quest_location_is_highway_anchor(world.locations.get(name)):
+            return name
+        if depth >= 2:
+            continue
+        for neighbor in self._world_neighbors_no_ensure(world, name):
+            if neighbor and neighbor not in seen:
+                frontier.append((neighbor, depth + 1))
+    if origin in world.locations:
+        base = f"{origin}外れの街道"
+        anchor_name = _unique_world_location_name(world, base)
+        origin_danger = self._current_location_danger(origin)
+        anchor_location = world.ensure_location(anchor_name, f"{origin}から外へ続く街道。旅人の足跡と古い轍が残っている。")
+        anchor_location.extra.update(
+            {
+                "location_kind": "road",
+                "main_node_type": "single",
+                "main_node_subtype": "road",
+                "category": "highway",
+                "danger_level": _clamp_world_danger(max(1, origin_danger + 1)),
+                "generated_for_quest_anchor": True,
+            }
+        )
+        anchor_location.flags["discovered"] = True
+        self._set_location_graph_node(world, anchor_name, kind="road", danger=anchor_location.extra["danger_level"], location=anchor_location)
+        origin_location = world.locations.get(origin)
+        from_subnode = "gate" if origin_location and _is_settlement_location(origin_location) else self._default_subnode_for_location(origin_location)
+        self._connect_world_locations_by_subnodes(
+            world,
+            origin,
+            anchor_name,
+            from_subnode or DEFAULT_SUBNODE_ID,
+            DEFAULT_SUBNODE_ID,
+            kind="quest_highway_anchor",
+        )
+        return anchor_name
+    return fallback
 
 def _ensure_quest_dungeon_template_graph(
     self,
@@ -404,20 +472,116 @@ def _ensure_quest_dungeon_template_graph(
     graph = location.extra.get(SUBNODE_GRAPH_KEY)
     return graph if isinstance(graph, dict) else {}
 
+
+def _quest_dungeon_location_design(
+    self,
+    quest: QuestData,
+    hint: dict[str, Any],
+    subtype: str,
+    origin: str,
+    branch_anchor: str,
+    danger: int,
+) -> dict[str, str]:
+    world = self.state.world_data
+    anchor_location = world.locations.get(branch_anchor)
+    subtype_label = _quest_dungeon_subtype_label(subtype)
+    prompt = {
+        "world": {
+            "world_name": world.world_name,
+            "overview": _short_text(world.overview or world.world_situation, 900),
+            "current_rumor": _short_text(world.current_rumor, 280),
+        },
+        "slot": {
+            "slot_id": "quest_dungeon",
+            "category": "dungeon",
+            "type": subtype,
+            "type_label": subtype_label,
+            "danger": danger,
+            "anchor_location": branch_anchor,
+            "anchor_description": _short_text(anchor_location.description if anchor_location else "", 260),
+            "origin_settlement": origin,
+        },
+        "quest_context": {
+            "quest_type": str(quest.extra.get("quest_type") or quest.extra.get("objective_type") or ""),
+            "danger_level": danger,
+        },
+        "rules": [
+            "Return exactly one location object with name and description.",
+            "Name and describe a reusable dungeon as a place in the world, not a one-off quest target.",
+            "Use the world tone, anchor road, danger level, and dungeon type.",
+            "Do not mention the quest name, requested item, rescue target, delivery target, objective marker, or reward.",
+            "Do not use generic names such as 近くの探索地, 探索地, 未命名, unnamed, placeholder, or 依頼の目的地.",
+            "Use Japanese for both name and description.",
+        ],
+    }
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You name and describe a template-generated Fantasia quest dungeon. "
+                "The game already decided the dungeon type, graph, danger, anchor road, and quest objective separately. "
+                "Return compact JSON only."
+            ),
+        },
+        {
+            "role": "user",
+            "content": _ai_json(
+                {
+                    "world": prompt["world"],
+                    "slots": [prompt["slot"]],
+                    "quest_context": prompt["quest_context"],
+                    "rules": prompt["rules"],
+                }
+            ),
+        },
+    ]
+    try:
+        response = self._chat_json(
+            "local_world_dungeon_location_describer",
+            messages,
+            max_tokens=650,
+            world_name=self.state.world_name,
+            player_name=self.state.player_name,
+            retries=1,
+        )
+    except Exception as exc:
+        world.extra.setdefault("quest_dungeon_description_errors", []).append({"quest": quest.name, "error": str(exc)})
+        return {}
+    location_payload = response.get("location") if isinstance(response, dict) else {}
+    if not isinstance(location_payload, dict):
+        return {}
+    name = _clean_generated_name(location_payload.get("name") or location_payload.get("title") or "", "", kind="actor")
+    description = str(
+        location_payload.get("description")
+        or location_payload.get("desc")
+        or location_payload.get("summary")
+        or ""
+    ).strip()
+    blocked_name_markers = ("近くの探索地", "未命名", "placeholder", "unnamed", "依頼の目的地")
+    if any(marker.casefold() in name.casefold() for marker in blocked_name_markers):
+        name = ""
+    if any(marker.casefold() in description.casefold() for marker in ("依頼", "クエスト", quest.name.casefold())):
+        description = ""
+    return _drop_empty({"name": _short_text(name, 36), "description": _short_text(description, 180)})
+
+
 def _create_quest_dungeon_location(self, quest: QuestData, hint: dict[str, Any], origin: str, anchor: str) -> LocationData:
     world = self.state.world_data
     branch_anchor = self._quest_dungeon_branch_anchor(origin, anchor)
     subtype = _quest_dungeon_subtype(quest, hint)
     kind = "dungeon"
     explicit_name = str(hint.get("location") or hint.get("destination_location") or "").strip()
-    base_name = explicit_name or _quest_destination_name(quest, {**hint, "location_kind": subtype or "dungeon"}, origin, branch_anchor)
-    location_name = _unique_world_location_name(world, base_name)
     danger = _safe_int(quest.extra.get("danger_level") or quest.extra.get("planned_danger_level"), 0)
     if danger <= 0:
         danger = self._assign_quest_danger(quest, quest.neighboring_settlement or origin)
-    description = str(hint.get("description") or hint.get("objective_subnode_description") or "").strip()
+    design = _quest_dungeon_location_design(self, quest, hint, subtype, origin, branch_anchor, danger)
+    base_name = str(design.get("name") or explicit_name or "").strip()
+    if not base_name:
+        base_name = _quest_destination_name(quest, {**hint, "location_kind": subtype or "dungeon"}, origin, branch_anchor)
+    location_name = _unique_world_location_name(world, base_name)
+    description = str(design.get("description") or "").strip()
     if not description:
-        description = f"依頼「{quest.name}」の目的地となる探索地。"
+        description = f"{_quest_dungeon_subtype_label(subtype)}として知られる危険な探索地。内部には複数の通路と未知の脅威が残っている。"
     location = world.ensure_location(location_name, description)
     location.extra.update(
         {
@@ -468,17 +632,24 @@ def _quest_destination_location(self, quest: QuestData, hint: dict[str, Any], or
     world = self.state.world_data
     explicit_name = str(hint.get("location") or hint.get("destination_location") or "").strip()
     subtype = _quest_dungeon_subtype(quest, hint)
+    branch_anchor = self._quest_dungeon_branch_anchor(origin, anchor)
     if explicit_name:
         resolved = self._find_world_location_by_name(explicit_name)
         if resolved:
             location = world.locations[resolved]
             if _quest_dungeon_subtype_matches(location, subtype) or (_quest_location_is_dungeon_target(location) and subtype == "dungeon"):
-                _ensure_quest_dungeon_template_graph(self, location, quest, subtype, anchor)
-                if not self._world_neighbors_no_ensure(world, resolved) and anchor and anchor != resolved:
-                    self._connect_world_locations(world, anchor, resolved)
+                _ensure_quest_dungeon_template_graph(self, location, quest, subtype, branch_anchor)
+                if branch_anchor and branch_anchor != resolved and resolved not in self._world_neighbors_no_ensure(world, branch_anchor):
+                    self._connect_world_locations_by_subnodes(
+                        world,
+                        branch_anchor,
+                        resolved,
+                        DEFAULT_SUBNODE_ID,
+                        DUNGEON_ENTRY_SUBNODE_ID,
+                        kind="quest_dungeon_branch",
+                    )
                 return location
 
-    branch_anchor = self._quest_dungeon_branch_anchor(origin, anchor)
     existing = _find_nearby_quest_dungeon_by_subtype(self, origin, anchor, branch_anchor, subtype)
     if existing:
         location = world.locations[existing]
@@ -520,7 +691,8 @@ def _ensure_quest_objective_subnode(self, location: LocationData, quest: QuestDa
     location.extra.setdefault(SUBNODE_GRAPH_KEY, {"nodes": {}, "edges": []})
     graph = self._ensure_location_subnode_graph(self.state.world_data, location.name)
     nodes = graph.setdefault("nodes", {})
-    node_id = str(hint.get("objective_subnode_id") or "").strip()
+    is_dungeon_target = _quest_location_is_dungeon_target(location) or _is_dungeon_location(location) or _world_location_blocks_world_map_departure(location)
+    node_id = _quest_temporary_objective_subnode_id(quest) if is_dungeon_target else str(hint.get("objective_subnode_id") or "").strip()
     explicit_node_id = bool(node_id)
     if not node_id:
         node_id = f"quest:{_world_location_name_key(quest.name) or 'objective'}"
@@ -529,26 +701,35 @@ def _ensure_quest_objective_subnode(self, location: LocationData, quest: QuestDa
     if isinstance(existing, dict):
         existing["quest_name"] = quest.name
         existing["quest_objective"] = True
+        if is_dungeon_target:
+            existing["quest_temporary_objective"] = True
+            existing["temporary"] = True
+            existing["remove_on_quest_finish"] = True
         if _subnode_display_needs_fill(existing.get("name")):
             existing["name"] = node_name
         if _subnode_display_needs_fill(existing.get("description")):
             existing["description"] = description
-        if _is_dungeon_location(location) or _world_location_blocks_world_map_departure(location):
-            self._ensure_quest_branch_connection(location, graph, quest, node_id)
+        if is_dungeon_target:
+            parent = str(existing.get("temporary_parent_subnode_id") or "")
+            if parent not in nodes:
+                parent = _quest_temporary_objective_parent(self, location, graph, quest)
+                if parent:
+                    existing["temporary_parent_subnode_id"] = parent
+            if parent and not self._subnode_has_edge(graph, parent, node_id):
+                self._connect_subnodes(graph, parent, node_id, kind="quest_objective_path")
+            _ensure_dungeon_graph_connected(graph)
+            quest.extra["temporary_objective_location"] = location.name
+            quest.extra["temporary_objective_subnode_id"] = node_id
         else:
             self._ensure_subnode_connected_to_anchor(graph, node_id, kind="quest_path", prefer_deep=True)
         return existing
-    if not explicit_node_id and _quest_location_is_dungeon_target(location):
-        existing_dungeon_node = _quest_existing_dungeon_objective_subnode(self, location, graph, quest, hint)
-        if existing_dungeon_node:
-            return existing_dungeon_node
     x = 560
     y = 360 + (len(nodes) % 3) * 90
-    if _is_dungeon_location(location) or _world_location_blocks_world_map_departure(location):
-        parent = self._ensure_quest_branch_node(location, graph, quest)
+    if is_dungeon_target:
+        parent = _quest_temporary_objective_parent(self, location, graph, quest)
         parent_node = nodes.get(parent, {}) if isinstance(nodes.get(parent), dict) else {}
-        x = _safe_int(parent_node.get("x"), 560) + 140
-        y = _safe_int(parent_node.get("y"), 260) + 70
+        x = _safe_int(parent_node.get("x"), 560) + 110
+        y = _safe_int(parent_node.get("y"), 260) + 78
     elif "depths" in nodes:
         parent = "depths"
         x = _safe_int(nodes[parent].get("x"), 560) + 170
@@ -567,71 +748,21 @@ def _ensure_quest_objective_subnode(self, location: LocationData, quest: QuestDa
         y,
         quest_name=quest.name,
         quest_objective=True,
+        quest_temporary_objective=True if is_dungeon_target else None,
+        temporary=True if is_dungeon_target else None,
+        remove_on_quest_finish=True if is_dungeon_target else None,
+        temporary_parent_subnode_id=parent if is_dungeon_target else "",
+        world_map_exit=False if is_dungeon_target else None,
     )
     if parent:
-        self._connect_subnodes(graph, str(parent), node_id, kind="quest_path")
-    if _is_dungeon_location(location) or _world_location_blocks_world_map_departure(location):
-        self._ensure_quest_branch_connection(location, graph, quest, node_id)
+        self._connect_subnodes(graph, str(parent), node_id, kind="quest_objective_path" if is_dungeon_target else "quest_path")
+    if is_dungeon_target:
+        _ensure_dungeon_graph_connected(graph)
+        quest.extra["temporary_objective_location"] = location.name
+        quest.extra["temporary_objective_subnode_id"] = node_id
     else:
         self._ensure_subnode_connected_to_anchor(graph, node_id, kind="quest_path", prefer_deep=True)
     return node
-
-def _ensure_quest_branch_node(self, location: LocationData, graph: dict[str, Any], quest: QuestData) -> str:
-    nodes = graph.setdefault("nodes", {})
-    branch_id = f"quest_branch:{_world_location_name_key(quest.name) or 'objective'}"
-    if branch_id in nodes:
-        return branch_id
-    parent = self._quest_branch_parent(graph)
-    parent_node = nodes.get(parent, {}) if isinstance(nodes.get(parent), dict) else {}
-    x = _safe_int(parent_node.get("x"), 360) + 80
-    y = _safe_int(parent_node.get("y"), 220) + 110
-    self._upsert_subnode_node(
-        graph,
-        branch_id,
-        f"{quest.name}への分岐",
-        "本道から外れた、依頼の目的地へ続く分岐点。",
-        "quest_branch",
-        x,
-        y,
-        quest_name=quest.name,
-        revealed=False,
-        world_map_exit=False,
-    )
-    if parent:
-        self._connect_subnodes(graph, parent, branch_id, kind="quest_branch")
-    self._ensure_subnode_connected_to_anchor(graph, branch_id, kind="quest_branch", prefer_deep=False)
-    return branch_id
-
-def _quest_branch_parent(self, graph: dict[str, Any]) -> str:
-    nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
-    if not nodes:
-        return ""
-    start = DUNGEON_ENTRY_SUBNODE_ID if DUNGEON_ENTRY_SUBNODE_ID in nodes else self._subnode_anchor(graph, prefer_deep=False)
-    deepest = DUNGEON_DEEPEST_SUBNODE_ID if DUNGEON_DEEPEST_SUBNODE_ID in nodes else ""
-    path = self._subnode_path(graph, start, deepest) if start and deepest else []
-    candidates = [node_id for node_id in path[1:-1] if node_id in nodes]
-    if candidates:
-        return candidates[max(0, len(candidates) // 2)]
-    for node_id in self._subnode_adjacent_ids(graph, start):
-        if node_id != deepest:
-            return node_id
-    return start
-
-def _ensure_quest_branch_connection(
-    self,
-    location: LocationData,
-    graph: dict[str, Any],
-    quest: QuestData,
-    objective_node_id: str,
-) -> None:
-    nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
-    objective_node_id = str(objective_node_id or "").strip()
-    if objective_node_id not in nodes:
-        return
-    branch_id = self._ensure_quest_branch_node(location, graph, quest)
-    if branch_id:
-        self._connect_subnodes(graph, branch_id, objective_node_id, kind="quest_path")
-    _ensure_dungeon_graph_connected(graph)
 
 def _quest_objective_subnode_display(self, quest: QuestData, hint: dict[str, Any]) -> tuple[str, str]:
     text_parts = [
@@ -664,6 +795,102 @@ def _quest_objective_subnode_display(self, quest: QuestData, hint: dict[str, Any
     if _subnode_display_needs_fill(raw_description):
         raw_description = f"Objective site for quest: {quest.name}."
     return _short_text(raw_name, 48), _short_text(raw_description, 180)
+
+
+def _cleanup_quest_temporary_objective_subnodes(
+    self,
+    quest: QuestData,
+    *,
+    source: str = "",
+) -> dict[str, Any]:
+    world = self.state.world_data
+    extra = quest.extra if isinstance(quest.extra, dict) else {}
+    destination = extra.get("destination") if isinstance(extra.get("destination"), dict) else {}
+    location_name = str(
+        extra.get("temporary_objective_location")
+        or destination.get("location")
+        or extra.get("objective_location")
+        or ""
+    ).strip()
+    if not location_name or location_name not in world.locations:
+        return {"removed": []}
+    location = world.locations[location_name]
+    graph = self._ensure_location_subnode_graph(world, location_name)
+    nodes = graph.get("nodes", {}) if isinstance(graph.get("nodes"), dict) else {}
+    if not nodes:
+        return {"removed": []}
+    expected_id = str(
+        extra.get("temporary_objective_subnode_id")
+        or destination.get("objective_subnode_id")
+        or ""
+    ).strip()
+    removed: list[str] = []
+    parent_by_node: dict[str, str] = {}
+    for node_id, node in list(nodes.items()):
+        node_key = str(node_id)
+        if expected_id and node_key != expected_id:
+            continue
+        if not isinstance(node, dict):
+            continue
+        if not (
+            node.get("quest_temporary_objective")
+            or node.get("remove_on_quest_finish")
+            or node_key.startswith(QUEST_TEMP_OBJECTIVE_PREFIX)
+        ):
+            continue
+        if str(node.get("quest_name") or quest.name) != quest.name:
+            continue
+        parent = str(node.get("temporary_parent_subnode_id") or "")
+        if parent not in nodes:
+            parent = self._subnode_anchor(graph, prefer_deep=False, exclude=node_key)
+        if self._current_subnode_id(location_name) == node_key and parent in nodes:
+            self._set_current_subnode(location_name, parent)
+        parent_by_node[node_key] = parent
+        graph["edges"] = [
+            edge
+            for edge in graph.get("edges", [])
+            if not (
+                isinstance(edge, dict)
+                and not edge.get("external")
+                and node_key in {str(edge.get("from") or ""), str(edge.get("to") or "")}
+            )
+        ]
+        nodes.pop(node_key, None)
+        removed.append(node_key)
+    if not removed:
+        return {"removed": []}
+    loot_store = location.extra.get("subnode_loot")
+    if isinstance(loot_store, dict):
+        for node_id in removed:
+            loot_store.pop(node_id, None)
+    inventory = self._location_inventory(location_name)
+    inventory[:] = [
+        item
+        for item in inventory
+        if not (
+            isinstance(item, dict)
+            and str(item.get("quest_name") or "") == quest.name
+            and str(item.get("quest_subnode_id") or "") in removed
+        )
+    ]
+    for character in world.characters.values():
+        if character.flags.get("is_player"):
+            continue
+        char_location, char_subnode = self._character_subnode_assignment(character)
+        if char_location != location_name or char_subnode not in removed:
+            continue
+        parent = parent_by_node.get(char_subnode, "")
+        if character.flags.get("quest_objective") or character.category == "quest_objective" or character.extra.get("quest_objective"):
+            if quest.status in {"failed", "abandoned", "cancelled"} and str(character.state or "").lower() not in {"dead", "party"}:
+                character.state = "gone"
+            elif parent in nodes:
+                self._set_character_subnode_fields(character, location_name, parent)
+    extra.pop("temporary_objective_location", None)
+    extra.pop("temporary_objective_subnode_id", None)
+    _ensure_dungeon_graph_connected(graph)
+    world.history.append({"manager": "quest_temporary_objective_cleanup", "quest": quest.name, "source": source, "location": location_name, "removed": removed})
+    return {"location": location_name, "removed": removed}
+
 
 def _quest_destination_for_action(
     self,

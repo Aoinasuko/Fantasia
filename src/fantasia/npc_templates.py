@@ -54,6 +54,38 @@ def _as_str_list(value: Any) -> list[str]:
     return [str(item).strip() for item in _as_list(value) if str(item).strip()]
 
 
+def _drop_empty(data: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in data.items() if value not in (None, "", [], {})}
+
+
+def _template_tags(template: dict[str, Any] | None) -> list[str]:
+    if not isinstance(template, dict):
+        return []
+    return _as_str_list(template.get("tag"))
+
+
+def _human_template_context(template: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(template, dict) or "human" not in _template_tags(template):
+        return {}
+    age_min = _safe_int(template.get("age_min"), 0)
+    age_max = _safe_int(template.get("age_max"), 0)
+    age_range: dict[str, int] = {}
+    if age_min > 0:
+        age_range["min"] = age_min
+    if age_max > 0:
+        age_range["max"] = age_max
+    return _drop_empty(
+        {
+            "age": str(template.get("age") or "").strip(),
+            "age_range": age_range,
+            "template_name": str(template.get("name") or "").strip(),
+            "template_role": str(template.get("role") or "").strip(),
+            "template_look": str(template.get("look") or "").strip(),
+            "template_personality": str(template.get("personality") or "").strip(),
+        }
+    )
+
+
 def _template_dirs() -> list[Path]:
     candidates = [NPC_TEMPLATE_DIR, ROOT / "Data" / "Template" / "NPC"]
     result: list[Path] = []
@@ -167,10 +199,12 @@ def _normalise_npc_template(raw: Any, source_path: Path) -> dict[str, Any] | Non
     image_prompt = _as_str_list(raw.get("image_prompt") or raw.get("image_generation_prompt"))
     skills_defined = "skills" in raw
     traits_defined = "traits" in raw
+    tags = _as_str_list(raw.get("tag"))
     return {
         "id": template_id,
         "name": name,
         "role": role or name,
+        "tag": tags,
         "look": str(raw.get("look") or raw.get("appearance") or "").strip(),
         "personality": str(raw.get("personality") or "").strip(),
         "image_prompt": image_prompt,
@@ -359,10 +393,12 @@ def choose_npc_template(
 def npc_template_ai_context(template: dict[str, Any] | None) -> dict[str, Any]:
     if not template:
         return {}
+    tags = _template_tags(template)
     return {
         "id": template.get("id"),
         "name": template.get("name"),
         "role": template.get("role"),
+        "tag": tags,
         "look": template.get("look"),
         "personality": template.get("personality"),
         "image_prompt": template.get("image_prompt") or [],
@@ -382,6 +418,7 @@ def npc_template_ai_context(template: dict[str, Any] | None) -> dict[str, Any]:
         "usenamelist": bool(template.get("usenamelist")),
         "rescued": bool(template.get("rescued")),
         "random_skill": template.get("random_skill") or "none",
+        "human_profile_context": _human_template_context(template),
     }
 
 
@@ -400,10 +437,15 @@ def npc_template_prompt_summaries(
                 "id": template.get("id"),
                 "name": template.get("name"),
                 "role": template.get("role"),
+                "tag": _template_tags(template),
                 "category": template.get("category"),
                 "level": template.get("level"),
+                "age": template.get("age"),
+                "age_min": template.get("age_min"),
+                "age_max": template.get("age_max"),
                 "look": template.get("look"),
                 "personality": template.get("personality"),
+                "human_profile_context": _human_template_context(template),
                 "attacks": template.get("attacks") or [],
                 "resistance": template.get("resistance") or [],
                 "usenamelist": bool(template.get("usenamelist")),
@@ -456,6 +498,8 @@ def npc_template_to_character_payload(
     danger = max(0, _safe_int(danger_level, 0))
     category = str(template.get("category") or "")
     enemy = category in ENEMY_NPC_TEMPLATE_CATEGORIES
+    tags = _template_tags(template)
+    human_profile_context = _human_template_context(template)
     multiplier = _enemy_stat_multiplier(enemy_strength, rng) if enemy else 1.0
     attack = int(round(max(0, _safe_int(template.get("atk"), 0) + danger) * multiplier))
     defense = int(round(max(0, _safe_int(template.get("def"), 0) + danger) * multiplier))
@@ -483,8 +527,13 @@ def npc_template_to_character_payload(
         "resistance": deepcopy(template.get("resistance") or []),
         "extra": {
             "npc_template_id": str(template.get("id") or ""),
+            "npc_template_name": str(template.get("name") or ""),
+            "npc_template_role": str(template.get("role") or ""),
+            "npc_template_tag": tags,
             "npc_template_category": category,
             "npc_template_source": str(template.get("source_path") or ""),
+            "human_template_context": deepcopy(human_profile_context),
+            "tag": tags,
             "attacks": deepcopy(template.get("attacks") or []),
             "combat_attacks": deepcopy(template.get("attacks") or []),
             "base_attack": max(0, _safe_int(template.get("atk"), 0)),
@@ -495,6 +544,7 @@ def npc_template_to_character_payload(
         },
         "flags": {
             "npc_template_id": str(template.get("id") or ""),
+            "npc_template_tag": tags,
         },
     }
     if hostile is not None:

@@ -773,8 +773,22 @@ class FixtureLlmBackend(BaseLlmBackend):
             name = _extract_character_name(user_text) or "レナ"
             content = {
                 "name": name,
+                "gender": "female",
+                "age": "late 20s",
                 "talk_style": "短く慎重に話し、危険を感じると質問で相手を試す。",
                 "archetype": "cautious_helper",
+                "look": "濡れた旅外套と薬草袋を身につけ、淡い褐色の肌、灰青色の目、暗い栗色の髪を持つ。",
+                "personality": "慎重だが困っている相手には親切な人物で、雨の多い辺境を巡りながら薬草の知識で人々を助けて生きてきた。",
+                "look_details": {
+                    "clothing": "濡れた旅外套と薬草袋",
+                    "skin_color": "淡い褐色",
+                    "eye_color": "灰青色",
+                    "hair_color": "暗い栗色",
+                },
+                "personality_details": {
+                    "person_type": "慎重だが親切な巡回薬師",
+                    "life_history": "雨の多い辺境を巡りながら薬草の知識で人々を助けて生きてきた。",
+                },
                 "behavior_policy": "困っている相手には助言するが、無謀な戦闘や略奪には加担しない。",
                 "conversation_topics": ["薬草", "雨夜の道", "行方不明の旅人"],
                 "skills": [

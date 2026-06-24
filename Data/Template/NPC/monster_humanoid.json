@@ -52,7 +52,8 @@
         "desc": "自身が劣勢になると、戦意を失い相手に助けを求める。"
       }
     ],
-    "random_skill": "fighter"
+    "random_skill": "fighter",
+    "tag": []
   },
   {
     "id": "goblin_bow",
@@ -115,7 +116,8 @@
         "desc": "自身が劣勢になると、戦意を失い相手に助けを求める。"
       }
     ],
-    "random_skill": "fighter"
+    "random_skill": "fighter",
+    "tag": []
   },
   {
     "id": "thief",
@@ -158,7 +160,10 @@
         ]
       }
     ],
-    "random_skill": "fighter"
+    "random_skill": "fighter",
+    "tag": [
+      "human"
+    ]
   },
   {
     "id": "goblin_scout",
@@ -191,7 +196,8 @@
         "type": "physical"
       }
     ],
-    "random_skill": "fighter"
+    "random_skill": "fighter",
+    "tag": []
   },
   {
     "id": "hobgoblin",
@@ -224,7 +230,8 @@
         "type": "physical"
       }
     ],
-    "random_skill": "fighter"
+    "random_skill": "fighter",
+    "tag": []
   },
   {
     "id": "kobold",
@@ -257,7 +264,8 @@
         "type": "physical"
       }
     ],
-    "random_skill": "fighter"
+    "random_skill": "fighter",
+    "tag": []
   },
   {
     "id": "orc",
@@ -290,7 +298,8 @@
         "type": "physical"
       }
     ],
-    "random_skill": "fighter"
+    "random_skill": "fighter",
+    "tag": []
   },
   {
     "id": "human_thief",
@@ -336,7 +345,10 @@
         ]
       }
     ],
-    "random_skill": "fighter"
+    "random_skill": "fighter",
+    "tag": [
+      "human"
+    ]
   },
   {
     "id": "human_bandit",
@@ -369,7 +381,10 @@
         "type": "physical"
       }
     ],
-    "random_skill": "fighter"
+    "random_skill": "fighter",
+    "tag": [
+      "human"
+    ]
   },
   {
     "id": "skeleton_soldier",
@@ -407,7 +422,8 @@
         "amount": 0.5
       }
     ],
-    "random_skill": "fighter"
+    "random_skill": "fighter",
+    "tag": []
   },
   {
     "id": "lizardman",
@@ -440,7 +456,8 @@
         "type": "physical"
       }
     ],
-    "random_skill": "fighter"
+    "random_skill": "fighter",
+    "tag": []
   },
   {
     "id": "young_troll",
@@ -479,7 +496,8 @@
         "desc": "分厚い体で倒れにくい。"
       }
     ],
-    "random_skill": "fighter"
+    "random_skill": "fighter",
+    "tag": []
   },
   {
     "id": "human_archer",
@@ -525,6 +543,9 @@
         ]
       }
     ],
-    "random_skill": "fighter"
+    "random_skill": "fighter",
+    "tag": [
+      "human"
+    ]
   }
 ]

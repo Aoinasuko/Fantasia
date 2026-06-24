@@ -25,7 +25,10 @@
         "type": "physical"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": [
+      "human"
+    ]
   },
   {
     "id": "female_child",
@@ -53,7 +56,10 @@
         "type": "physical"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": [
+      "human"
+    ]
   },
   {
     "id": "male_residents",
@@ -81,7 +87,10 @@
         "type": "physical"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": [
+      "human"
+    ]
   },
   {
     "id": "female_residents",
@@ -109,7 +118,10 @@
         "type": "physical"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": [
+      "human"
+    ]
   },
   {
     "id": "traveling_merchant",
@@ -137,7 +149,10 @@
         "type": "physical"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": [
+      "human"
+    ]
   },
   {
     "id": "elf_child",
@@ -164,7 +179,10 @@
         "type": "physical"
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": [
+      "human"
+    ]
   },
   {
     "id": "elf_residents",
@@ -191,7 +209,10 @@
         "type": "physical"
       }
     ],
-    "random_skill": "magic"
+    "random_skill": "magic",
+    "tag": [
+      "human"
+    ]
   },
   {
     "id": "warrior",
@@ -231,7 +252,10 @@
         ]
       }
     ],
-    "random_skill": "fighter"
+    "random_skill": "fighter",
+    "tag": [
+      "human"
+    ]
   },
   {
     "id": "priest",
@@ -271,7 +295,10 @@
         ]
       }
     ],
-    "random_skill": "magic"
+    "random_skill": "magic",
+    "tag": [
+      "human"
+    ]
   },
   {
     "id": "wizard",
@@ -322,6 +349,9 @@
         ]
       }
     ],
-    "random_skill": "magic"
+    "random_skill": "magic",
+    "tag": [
+      "human"
+    ]
   }
 ]

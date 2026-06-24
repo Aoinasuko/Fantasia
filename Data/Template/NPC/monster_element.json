@@ -48,7 +48,8 @@
         ]
       }
     ],
-    "random_skill": "magic"
+    "random_skill": "magic",
+    "tag": []
   },
   {
     "id": "water_spirit",
@@ -99,7 +100,8 @@
         ]
       }
     ],
-    "random_skill": "magic"
+    "random_skill": "magic",
+    "tag": []
   },
   {
     "id": "wind_spirit",
@@ -150,7 +152,8 @@
         ]
       }
     ],
-    "random_skill": "magic"
+    "random_skill": "magic",
+    "tag": []
   },
   {
     "id": "earth_spirit",
@@ -201,7 +204,8 @@
         ]
       }
     ],
-    "random_skill": "magic"
+    "random_skill": "magic",
+    "tag": []
   },
   {
     "id": "light_spirit",
@@ -252,7 +256,8 @@
         ]
       }
     ],
-    "random_skill": "magic"
+    "random_skill": "magic",
+    "tag": []
   },
   {
     "id": "dark_spirit",
@@ -303,7 +308,8 @@
         ]
       }
     ],
-    "random_skill": "magic"
+    "random_skill": "magic",
+    "tag": []
   },
   {
     "id": "lightning_spirit",
@@ -354,7 +360,8 @@
         ]
       }
     ],
-    "random_skill": "magic"
+    "random_skill": "magic",
+    "tag": []
   },
   {
     "id": "ice_spirit",
@@ -405,7 +412,8 @@
         ]
       }
     ],
-    "random_skill": "magic"
+    "random_skill": "magic",
+    "tag": []
   },
   {
     "id": "forest_fairy",
@@ -450,7 +458,8 @@
         ]
       }
     ],
-    "random_skill": "magic"
+    "random_skill": "magic",
+    "tag": []
   },
   {
     "id": "flower_fairy",
@@ -501,6 +510,7 @@
         ]
       }
     ],
-    "random_skill": "magic"
+    "random_skill": "magic",
+    "tag": []
   }
 ]

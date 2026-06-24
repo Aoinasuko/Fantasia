@@ -58,6 +58,20 @@ def _as_str_list(value: Any) -> list[str]:
     return _game_helpers()._as_str_list(value)
 
 
+def _drop_empty(data: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in data.items() if value not in (None, "", [], {})}
+
+
+def _human_profile_detail_instruction() -> str:
+    return (
+        "Human NPC profile rule: when npc_template_tag, tag, or npc_template.tag contains human, "
+        "the look string must include clothing, skin color, eye color, and hair color. "
+        "The personality string must include what kind of person they are and how they have lived. "
+        "Use the world overview, world premise, facility, location, role, and template context for the life history. "
+        "Do not copy a facility or location description as the person's look or personality."
+    )
+
+
 def _dedupe_strs(values: list[str]) -> list[str]:
     return _game_helpers()._dedupe_strs(values)
 
@@ -1122,6 +1136,160 @@ def finalize_generated_npc(
     character.extra["danger_level"] = danger
 
 
+def _facility_npc_profile_context(
+    engine: GameEngine,
+    settlement: LocationData,
+    facility: dict[str, Any],
+    *,
+    npc_name: str,
+    npc_role: str,
+    npc_gender: str,
+    npc_age: str,
+) -> dict[str, Any]:
+    gh = _game_helpers()
+    world = engine.state.world_data
+    local_template = facility.get("local_template") if isinstance(facility.get("local_template"), dict) else {}
+    npc_payload = facility.get("npc") if isinstance(facility.get("npc"), dict) else {}
+    settlement_extra = settlement.extra if isinstance(settlement.extra, dict) else {}
+    context = {
+        "world": {
+            "name": world.world_name,
+            "overview": str(world.overview or world.world_situation or "")[:1200],
+            "world_situation": str(world.world_situation or "")[:900],
+            "premise": str(engine.state.flags.get("premise") or "")[:1200],
+        },
+        "settlement": {
+            "name": settlement.name,
+            "description": str(settlement.description or "")[:900],
+            "danger_level": _safe_int(settlement_extra.get("danger_level") or settlement_extra.get("danger"), 0),
+            "location_kind": str(settlement_extra.get("location_kind") or ""),
+        },
+        "facility": {
+            "name": str(facility.get("name") or ""),
+            "type": str(facility.get("type") or ""),
+            "description": str(facility.get("description") or "")[:900],
+            "template_id": str(facility.get("template_id") or local_template.get("id") or ""),
+            "template_name": str(facility.get("template_name") or local_template.get("name") or ""),
+            "template_desc": str(facility.get("template_desc") or local_template.get("desc") or "")[:900],
+            "function_npc": gh._compact_value(facility.get("function_npc") or local_template.get("function_npc") or [], max_chars=600),
+            "shopkeeper": gh._compact_value(facility.get("shopkeeper") or local_template.get("shopkeeper") or [], max_chars=600),
+            "shop_items": gh._compact_value(facility.get("shopItem") or facility.get("shop_item_table") or [], max_chars=700),
+        },
+        "npc": {
+            "name": npc_name,
+            "role": npc_role,
+            "gender": npc_gender,
+            "age": npc_age,
+            "name_source": str(facility.get("npc_namelist_id") or ""),
+            "existing_payload": gh._compact_value(npc_payload, max_chars=700),
+        },
+    }
+    return _drop_empty(context)
+
+
+def _facility_npc_needs_profile(facility: dict[str, Any], character: Character, facility_description: str) -> bool:
+    if bool(facility.get("npc_profile_generated") or character.extra.get("facility_npc_profile_generated")):
+        return False
+    if not str(character.look or "").strip() or not str(character.personality or "").strip():
+        return True
+    if facility_description and (
+        str(character.look or "").strip() == facility_description
+        or str(character.personality or "").strip() == facility_description
+    ):
+        return True
+    return True
+
+
+def _generate_facility_npc_profile(
+    engine: GameEngine,
+    settlement: LocationData,
+    facility: dict[str, Any],
+    character: Character,
+    facility_context: dict[str, Any],
+) -> dict[str, Any]:
+    gh = _game_helpers()
+    character.extra["facility_context"] = deepcopy(facility_context)
+    character_payload = gh._ai_json(gh._character_ai_context(character))
+    facility_payload = gh._ai_json(facility_context)
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You generate one concrete facility NPC profile for Fantasia. Return JSON only for npc_detail_generater. "
+                "Keep the supplied character name. Use the existing facility, settlement, world overview, and role. "
+                "Randomize the person's visible appearance and personality so different facilities do not share the same keeper profile. "
+                "Return name, talk_style, archetype, gender, age, look, personality, image_generation_prompt, skills, "
+                "behavior_policy, conversation_topics, look_details, and personality_details. "
+                "look_details may contain clothing, skin_color, eye_color, and hair_color. "
+                "personality_details may contain person_type and life_history. "
+                + _human_profile_detail_instruction()
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"character: {character_payload}\n"
+                f"facility_context: {facility_payload}\n"
+                "Create a concise Japanese profile. Skills should be light utility or occupational skills suitable for this facility."
+            ),
+        },
+    ]
+    return engine._chat_json(
+        "npc_detail_generater",
+        messages,
+        max_tokens=760,
+        world_name=engine.state.world_name,
+        player_name=engine.state.player_name,
+    )
+
+
+def _apply_facility_npc_profile(
+    engine: GameEngine,
+    facility: dict[str, Any],
+    character: Character,
+    response: dict[str, Any],
+) -> None:
+    apply_npc_detail(engine, character, response)
+    if response.get("gender") is not None:
+        character.gender = str(response.get("gender") or character.gender or "").strip()
+    if response.get("age") is not None:
+        character.age = str(response.get("age") or character.age or "").strip()
+    if response.get("look") is not None or response.get("appearance") is not None:
+        character.look = str(response.get("look") or response.get("appearance") or character.look or "").strip()
+    if response.get("personality") is not None:
+        character.personality = str(response.get("personality") or character.personality or "").strip()
+    if not character.look:
+        character.look = _game_helpers()._default_facility_npc_look(
+            str(facility.get("name") or character.extra.get("facility") or ""),
+            str(facility.get("type") or character.extra.get("facility_type") or ""),
+            str(character.role or facility.get("npc_role") or ""),
+        )
+        facility["npc_profile_source"] = "npc_detail_generater_with_local_look_fallback"
+    if not character.personality:
+        character.personality = _game_helpers()._default_facility_npc_personality(
+            str(facility.get("name") or character.extra.get("facility") or ""),
+            str(facility.get("type") or character.extra.get("facility_type") or ""),
+            str(character.role or facility.get("npc_role") or ""),
+        )
+        facility["npc_profile_source"] = "npc_detail_generater_with_local_personality_fallback"
+    if character.look:
+        facility["npc_look"] = character.look
+    if character.personality:
+        facility["npc_personality"] = character.personality
+    if character.gender:
+        facility["npc_gender"] = character.gender
+    if character.age:
+        facility["npc_age"] = character.age
+    for key in ("look_details", "personality_details"):
+        if response.get(key) is not None:
+            character.extra[key] = deepcopy(response.get(key))
+            facility[f"npc_{key}"] = deepcopy(response.get(key))
+    character.extra["facility_npc_profile_generated"] = True
+    facility["npc_profile_generated"] = True
+    facility.setdefault("npc_profile_source", "npc_detail_generater")
+    character.extra["raw_facility_npc_profile"] = _game_helpers()._strip_response_metadata(response)
+
+
 def ensure_facility_npc(engine: GameEngine, settlement: LocationData, facility: dict[str, Any], location_name: str) -> Character | None:
     gh = _game_helpers()
     npc_name = str(facility.get("npc_name") or "").strip()
@@ -1157,12 +1325,6 @@ def ensure_facility_npc(engine: GameEngine, settlement: LocationData, facility: 
         npc_look = ""
     if npc_personality == facility_description:
         npc_personality = ""
-    if not npc_look:
-        npc_look = gh._default_facility_npc_look(facility_name, facility_type, npc_role)
-        facility["npc_look"] = npc_look
-    if not npc_personality:
-        npc_personality = gh._default_facility_npc_personality(facility_name, facility_type, npc_role)
-        facility["npc_personality"] = npc_personality
     npc_description = str(npc_payload.get("description") or facility.get("npc_description") or "").strip()
     if npc_description == facility_description:
         npc_description = ""
@@ -1171,6 +1333,15 @@ def ensure_facility_npc(engine: GameEngine, settlement: LocationData, facility: 
     if _world_has_dead_npc_identity(engine.state.world_data, name=npc_name):
         return None
     character = engine.state.world_data.character(npc_name)
+    facility_context = _facility_npc_profile_context(
+        engine,
+        settlement,
+        facility,
+        npc_name=npc_name,
+        npc_role=npc_role,
+        npc_gender=npc_gender,
+        npc_age=npc_age,
+    )
     if character is None:
         danger_level = npc_template_danger_for_location(engine, settlement.name or location_name)
         npc_raw = template_augmented_npc_raw(
@@ -1186,6 +1357,10 @@ def ensure_facility_npc(engine: GameEngine, settlement: LocationData, facility: 
                 "look": npc_look,
                 "facility": facility_name,
                 "facility_type": facility_type,
+                "extra": {
+                    "facility_context": deepcopy(facility_context),
+                    "facility_profile_pending": True,
+                },
             },
             categories=FRIENDLY_NPC_TEMPLATE_CATEGORIES,
             danger_level=danger_level,
@@ -1202,6 +1377,7 @@ def ensure_facility_npc(engine: GameEngine, settlement: LocationData, facility: 
         character.extra["facility"] = facility_name
         character.extra["facility_type"] = facility_type
         character.extra["parent_settlement"] = settlement.name
+        character.extra["facility_context"] = deepcopy(facility_context)
         if facility.get("shopItem"):
             character.extra["shopItem"] = deepcopy(facility.get("shopItem"))
         if facility.get("shop_item_table"):
@@ -1232,6 +1408,31 @@ def ensure_facility_npc(engine: GameEngine, settlement: LocationData, facility: 
             character.look = npc_look
         if npc_personality and not character.personality:
             character.personality = npc_personality
+        character.extra["facility_context"] = deepcopy(facility_context)
+    if _facility_npc_needs_profile(facility, character, facility_description):
+        try:
+            profile = _generate_facility_npc_profile(engine, settlement, facility, character, facility_context)
+            _apply_facility_npc_profile(engine, facility, character, profile)
+            engine.state.world_data.history.append(
+                {
+                    "manager": "facility_npc_profile",
+                    "character": character.name,
+                    "facility": facility_name,
+                    "location": settlement.name,
+                    "response": gh._strip_response_metadata(profile),
+                }
+            )
+        except Exception as exc:
+            character.extra["facility_npc_profile_error"] = str(exc)
+            if not character.look:
+                character.look = gh._default_facility_npc_look(facility_name, facility_type, npc_role)
+                facility["npc_look"] = character.look
+            if not character.personality:
+                character.personality = gh._default_facility_npc_personality(facility_name, facility_type, npc_role)
+                facility["npc_personality"] = character.personality
+            facility["npc_profile_generated"] = True
+            facility["npc_profile_source"] = "local_fallback"
+            character.extra["facility_npc_profile_generated"] = True
     subnode_id = engine._stamp_character_facility_subnode(character, settlement, facility)
     engine._set_character_presence(character, location_name, subnode_id=subnode_id)
     return character
@@ -1379,6 +1580,11 @@ def quest_objective_npc_design(
                 "when a human age or binary gender is not meaningful. "
                 "If npc_template is supplied, keep the same creature/person type and use it as the base; fill only "
                 "missing flavor such as a concrete name variant, look details, personality details, skills, or traits. "
+                "If npc_template.tag contains human, use npc_template.human_profile_context, especially age, "
+                "template_name, template_look, and template_personality, to generate concrete look and personality. "
+                "Do not leave human look or personality blank, and do not merely copy the role label. "
+                + _human_profile_detail_instruction()
+                + " "
                 "If fallback has namelist_id, keep fallback.name exactly and do not invent another name. "
                 "When traits are returned, each trait must contain only name and desc."
             ),
@@ -1387,6 +1593,12 @@ def quest_objective_npc_design(
             "role": "user",
             "content": gh._ai_json(
                 {
+                    "world": {
+                        "name": engine.state.world_data.world_name,
+                        "overview": str(engine.state.world_data.overview or engine.state.world_data.world_situation or "")[:1200],
+                        "world_situation": str(engine.state.world_data.world_situation or "")[:900],
+                        "premise": str(engine.state.flags.get("premise") or "")[:1200],
+                    },
                     "objective_role": objective_role,
                     "fallback": fallback,
                     "quest": _quest_ai_context(quest, include_log=False, include_extra=True),
@@ -1424,6 +1636,9 @@ def quest_objective_npc_design(
     for key in ("skills", "traits", "attacks"):
         if key in generated and isinstance(generated.get(key), list):
             design[key] = generated.get(key)
+    for key in ("look_details", "personality_details"):
+        if isinstance(generated.get(key), dict):
+            design[key] = deepcopy(generated.get(key))
     image_prompt = generated.get("image_prompt")
     if isinstance(image_prompt, list):
         image_prompt = ", ".join(str(item).strip() for item in image_prompt if str(item).strip())
@@ -1528,6 +1743,8 @@ def create_quest_objective_npc(
             "objective_subnode_id": subnode_id,
             "origin_location": quest.extra.get("origin_location") or engine._quest_origin_location(quest),
             **npc_template_extra,
+            "look_details": deepcopy(design.get("look_details")) if isinstance(design.get("look_details"), dict) else {},
+            "personality_details": deepcopy(design.get("personality_details")) if isinstance(design.get("personality_details"), dict) else {},
         },
         prompts={
             "character": str(design.get("image_prompt") or look),
@@ -1613,7 +1830,10 @@ def master_ai_npc_generater(
                 "NPC completeness rule: every generated NPC in npcs must include gender, age, look, and personality. "
                 "Do not leave these blank. gender must be female, male, none, or a localized equivalent. age must be "
                 "a visible age or age range; for monsters/non-humans use adult, young, ancient, or unknown if exact "
-                "age is not meaningful. look must be concrete enough for character image generation."
+                "age is not meaningful. look must be concrete enough for character image generation. "
+                "If a selected template has tag containing human, use its age fields, name, look, and personality hints "
+                "to create a concrete human appearance and personality. "
+                + _human_profile_detail_instruction()
             ),
         },
         {
@@ -1623,7 +1843,8 @@ def master_ai_npc_generater(
                 "Generate NPCs as world- and role-specific variations of these templates. "
                 "If a generated NPC matches a template, include npc_template_id on that NPC object. "
                 "The game will select a template locally if the id is absent. Keep the same character type "
-                "and use the template as the base."
+                "and use the template as the base. For templates tagged human, use human_profile_context to decide "
+                "the person's age, visible appearance, and personality details."
             ),
         },
     ]
@@ -1679,7 +1900,10 @@ def npc_detail_generater(
                 "Base profile repair rule: if the target character is missing gender, age, look, personality, or "
                 "image_generation_prompt, fill those fields in this response. Preserve already established facts. "
                 "look must describe visible appearance and clothing/species traits; image_generation_prompt should "
-                "be usable by a character image generator."
+                "be usable by a character image generator. If npc_template_tag contains human, use "
+                "human_template_context, especially age, template_name, template_look, and template_personality, "
+                "to fill concrete human look and personality. "
+                + _human_profile_detail_instruction()
             ),
         },
     ]
@@ -1755,6 +1979,9 @@ def apply_npc_detail(engine: GameEngine, character: Character, response: dict[st
     detail_look = str(response.get("look") or response.get("appearance") or "").strip()
     if detail_look and not character.look:
         character.look = detail_look
+    for key in ("look_details", "personality_details"):
+        if response.get(key) is not None:
+            character.extra[key] = deepcopy(response.get(key))
     if response.get("image_generation_prompt") is not None:
         prompt_parts = _as_str_list(response.get("image_generation_prompt"))
         if prompt_parts and not character.image_generation_prompt:

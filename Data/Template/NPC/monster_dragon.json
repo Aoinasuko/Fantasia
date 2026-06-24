@@ -48,7 +48,8 @@
         ]
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "ice_dragon",
@@ -99,7 +100,8 @@
         ]
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "lightning_dragon",
@@ -150,7 +152,8 @@
         ]
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "earth_dragon",
@@ -201,7 +204,8 @@
         ]
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "wind_dragon",
@@ -252,7 +256,8 @@
         ]
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "water_dragon",
@@ -303,7 +308,8 @@
         ]
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "poison_dragon",
@@ -354,7 +360,8 @@
         ]
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "young_dragon",
@@ -386,7 +393,8 @@
         "type": "physical"
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "wyvern",
@@ -443,7 +451,8 @@
         ]
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "shell_dragon",
@@ -481,6 +490,7 @@
         "desc": "硬い殻で傷を受けにくい。"
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   }
 ]

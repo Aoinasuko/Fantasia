@@ -35,7 +35,8 @@
         "amount": 0.2
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "horned_demon",
@@ -67,7 +68,8 @@
         "type": "physical"
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "flame_demon",
@@ -118,7 +120,8 @@
         ]
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "ice_demon",
@@ -169,7 +172,8 @@
         ]
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "shadow_demon",
@@ -220,7 +224,8 @@
         ]
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "familiar_imp",
@@ -258,7 +263,8 @@
         "amount": 0.2
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "succubus",
@@ -309,7 +315,8 @@
         ]
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "incubus",
@@ -360,7 +367,8 @@
         ]
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "lilim",
@@ -411,7 +419,8 @@
         ]
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   },
   {
     "id": "nightmare_demon",
@@ -462,6 +471,7 @@
         ]
       }
     ],
-    "random_skill": "both"
+    "random_skill": "both",
+    "tag": []
   }
 ]

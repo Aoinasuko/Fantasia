@@ -52,7 +52,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "red_slime",
@@ -103,7 +104,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "blue_slime",
@@ -154,7 +156,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "yellow_slime",
@@ -205,7 +208,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "poison_slime",
@@ -256,7 +260,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "acid_slime",
@@ -307,7 +312,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "ice_slime",
@@ -358,7 +364,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "fire_slime",
@@ -409,7 +416,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "mud_slime",
@@ -460,7 +468,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "rock_slime",
@@ -511,7 +520,8 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   },
   {
     "id": "shadow_slime",
@@ -562,6 +572,7 @@
         ]
       }
     ],
-    "random_skill": "none"
+    "random_skill": "none",
+    "tag": []
   }
 ]

@@ -2439,7 +2439,9 @@ class GameEngine:
         self.state.display_log.extend(self._apply_starvation_turn_penalty())
 
     def format_contextual_choices(self, choices: list[str], *, expanded: bool | None = None) -> list[str]:
-        source = _dedupe_strs([choice for choice in choices if not _is_other_commands_control_choice(str(choice or "").strip())])
+        raw_choices = [str(choice or "").strip() for choice in choices if str(choice or "").strip()]
+        has_other_control_choice = any(_is_other_commands_control_choice(choice) for choice in raw_choices)
+        source = _dedupe_strs([choice for choice in raw_choices if not _is_other_commands_control_choice(choice)])
         menu = self.state.flags.get(OTHER_COMMANDS_MENU_FLAG)
         stored_source: list[str] = []
         stored_commands: list[str] = []
@@ -2453,11 +2455,13 @@ class GameEngine:
             self.state.flags.pop(OTHER_COMMANDS_MENU_FLAG, None)
             return source
 
+        if stored_source and has_other_control_choice:
+            source = _dedupe_strs([*stored_source, *source])
         if not source and stored_source:
             source = list(stored_source)
         commands = [choice for choice in source if _is_contextual_command_choice(choice)]
         normal_choices = [choice for choice in source if not _is_contextual_command_choice(choice)]
-        if stored_commands and (not commands or any(_is_other_commands_control_choice(str(choice or "").strip()) for choice in choices)):
+        if stored_commands and (not commands or has_other_control_choice):
             commands = _dedupe_strs([*stored_commands, *commands])
 
         if not commands:
@@ -21479,6 +21483,23 @@ def _character_ai_context(
         data["affinity"] = max(NPC_AFFINITY_MIN, min(NPC_AFFINITY_MAX, _safe_int(affinity, 0)))
         data["affinity_scale"] = "-100: fully hostile, 0: neutral, 100: fully trusted; one event should usually change -10 to +10"
     if isinstance(character.extra, dict):
+        template_tags = _as_str_list(character.extra.get("npc_template_tag") or character.extra.get("tag"))
+        if template_tags:
+            data["npc_template_tag"] = template_tags
+        for source_key, target_key in (
+            ("npc_template_id", "npc_template_id"),
+            ("npc_template_name", "npc_template_name"),
+            ("npc_template_role", "npc_template_role"),
+        ):
+            value = character.extra.get(source_key)
+            if value not in (None, "", [], {}):
+                data[target_key] = value
+        human_template_context = character.extra.get("human_template_context")
+        if isinstance(human_template_context, dict) and human_template_context:
+            data["human_template_context"] = _compact_value(human_template_context, max_chars=700)
+        facility_context = character.extra.get("facility_context")
+        if isinstance(facility_context, dict) and facility_context:
+            data["facility_context"] = _compact_value(facility_context, max_chars=900)
         for source_key, target_key in (
             ("level", "level"),
             ("exp", "exp"),
@@ -21913,10 +21934,8 @@ def _install_quest_modules() -> None:
             "_find_world_location_by_name",
             "_find_nearby_location_by_kind",
             "_ensure_quest_objective_subnode",
-            "_ensure_quest_branch_node",
-            "_quest_branch_parent",
-            "_ensure_quest_branch_connection",
             "_quest_objective_subnode_display",
+            "_cleanup_quest_temporary_objective_subnodes",
             "_quest_destination_for_action",
         ),
         quest_objective: (
