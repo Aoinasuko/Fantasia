@@ -17198,6 +17198,8 @@ class GameEngine:
                     "必要なら content_violation をLLMとしてのみ判断してください。"
                     "必ず narration, speaker, choices を持つJSONだけを返してください。"
                     "game_side_action_roll が enabled=true の場合、会話行動の成否はゲーム側の確定判定として必ず尊重してください。"
+                    "会話によって好感度、NPCの記憶、NPCの人物像や経歴説明が同時に変化する場合は、"
+                    "tool_judgements に npc_change_relationship、npc_update_memory、npc_update_description を複数同時に入れてください。"
                 ),
             },
             {
@@ -17243,6 +17245,8 @@ class GameEngine:
                     "あなたはAI駆動RPGのNPC会話解決担当です。"
                     "Fantasiaのconversation_resolver相当として、"
                     "会話終了時の要約、記憶更新、関係変化、次の選択肢を確定してください。"
+                    "会話結果として好感度、NPCの記憶、NPCの人物像や経歴説明が同時に変化する場合は、"
+                    "tool_judgements に npc_change_relationship、npc_update_memory、npc_update_description を複数同時に入れてください。"
                     "必ず narration, summary, choices を持つJSONだけを返してください。"
                 ),
             },

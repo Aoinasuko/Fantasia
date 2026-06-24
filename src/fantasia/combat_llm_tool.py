@@ -492,6 +492,16 @@ def _canonical_combat_tool_name(name: str) -> CombatToolName | None:
 def _confidence_value(value: Any) -> float:
     if isinstance(value, bool):
         return 0.0
-    if isinstance(value, (int, float)):
+    if isinstance(value, int):
+        return 1.0 if value == 1 else max(0.0, min(1.0, float(value) / 100.0))
+    if isinstance(value, float):
         return max(0.0, min(1.0, float(value)))
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return 0.0
+        try:
+            return max(0.0, min(1.0, float(text)))
+        except ValueError:
+            return 0.0
     return 0.0

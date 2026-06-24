@@ -1590,8 +1590,14 @@ def schema_instruction(manager_name: str) -> str:
             "- Top-level fields are for display and intent only: content_violation, intent, narration, process, "
             "finished, speaker, topic, mood, quest_name, objective, choices, and tool_judgements.\n"
             "- Each tool judgement item must be {\"name\":\"tool_name\",\"confidence\":0.0-1.0,\"arguments\":{...},\"reason\":\"...\"}.\n"
-            "- The game executes only tool judgements whose confidence is exactly 1.0. 0.99 or missing confidence is not executed.\n"
-            "- Set confidence to 1.0 only when the state change is definitely intended by the action and current context.\n"
+            "- The game executes most tool judgements only when confidence is exactly 1.0. Missing confidence is not executed.\n"
+            "- NPC record tools npc_change_relationship, npc_update_memory, and npc_update_description execute from confidence 0.8.\n"
+            "- Map reveal tools world_mainnode_reveal and world_subnode_reveal execute from confidence 0.8.\n"
+            "- NPC movement/leave, time, status, and crime tools npc_move, npc_remove_party, time_passage, status_effects, and crime_risk execute from confidence 0.9.\n"
+            "- Set confidence to 1.0 only when the state change is definitely intended by the action and current context. "
+            "For NPC record tools, use 0.8 or higher when the dialogue or event reasonably changed trust, memory, or public description.\n"
+            "- When one event implies multiple state changes, emit multiple tool_judgements in the same response instead of choosing only one. "
+            "For example, a meaningful conversation can emit both npc_change_relationship and npc_update_memory; a rescue can emit npc_update_memory and npc_update_description.\n"
             "- Use start_combat only when combat actually begins now. Mentioning danger, an enemy, traces of an attack, a threat, or an option to fight is not enough.\n"
             "- For the status_effects tool, arguments must be {\"status_effects\":[{\"effect_id\":\"HP_Damage/SP_Damage/Paralysis/Silence/Psychosis/Inoperable/SendLLM/Atk_Mod/Def_Mod/accuracy_mod/damage_taken_mod/element_res_mod/stun/thorns/str_mod/dex_mod/con_mod/int_mod/wis_mod/cha_mod\",...}]}; entries without effect_id are ignored.\n"
             "- accuracy_mod adds its amount to hit rolls. damage_taken_mod, element_res_mod, and thorns use 10% per amount. element_res_mod may include element or target_element; omit it for all elements.\n"
@@ -1604,6 +1610,10 @@ def schema_instruction(manager_name: str) -> str:
             "quest_progress, quest_update.\n"
             "- Example: {\"intent\":{\"kind\":\"look\",\"summary\":\"observe the area\"},\"narration\":\"...\","
             "\"choices\":[\"look around\"],\"tool_judgements\":[{\"name\":\"move_player\",\"confidence\":1.0,\"arguments\":{\"location\":\"Town Gate\"},\"reason\":\"The player chose to go there.\"}]}\n"
+            "- NPC multi-tool example: {\"tool_judgements\":["
+            "{\"name\":\"npc_change_relationship\",\"confidence\":0.8,\"arguments\":{\"target\":\"Mira\",\"delta\":1,\"reason\":\"The player listened carefully.\"},\"reason\":\"Trust improved.\"},"
+            "{\"name\":\"npc_update_memory\",\"confidence\":0.8,\"arguments\":{\"target\":\"Mira\",\"memory\":\"The player listened carefully and promised to help.\"},\"reason\":\"The NPC gained a lasting memory.\"}"
+            "]}\n"
         )
     if manager_name == "check_action_feasibility":
         instruction += (

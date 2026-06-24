@@ -422,10 +422,10 @@ def response_tool_calls(response: Any, *, source: str = "") -> list[dict[str, An
         if not isinstance(raw, dict):
             continue
         name = str(raw.get("name") or "").strip()
-        if _confidence_value(raw.get("confidence")) != 1.0:
-            continue
         canonical = _canonical_tool_name(name)
         if not canonical:
+            continue
+        if _confidence_value(raw.get("confidence")) < _tool_confidence_threshold(canonical):
             continue
         args = raw.get("arguments")
         if args is None:
@@ -469,8 +469,15 @@ def tool_prompt_instruction() -> str:
         "Top-level fields are only content_violation, intent, narration, process, finished, speaker, topic, mood, "
         "quest_name, objective, choices, and tool_judgements. "
         "Each tool judgement item must be {\"name\":\"tool_name\",\"confidence\":0.0-1.0,\"arguments\":{...},\"reason\":\"...\"}. "
-        "The game executes only tool judgements whose confidence is exactly 1.0; 0.99 or missing confidence is not executed. "
-        "Set confidence to 1.0 only when the state change is definitely intended by the action and current context. "
+        "The game executes most tool judgements only when confidence is exactly 1.0; missing confidence is not executed. "
+        "NPC record tools npc_change_relationship, npc_update_memory, and npc_update_description execute from confidence 0.8. "
+        "Map reveal tools world_mainnode_reveal and world_subnode_reveal also execute from confidence 0.8. "
+        "NPC movement/leave, time, status, and crime tools npc_move, npc_remove_party, time_passage, status_effects, and crime_risk execute from confidence 0.9. "
+        "Set confidence to 1.0 only when the state change is definitely intended by the action and current context; "
+        "for NPC record tools, use 0.8 or higher when the dialogue or event reasonably changed trust, memory, or public description. "
+        "When one event implies multiple state changes, emit multiple tool_judgements in the same response instead of choosing only one. "
+        "For example, if a conversation builds trust and gives the NPC a lasting memory, emit both npc_change_relationship and npc_update_memory. "
+        "If an NPC was rescued, also emit npc_update_description when their visible background should change. "
         "Use start_combat only when combat actually begins now. Mentioning danger, an enemy, traces of an attack, a threat, "
         "or an option to fight is not enough. For player-initiated attacks or ambushes, include opponent_name or target_name; "
         "set surprise_attack=true only when the player takes the first strike immediately. "
@@ -679,9 +686,39 @@ def _canonical_tool_name(name: str) -> LlmToolName | None:
 def _confidence_value(value: Any) -> float:
     if isinstance(value, bool):
         return 0.0
-    if isinstance(value, (int, float)):
+    if isinstance(value, int):
+        return 1.0 if value == 1 else max(0.0, min(1.0, float(value) / 100.0))
+    if isinstance(value, float):
         return max(0.0, min(1.0, float(value)))
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return 0.0
+        try:
+            return max(0.0, min(1.0, float(text)))
+        except ValueError:
+            return 0.0
     return 0.0
+
+
+def _tool_confidence_threshold(tool_name: LlmToolName) -> float:
+    if tool_name in {
+        LlmToolName.NPC_CHANGE_RELATIONSHIP,
+        LlmToolName.NPC_UPDATE_MEMORY,
+        LlmToolName.NPC_UPDATE_DESCRIPTION,
+        LlmToolName.WORLD_MAINNODE_REVEAL,
+        LlmToolName.WORLD_SUBNODE_REVEAL,
+    }:
+        return 0.8
+    if tool_name in {
+        LlmToolName.NPC_MOVE,
+        LlmToolName.NPC_REMOVE_PARTY,
+        LlmToolName.TIME_PASSAGE,
+        LlmToolName.STATUS_EFFECTS,
+        LlmToolName.CRIME_RISK,
+    }:
+        return 0.9
+    return 1.0
 
 
 def _merge_tool_payload(payload: dict[str, Any], tool_name: LlmToolName, args: dict[str, Any]) -> None:
