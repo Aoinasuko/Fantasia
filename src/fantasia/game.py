@@ -135,7 +135,7 @@ from .quest_rules import (
     _quest_text_requests_new_site,
     _quest_type,
 )
-from .save_projection import world_cache_for_save
+from .save_projection import sync_character_visual_cache, world_cache_for_save
 from .save_store import SaveSlot, SaveStore
 from .status_effects import (
     FLED_STATUS_ID,
@@ -12547,6 +12547,7 @@ class GameEngine:
         )
         character.prompts["character_image_creator"] = prompt_record
         character.extra["image_pipeline"] = processed.metadata
+        self._sync_generated_character_visuals(character)
         if character.flags.get("is_player") or str(character.uuid or "") == str(self.state.player_uuid or ""):
             character.flags.pop("portrait_generation_skipped", None)
             character.extra.pop("portrait_generation_skipped", None)
@@ -12631,6 +12632,7 @@ class GameEngine:
         )
         monster.prompts["monster_image_creator"] = prompt_record
         monster.extra["image_pipeline"] = processed.metadata
+        self._sync_generated_character_visuals(monster)
         self.state.last_image_path = str(saved_border)
         self.state.world_data.history.append(
             {
@@ -12642,6 +12644,28 @@ class GameEngine:
         )
         self.save_game()
         return ImageResult(path=saved_border, backend=image.backend, prompt=image.prompt, metadata=image.metadata)
+
+    def _sync_generated_character_visuals(self, character: Character) -> None:
+        sync_character_visual_cache(self.state.world_data, character)
+        template_id = _character_template_id(character)
+        if not template_id or not character.image_paths or not _character_uses_enemy_template_cache(character):
+            return
+        for other in self.state.world_data.characters.values():
+            if str(other.uuid or "") == str(character.uuid or ""):
+                continue
+            if _character_template_id(other) != template_id:
+                continue
+            if not _character_uses_enemy_template_cache(other):
+                continue
+            if not other.image_paths:
+                other.image_paths.update(deepcopy(character.image_paths))
+            if character.image_generation_prompt and not other.image_generation_prompt:
+                other.image_generation_prompt = deepcopy(character.image_generation_prompt)
+            if character.extra.get("image_pipeline") and not other.extra.get("image_pipeline"):
+                other.extra["image_pipeline"] = deepcopy(character.extra.get("image_pipeline"))
+            for key in ("character_image_creator", "monster_image_creator", "image_generation_prompt"):
+                if key in character.prompts and key not in other.prompts:
+                    other.prompts[key] = deepcopy(character.prompts[key])
 
     def _character_image_creator(self, character: Character) -> dict[str, Any]:
         world_payload = _ai_json(_world_ai_context(self.state.world_data, include_characters=False, include_monsters=False))
@@ -22373,13 +22397,28 @@ def _is_valid_generated_name(text: str) -> bool:
 
 
 def _unique_character_name(world: WorldData, name: str) -> str:
-    base = _clean_generated_name(name, "NPC", kind="character")
-    if not world.has_character_name(base):
-        return base
-    suffix = 2
-    while world.has_character_name(f"{base} {suffix}"):
-        suffix += 1
-    return f"{base} {suffix}"
+    return _clean_generated_name(name, "NPC", kind="character")
+
+
+def _character_template_id(character: Character) -> str:
+    return str(
+        character.extra.get("npc_template_id")
+        or character.flags.get("npc_template_id")
+        or character.extra.get("template_id")
+        or character.flags.get("template_id")
+        or ""
+    ).strip()
+
+
+def _character_uses_enemy_template_cache(character: Character) -> bool:
+    category = str(character.category or "").strip()
+    return bool(
+        category in {"enemy_npc", "wild_encounter", "hostile", "monster"}
+        or character.flags.get("enemy_npc")
+        or character.flags.get("hostile")
+        or character.extra.get("enemy_npc")
+        or character.extra.get("hostile")
+    )
 
 
 def _actor_present_at(location: str, state: str, flags: dict[str, Any], current_location: str) -> bool:

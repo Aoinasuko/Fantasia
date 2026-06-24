@@ -50,6 +50,10 @@ WORLD_CACHE_EXTRA_DROP_KEYS = PLAYER_WORLD_EXTRA_KEYS | {
     "last_active_facility",
 }
 
+NPC_INITIAL_CACHE_KEY = "npc_initial_cache"
+BOSS_INITIAL_CACHE_KEY = "boss_initial_cache"
+ENEMY_TEMPLATE_INITIAL_CACHE_KEY = "enemy_template_initial_cache"
+
 LOCATION_PLAYER_EXTRA_KEYS = {
     "inventory",
     "subnode_loot",
@@ -113,7 +117,7 @@ def world_cache_for_save(state: GameStateData) -> WorldData:
 
     npc_cache: dict[str, dict[str, Any]] = {}
     boss_cache: dict[str, dict[str, Any]] = {}
-    enemy_template_cache = deepcopy(world.extra.get("enemy_template_initial_cache") or {})
+    enemy_template_cache = deepcopy(world.extra.get(ENEMY_TEMPLATE_INITIAL_CACHE_KEY) or {})
     if not isinstance(enemy_template_cache, dict):
         enemy_template_cache = {}
 
@@ -128,18 +132,43 @@ def world_cache_for_save(state: GameStateData) -> WorldData:
         elif _is_enemy_character(cached):
             template_id = _character_template_id(cached)
             if template_id:
-                enemy_template_cache.setdefault(template_id, payload)
+                existing = enemy_template_cache.get(template_id)
+                if isinstance(existing, dict):
+                    _merge_character_visual_cache_payload(existing, _character_visual_cache_payload(cached))
+                else:
+                    enemy_template_cache[template_id] = payload
         else:
             world.characters[str(cached.uuid)] = cached
             npc_cache[str(cached.uuid)] = payload
 
     if npc_cache:
-        world.extra["npc_initial_cache"] = npc_cache
+        world.extra[NPC_INITIAL_CACHE_KEY] = npc_cache
     if boss_cache:
-        world.extra["boss_initial_cache"] = boss_cache
+        world.extra[BOSS_INITIAL_CACHE_KEY] = boss_cache
     if enemy_template_cache:
-        world.extra["enemy_template_initial_cache"] = enemy_template_cache
+        world.extra[ENEMY_TEMPLATE_INITIAL_CACHE_KEY] = enemy_template_cache
     return world
+
+
+def sync_character_visual_cache(world: WorldData, character: Character) -> None:
+    payload = _character_visual_cache_payload(character)
+    if not payload:
+        return
+    uuid = str(character.uuid or "").strip()
+    for cache_key in (NPC_INITIAL_CACHE_KEY, BOSS_INITIAL_CACHE_KEY):
+        cache = world.extra.get(cache_key)
+        if not isinstance(cache, dict) or not uuid:
+            continue
+        cached = cache.get(uuid)
+        if isinstance(cached, dict):
+            _merge_character_visual_cache_payload(cached, payload)
+    template_id = _character_template_id(character)
+    if template_id:
+        cache = world.extra.get(ENEMY_TEMPLATE_INITIAL_CACHE_KEY)
+        if isinstance(cache, dict):
+            cached = cache.get(template_id)
+            if isinstance(cached, dict):
+                _merge_character_visual_cache_payload(cached, payload)
 
 
 def game_state_payload_for_save(state: GameStateData) -> dict[str, Any]:
@@ -368,6 +397,48 @@ def _character_cache_for_save(character: Character) -> Character | None:
     cached.extra["cached_initial_level"] = 1
     cached.flags["cached_initial_state"] = True
     return cached
+
+
+def _character_visual_cache_payload(character: Character) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    if isinstance(character.image_paths, dict) and character.image_paths:
+        payload["image_paths"] = deepcopy(character.image_paths)
+    if isinstance(character.image_generation_prompt, list) and character.image_generation_prompt:
+        payload["image_generation_prompt"] = deepcopy(character.image_generation_prompt)
+    prompts: dict[str, Any] = {}
+    if isinstance(character.prompts, dict):
+        for key in ("character_image_creator", "monster_image_creator", "image_generation_prompt"):
+            if key in character.prompts:
+                prompts[key] = deepcopy(character.prompts[key])
+    if prompts:
+        payload["prompts"] = prompts
+    extra: dict[str, Any] = {}
+    if isinstance(character.extra, dict) and "image_pipeline" in character.extra:
+        extra["image_pipeline"] = deepcopy(character.extra["image_pipeline"])
+    if extra:
+        payload["extra"] = extra
+    return payload
+
+
+def _merge_character_visual_cache_payload(target: dict[str, Any], payload: dict[str, Any]) -> None:
+    if not isinstance(target, dict) or not isinstance(payload, dict):
+        return
+    image_paths = payload.get("image_paths")
+    if isinstance(image_paths, dict) and image_paths:
+        target["image_paths"] = deepcopy(image_paths)
+    image_generation_prompt = payload.get("image_generation_prompt")
+    if isinstance(image_generation_prompt, list) and image_generation_prompt:
+        target["image_generation_prompt"] = deepcopy(image_generation_prompt)
+    prompts = payload.get("prompts")
+    if isinstance(prompts, dict) and prompts:
+        target_prompts = target.setdefault("prompts", {})
+        if isinstance(target_prompts, dict):
+            target_prompts.update(deepcopy(prompts))
+    extra = payload.get("extra")
+    if isinstance(extra, dict) and extra:
+        target_extra = target.setdefault("extra", {})
+        if isinstance(target_extra, dict):
+            target_extra.update(deepcopy(extra))
 
 
 def _apply_level_one_cache(character: Character) -> None:

@@ -6801,9 +6801,10 @@ class FantasiaApp(tk.Tk):
                     missing_character = character
                     break
             if missing_character is not None:
+                missing_ref = str(missing_character.uuid or missing_character.name)
                 self._run_visual_task(
                     _ui_text(self.config_data, "task_generating_character_image"),
-                    lambda name=missing_character.name: self.engine.generate_character_image(name),
+                    lambda ref=missing_ref: self.engine.generate_character_image(ref),
                     lambda result: self._on_layer_image_generated(result.path),
                 )
                 return
@@ -6811,11 +6812,13 @@ class FantasiaApp(tk.Tk):
         active_conversation = state.flags.get("active_conversation")
         if isinstance(active_conversation, dict):
             name = str(active_conversation.get("character") or "")
-            character = state.world_data.character(name)
+            uuid = str(active_conversation.get("character_uuid") or active_conversation.get("uuid") or "")
+            character = state.world_data.character(uuid or name)
             if character and not _subject_image_path(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image")):
+                ref = str(character.uuid or uuid or name)
                 self._run_visual_task(
                     _ui_text(self.config_data, "task_generating_character_image"),
-                    lambda name=name: self.engine.generate_character_image(name),
+                    lambda ref=ref: self.engine.generate_character_image(ref),
                     lambda result: self._on_layer_image_generated(result.path),
                 )
                 return

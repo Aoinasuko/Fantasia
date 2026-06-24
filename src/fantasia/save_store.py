@@ -11,6 +11,9 @@ from typing import Any
 
 from .paths import COMMON_SAVEDATA_PATH, USER_DATA_DIR, USER_EXPORTS_DIR, USER_SAVES_DIR, USER_WORLDS_DIR
 from .save_projection import (
+    BOSS_INITIAL_CACHE_KEY,
+    ENEMY_TEMPLATE_INITIAL_CACHE_KEY,
+    NPC_INITIAL_CACHE_KEY,
     PLAYER_WORLD_STATE_KEY,
     game_state_payload_for_save,
     runtime_world_from_save,
@@ -536,6 +539,23 @@ def _rebase_world_asset_paths(world: WorldData, world_folder: Path) -> None:
     for character in world.characters.values():
         folder = world_folder / "characters" / _safe_segment(character.name)
         _rebase_image_map(character.image_paths, folder)
+    _rebase_cached_character_asset_paths(world, world_folder)
+
+
+def _rebase_cached_character_asset_paths(world: WorldData, world_folder: Path) -> None:
+    for cache_key in (NPC_INITIAL_CACHE_KEY, BOSS_INITIAL_CACHE_KEY, ENEMY_TEMPLATE_INITIAL_CACHE_KEY):
+        cache = world.extra.get(cache_key)
+        if not isinstance(cache, dict):
+            continue
+        for payload in cache.values():
+            if not isinstance(payload, dict):
+                continue
+            name = str(payload.get("name") or "").strip()
+            image_paths = payload.get("image_paths")
+            if not name or not isinstance(image_paths, dict):
+                continue
+            folder = world_folder / "characters" / _safe_segment(name)
+            _rebase_image_map(image_paths, folder)
 
 def _rebase_image_map(image_paths: dict[str, str], folder: Path) -> None:
     for key, value in list(image_paths.items()):

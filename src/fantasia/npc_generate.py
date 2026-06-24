@@ -890,6 +890,14 @@ def _npc_template_should_use_enemy_cache(template: dict[str, Any], *, hostile: b
     )
 
 
+def _enemy_template_cache(engine: GameEngine) -> dict[str, Any]:
+    cache = engine.state.world_data.extra.setdefault("enemy_template_initial_cache", {})
+    if not isinstance(cache, dict):
+        cache = {}
+        engine.state.world_data.extra["enemy_template_initial_cache"] = cache
+    return cache
+
+
 def _cached_enemy_template_payload(
     engine: GameEngine,
     template: dict[str, Any],
@@ -900,10 +908,7 @@ def _cached_enemy_template_payload(
     boss: bool = False,
 ) -> dict[str, Any]:
     template_id = str(template.get("id") or "").strip()
-    cache = engine.state.world_data.extra.setdefault("enemy_template_initial_cache", {})
-    if not isinstance(cache, dict):
-        cache = {}
-        engine.state.world_data.extra["enemy_template_initial_cache"] = cache
+    cache = _enemy_template_cache(engine)
     cached = cache.get(template_id)
     if not isinstance(cached, dict):
         cached = npc_template_to_character_payload(
@@ -939,6 +944,57 @@ def _cached_enemy_template_payload(
                 payload_extra[key] = deepcopy(fresh_extra[key])
         payload_extra["spawn_danger_level"] = _clamp_world_danger(danger_level)
     return payload
+
+
+def _apply_enemy_dynamic_payload(payload: dict[str, Any], fresh: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(fresh.get("skills"), list):
+        payload["skills"] = deepcopy(fresh.get("skills") or [])
+    if isinstance(fresh.get("equipment"), dict):
+        payload["equipment"] = deepcopy(fresh.get("equipment") or {})
+    payload_extra = payload.setdefault("extra", {})
+    fresh_extra = fresh.get("extra") if isinstance(fresh.get("extra"), dict) else {}
+    if isinstance(payload_extra, dict):
+        for key in (
+            "random_skill",
+            "random_skill_template_ids",
+            "equipment_set_id",
+            "equipment_template_ids",
+            "spawn_danger_level",
+        ):
+            if key in fresh_extra:
+                payload_extra[key] = deepcopy(fresh_extra[key])
+    return payload
+
+
+def _mark_enemy_cached_profile(payload: dict[str, Any]) -> None:
+    extra = payload.setdefault("extra", {})
+    if isinstance(extra, dict):
+        extra["cached_initial_state"] = True
+        extra["cached_initial_level"] = 1
+        extra["cached_profile_from_raw"] = True
+    flags = payload.setdefault("flags", {})
+    if isinstance(flags, dict):
+        flags["cached_initial_state"] = True
+
+
+def _cached_enemy_profile_payload(
+    engine: GameEngine,
+    template: dict[str, Any],
+    template_payload: dict[str, Any],
+    raw: Any,
+) -> dict[str, Any]:
+    template_id = str(template.get("id") or "").strip()
+    if not template_id:
+        return merge_npc_template_payload(template_payload, raw)
+    cache = _enemy_template_cache(engine)
+    cached = cache.get(template_id)
+    cached_extra = cached.get("extra") if isinstance(cached, dict) and isinstance(cached.get("extra"), dict) else {}
+    if isinstance(cached, dict) and cached_extra.get("cached_profile_from_raw") is True:
+        return _apply_enemy_dynamic_payload(deepcopy(cached), template_payload)
+    merged = merge_npc_template_payload(template_payload, raw)
+    _mark_enemy_cached_profile(merged)
+    cache[template_id] = deepcopy(merged)
+    return merged
 
 
 def npc_template_selection_text(raw: Any) -> tuple[str, str, str, str]:
@@ -1091,7 +1147,10 @@ def template_augmented_npc_raw(
         hostile=hostile,
         boss=boss,
     )
-    merged = merge_npc_template_payload(template_payload, raw)
+    if template and not boss and _npc_template_should_use_enemy_cache(template, hostile=hostile, boss=boss):
+        merged = _cached_enemy_profile_payload(engine, template, template_payload, raw)
+    else:
+        merged = merge_npc_template_payload(template_payload, raw)
     return _apply_namelist_name_to_payload(
         engine,
         merged,

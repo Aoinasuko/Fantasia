@@ -36,7 +36,7 @@
     "element": "回復薬"
   },
   {
-    "id": "potion_hp_mini",
+    "id": "potion_sp_mini",
     "name": "軽活力のポーション",
     "category": "potion",
     "level": 0,
@@ -48,7 +48,7 @@
     "element": "回復薬"
   },
   {
-    "id": "potion_hp_middle",
+    "id": "potion_sp_middle",
     "name": "活力のポーション",
     "category": "potion",
     "level": 5,
@@ -60,7 +60,7 @@
     "element": "回復薬"
   },
   {
-    "id": "potion_hp_big",
+    "id": "potion_sp_big",
     "name": "超活力のポーション",
     "category": "potion",
     "level": 15,
