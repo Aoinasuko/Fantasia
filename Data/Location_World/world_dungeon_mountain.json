@@ -1,24 +1,24 @@
 [
   {
-    "name": "ロノノ山",
+    "name": "竜の山",
     "category": "dungeon",
     "type": "mountain",
     "desc": "竜が眠ると言われている山。"
   },
   {
-    "name": "ママナ山",
+    "name": "蛮族の山",
     "category": "dungeon",
     "type": "mountain",
     "desc": "蛮族が根城にしていると噂の山。"
   },
   {
-    "name": "アララ火山",
+    "name": "火山",
     "category": "dungeon",
     "type": "mountain",
     "desc": "溶岩がところどころ吹き荒れる火山。"
   },
   {
-    "name": "ソソラ雪山",
+    "name": "雪山",
     "category": "dungeon",
     "type": "mountain",
     "desc": "雪が降り積もる寒い山。"

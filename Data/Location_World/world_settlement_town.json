@@ -1,26 +1,72 @@
 [
   {
-    "name": "港街アミナス",
+    "name": "港街",
     "category": "settlement",
     "type": "town",
+    "crime_risk": 1.0,
     "desc": "活気のいい港街。"
   },
   {
-    "name": "城下街アルティナ",
+    "name": "城下街",
     "category": "settlement",
     "type": "town",
+    "crime_risk": 2.0,
     "desc": "城壁が立ち並ぶ大きな街。"
   },
   {
-    "name": "スラム街タミーハ",
+    "name": "スラム街",
     "category": "settlement",
     "type": "town",
+    "crime_risk": 0.0,
     "desc": "少し不穏なスラム街。"
   },
   {
-    "name": "草原の街グラシナ",
+    "name": "草原の街",
     "category": "settlement",
     "type": "town",
+    "crime_risk": 1.0,
     "desc": "草原の上に建てられた心地よい風が吹く街。"
+  },
+  {
+    "name": "商業都市",
+    "category": "settlement",
+    "type": "town",
+    "crime_risk": 1.2,
+    "desc": "交易商人と職人の店が並ぶにぎやかな街。"
+  },
+  {
+    "name": "学術都市",
+    "category": "settlement",
+    "type": "town",
+    "crime_risk": 1.4,
+    "desc": "図書館や学院を中心に知識人が集う街。"
+  },
+  {
+    "name": "鉱山街",
+    "category": "settlement",
+    "type": "town",
+    "crime_risk": 0.8,
+    "desc": "鉱夫と鍛冶職人が暮らす岩山沿いの街。"
+  },
+  {
+    "name": "聖堂街",
+    "category": "settlement",
+    "type": "town",
+    "crime_risk": 1.6,
+    "desc": "大きな聖堂と巡礼者の宿が建ち並ぶ街。"
+  },
+  {
+    "name": "辺境砦街",
+    "category": "settlement",
+    "type": "town",
+    "crime_risk": 1.8,
+    "desc": "外敵に備えた砦を中心に広がる堅固な街。"
+  },
+  {
+    "name": "自由市",
+    "category": "settlement",
+    "type": "town",
+    "crime_risk": 0.4,
+    "desc": "各地の旅商人と流れ者が集まる自由な市街。"
   }
 ]

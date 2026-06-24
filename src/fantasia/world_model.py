@@ -179,7 +179,6 @@ class GameStateData:
     hunger: int = 50
     party_uuids: list[str] = field(default_factory=list)
     party: list[dict[str, Any]] = field(default_factory=list)
-    inventory: list[dict[str, Any]] = field(default_factory=list)
     status_effects: list[dict[str, Any]] = field(default_factory=list)
     active_quest: str = ""
     completed_quests: list[str] = field(default_factory=list)
@@ -231,7 +230,6 @@ class GameStateData:
             else WorldData.from_dict(world_raw if isinstance(world_raw, dict) else {})
         )
         kwargs["party"] = _as_list(kwargs.get("party"))
-        kwargs["inventory"] = _as_list(kwargs.get("inventory"))
         kwargs["status_effects"] = _as_list(kwargs.get("status_effects"))
         kwargs["completed_quests"] = [str(item) for item in _as_list(kwargs.get("completed_quests"))]
         kwargs["party_uuids"] = [str(item) for item in _as_list(kwargs.get("party_uuids"))]

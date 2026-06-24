@@ -100,6 +100,18 @@ class AppConfig:
     def reveal_world_map_on_generation(self) -> bool:
         return bool(self.ui_setting.get("reveal_world_map_on_generation", False))
 
+    @property
+    def debug_free_location_travel(self) -> bool:
+        return bool(self.ui_setting.get("debug_free_location_travel", False))
+
+    @property
+    def debug_disable_movement_time_passage(self) -> bool:
+        return bool(self.ui_setting.get("debug_disable_movement_time_passage", False))
+
+    @property
+    def debug_disable_dungeon_random_encounters(self) -> bool:
+        return bool(self.ui_setting.get("debug_disable_dungeon_random_encounters", False))
+
 
 def load_config(path: Path = CONFIG_PATH) -> AppConfig:
     with path.open("r", encoding="utf-8") as handle:

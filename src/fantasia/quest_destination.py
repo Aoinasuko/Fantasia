@@ -319,7 +319,29 @@ def _quest_destination_candidate_locations(self, origin: str, anchor: str, branc
                 frontier.append((neighbor, depth + 1))
     return result
 
-def _find_nearby_quest_dungeon_by_subtype(self, origin: str, anchor: str, branch_anchor: str, subtype: str) -> str:
+def _quest_destination_danger_level(self, quest: QuestData, origin: str) -> int:
+    danger = _safe_int(quest.extra.get("danger_level") or quest.extra.get("planned_danger_level"), 0)
+    if danger <= 0:
+        danger = self._assign_quest_danger(quest, quest.neighboring_settlement or origin)
+    danger = max(1, _clamp_world_danger(danger))
+    quest.extra["danger_level"] = danger
+    quest.extra["planned_danger_level"] = danger
+    return danger
+
+
+def _quest_dungeon_danger_is_usable(self, location: LocationData | None, quest_danger: int) -> bool:
+    if location is None:
+        return False
+    danger = _safe_int(location.extra.get("danger_level", location.extra.get("danger")), 0)
+    if danger <= 0:
+        graph = self.state.world_data.extra.get("location_graph") if isinstance(self.state.world_data.extra, dict) else None
+        nodes = graph.get("nodes") if isinstance(graph, dict) else {}
+        node = nodes.get(location.name) if isinstance(nodes, dict) else {}
+        danger = _safe_int(node.get("danger"), 0) if isinstance(node, dict) else 0
+    return danger <= max(1, _clamp_world_danger(quest_danger))
+
+
+def _find_nearby_quest_dungeon_by_subtype(self, origin: str, anchor: str, branch_anchor: str, subtype: str, quest_danger: int = 0) -> str:
     world = self.state.world_data
     candidates = [branch_anchor, *self._world_neighbors_no_ensure(world, branch_anchor)]
     for name in _dedupe_strs(candidates):
@@ -327,6 +349,8 @@ def _find_nearby_quest_dungeon_by_subtype(self, origin: str, anchor: str, branch
             continue
         location = world.locations.get(name)
         if location and _quest_dungeon_subtype_matches(location, subtype):
+            if quest_danger > 0 and not _quest_dungeon_danger_is_usable(self, location, quest_danger):
+                continue
             return name
     return ""
 
@@ -473,119 +497,34 @@ def _ensure_quest_dungeon_template_graph(
     return graph if isinstance(graph, dict) else {}
 
 
-def _quest_dungeon_location_design(
-    self,
-    quest: QuestData,
-    hint: dict[str, Any],
-    subtype: str,
-    origin: str,
-    branch_anchor: str,
-    danger: int,
-) -> dict[str, str]:
-    world = self.state.world_data
-    anchor_location = world.locations.get(branch_anchor)
-    subtype_label = _quest_dungeon_subtype_label(subtype)
-    prompt = {
-        "world": {
-            "world_name": world.world_name,
-            "overview": _short_text(world.overview or world.world_situation, 900),
-            "current_rumor": _short_text(world.current_rumor, 280),
-        },
-        "slot": {
-            "slot_id": "quest_dungeon",
-            "category": "dungeon",
-            "type": subtype,
-            "type_label": subtype_label,
-            "danger": danger,
-            "anchor_location": branch_anchor,
-            "anchor_description": _short_text(anchor_location.description if anchor_location else "", 260),
-            "origin_settlement": origin,
-        },
-        "quest_context": {
-            "quest_type": str(quest.extra.get("quest_type") or quest.extra.get("objective_type") or ""),
-            "danger_level": danger,
-        },
-        "rules": [
-            "Return exactly one location object with name and description.",
-            "Name and describe a reusable dungeon as a place in the world, not a one-off quest target.",
-            "Use the world tone, anchor road, danger level, and dungeon type.",
-            "Do not mention the quest name, requested item, rescue target, delivery target, objective marker, or reward.",
-            "Do not use generic names such as 近くの探索地, 探索地, 未命名, unnamed, placeholder, or 依頼の目的地.",
-            "Use Japanese for both name and description.",
-        ],
-    }
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You name and describe a template-generated Fantasia quest dungeon. "
-                "The game already decided the dungeon type, graph, danger, anchor road, and quest objective separately. "
-                "Return compact JSON only."
-            ),
-        },
-        {
-            "role": "user",
-            "content": _ai_json(
-                {
-                    "world": prompt["world"],
-                    "slots": [prompt["slot"]],
-                    "quest_context": prompt["quest_context"],
-                    "rules": prompt["rules"],
-                }
-            ),
-        },
-    ]
-    try:
-        response = self._chat_json(
-            "local_world_dungeon_location_describer",
-            messages,
-            max_tokens=650,
-            world_name=self.state.world_name,
-            player_name=self.state.player_name,
-            retries=1,
-        )
-    except Exception as exc:
-        world.extra.setdefault("quest_dungeon_description_errors", []).append({"quest": quest.name, "error": str(exc)})
-        return {}
-    location_payload = response.get("location") if isinstance(response, dict) else {}
-    if not isinstance(location_payload, dict):
-        return {}
-    name = _clean_generated_name(location_payload.get("name") or location_payload.get("title") or "", "", kind="actor")
-    description = str(
-        location_payload.get("description")
-        or location_payload.get("desc")
-        or location_payload.get("summary")
-        or ""
-    ).strip()
-    blocked_name_markers = ("近くの探索地", "未命名", "placeholder", "unnamed", "依頼の目的地")
-    if any(marker.casefold() in name.casefold() for marker in blocked_name_markers):
-        name = ""
-    if any(marker.casefold() in description.casefold() for marker in ("依頼", "クエスト", quest.name.casefold())):
-        description = ""
-    return _drop_empty({"name": _short_text(name, 36), "description": _short_text(description, 180)})
-
-
 def _create_quest_dungeon_location(self, quest: QuestData, hint: dict[str, Any], origin: str, anchor: str) -> LocationData:
     world = self.state.world_data
     branch_anchor = self._quest_dungeon_branch_anchor(origin, anchor)
     subtype = _quest_dungeon_subtype(quest, hint)
-    kind = "dungeon"
-    explicit_name = str(hint.get("location") or hint.get("destination_location") or "").strip()
-    danger = _safe_int(quest.extra.get("danger_level") or quest.extra.get("planned_danger_level"), 0)
-    if danger <= 0:
-        danger = self._assign_quest_danger(quest, quest.neighboring_settlement or origin)
-    design = _quest_dungeon_location_design(self, quest, hint, subtype, origin, branch_anchor, danger)
-    base_name = str(design.get("name") or explicit_name or "").strip()
-    if not base_name:
-        base_name = _quest_destination_name(quest, {**hint, "location_kind": subtype or "dungeon"}, origin, branch_anchor)
-    location_name = _unique_world_location_name(world, base_name)
-    description = str(design.get("description") or "").strip()
-    if not description:
-        description = f"{_quest_dungeon_subtype_label(subtype)}として知られる危険な探索地。内部には複数の通路と未知の脅威が残っている。"
-    location = world.ensure_location(location_name, description)
+    danger = _quest_destination_danger_level(self, quest, origin)
+    location = generate_location_from_template(
+        self,
+        world,
+        player_name=self.state.player_name,
+        premise=world.overview or world.world_situation,
+        theme=world.extra.get("raw_create_world_theme") if isinstance(world.extra.get("raw_create_world_theme"), dict) else {},
+        category="dungeon",
+        type_hint=subtype,
+        role="quest_dungeon",
+        danger=_clamp_world_danger(danger),
+        slot_id=f"quest_dungeon:{_world_location_name_key(quest.name) or len(world.locations)}",
+        index=len(world.locations),
+        rng=random.Random(f"quest-location-generator|{self.state.world_name}|{quest.name}|{branch_anchor}|{subtype}"),
+        source="quest_dungeon",
+        discovered=True,
+        branch_anchor=branch_anchor,
+        description_context=_short_text(_quest_destination_source_text(quest, hint), 700),
+        boss_required=True,
+    )
+    location_name = location.name
     location.extra.update(
         {
-            "location_kind": kind,
+            "location_kind": "dungeon",
             "main_node_type": "dungeon",
             "main_node_subtype": subtype,
             "dungeon_subtype": subtype,
@@ -596,6 +535,7 @@ def _create_quest_dungeon_location(self, quest: QuestData, hint: dict[str, Any],
             "quest_destination_for": quest.name,
             "generated_for_quest": quest.name,
             "branch_anchor_location": branch_anchor,
+            "boss_required": True,
         }
     )
     location.flags["dungeon"] = True
@@ -607,7 +547,7 @@ def _create_quest_dungeon_location(self, quest: QuestData, hint: dict[str, Any],
         anchor_node = self._set_location_graph_node(world, branch_anchor, location=anchor_location)
         anchor_node["discovered"] = True
     _ensure_quest_dungeon_template_graph(self, location, quest, subtype, branch_anchor)
-    self._set_location_graph_node(world, location_name, kind=kind, danger=location.extra["danger_level"], location=location)
+    self._set_location_graph_node(world, location_name, kind="dungeon", danger=location.extra["danger_level"], location=location)
     if branch_anchor and branch_anchor != location_name:
         self._connect_world_locations_by_subnodes(
             world,
@@ -624,6 +564,9 @@ def _create_quest_dungeon_location(self, quest: QuestData, hint: dict[str, Any],
             "location": location_name,
             "branch_anchor": branch_anchor,
             "dungeon_subtype": subtype,
+            "danger_level": location.extra["danger_level"],
+            "quest_danger_level": danger,
+            "location_generation": "location_generate.generate_location_from_template",
         }
     )
     return location
@@ -633,11 +576,15 @@ def _quest_destination_location(self, quest: QuestData, hint: dict[str, Any], or
     explicit_name = str(hint.get("location") or hint.get("destination_location") or "").strip()
     subtype = _quest_dungeon_subtype(quest, hint)
     branch_anchor = self._quest_dungeon_branch_anchor(origin, anchor)
+    quest_danger = _quest_destination_danger_level(self, quest, origin)
     if explicit_name:
         resolved = self._find_world_location_by_name(explicit_name)
         if resolved:
             location = world.locations[resolved]
-            if _quest_dungeon_subtype_matches(location, subtype) or (_quest_location_is_dungeon_target(location) and subtype == "dungeon"):
+            if (
+                (_quest_dungeon_subtype_matches(location, subtype) or (_quest_location_is_dungeon_target(location) and subtype == "dungeon"))
+                and _quest_dungeon_danger_is_usable(self, location, quest_danger)
+            ):
                 _ensure_quest_dungeon_template_graph(self, location, quest, subtype, branch_anchor)
                 if branch_anchor and branch_anchor != resolved and resolved not in self._world_neighbors_no_ensure(world, branch_anchor):
                     self._connect_world_locations_by_subnodes(
@@ -650,7 +597,7 @@ def _quest_destination_location(self, quest: QuestData, hint: dict[str, Any], or
                     )
                 return location
 
-    existing = _find_nearby_quest_dungeon_by_subtype(self, origin, anchor, branch_anchor, subtype)
+    existing = _find_nearby_quest_dungeon_by_subtype(self, origin, anchor, branch_anchor, subtype, quest_danger)
     if existing:
         location = world.locations[existing]
         _ensure_quest_dungeon_template_graph(self, location, quest, subtype, branch_anchor)

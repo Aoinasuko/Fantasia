@@ -462,6 +462,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("structure_description", (str,)),
             FieldRule("structure", (dict, list), non_empty=False, string_items=False),
             FieldRule("final_destination_concept", (str,), required=False, non_empty=False),
+            FieldRule("final_destination_name", (str,), required=False, non_empty=False),
             FieldRule("opening", (str,), required=False, non_empty=False),
         ),
         example={
@@ -470,6 +471,7 @@ SCHEMAS: dict[str, ManagerSchema] = {
             "structure_description": "文化、地形、脅威、最終目的地の雰囲気だけを示す。地図構造はゲーム側が生成する。",
             "structure": {"themes": ["霧", "古代鉱山", "失われた灯火"], "tone": "dark fantasy"},
             "final_destination_concept": "世界外縁に眠る、灯火を封じた古代遺跡",
+            "final_destination_name": "",
             "opening": "あなたは最初の街の入り口に立ち、霧の向こうへ続く道を見ている。",
         },
     ),

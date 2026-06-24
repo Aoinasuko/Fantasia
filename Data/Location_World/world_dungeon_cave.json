@@ -1,24 +1,24 @@
 [
   {
-    "name": "ルナ鍾乳洞",
+    "name": "鍾乳洞",
     "category": "dungeon",
     "type": "cave",
     "desc": "滴る水音と淡い鉱石光が満ちる古い鍾乳洞。"
   },
   {
-    "name": "ミルカ洞穴",
+    "name": "洞穴",
     "category": "dungeon",
     "type": "cave",
     "desc": "獣の足跡と冷たい風が奥へ続く、湿った洞穴。"
   },
   {
-    "name": "グラナ地底洞",
+    "name": "地底洞",
     "category": "dungeon",
     "type": "cave",
     "desc": "地下深くへ下る亀裂から広がる、黒い岩肌の洞窟。"
   },
   {
-    "name": "セレネ水晶洞",
+    "name": "水晶洞",
     "category": "dungeon",
     "type": "cave",
     "desc": "壁面の水晶が青白く光り、足元に影を落とす洞窟。"

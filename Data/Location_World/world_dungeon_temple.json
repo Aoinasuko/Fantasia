@@ -1,24 +1,24 @@
 [
   {
-    "name": "ファーム神殿",
+    "name": "魔物が蔓延る神殿",
     "category": "dungeon",
     "type": "temple",
     "desc": "魔物がはびこる神殿。"
   },
   {
-    "name": "ヒョース神殿",
+    "name": "幽霊が出そうな神殿",
     "category": "dungeon",
     "type": "temple",
     "desc": "幽霊が出るかもしれない神殿。"
   },
   {
-    "name": "ゴスロ神殿",
+    "name": "祈りの神殿",
     "category": "dungeon",
     "type": "temple",
     "desc": "かつて祈りの場として使われた神殿。"
   },
   {
-    "name": "デド神殿",
+    "name": "謎の神殿",
     "category": "dungeon",
     "type": "temple",
     "desc": "謎に包まれた神殿。"

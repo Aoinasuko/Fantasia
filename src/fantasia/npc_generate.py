@@ -855,6 +855,15 @@ def npc_template_character_payload(
     hostile: bool | None = None,
     boss: bool = False,
 ) -> dict[str, Any]:
+    if template and _npc_template_should_use_enemy_cache(template, hostile=hostile, boss=boss):
+        return _cached_enemy_template_payload(
+            engine,
+            template,
+            danger_level=danger_level,
+            seed=seed,
+            hostile=hostile,
+            boss=boss,
+        )
     return npc_template_to_character_payload(
         template,
         danger_level=danger_level,
@@ -863,6 +872,71 @@ def npc_template_character_payload(
         hostile=hostile,
         boss=boss,
     )
+
+
+def _npc_template_should_use_enemy_cache(template: dict[str, Any], *, hostile: bool | None = None, boss: bool = False) -> bool:
+    if not template or not str(template.get("id") or "").strip():
+        return False
+    source = str(template.get("source_path") or "").replace("\\", "/").casefold()
+    category = str(template.get("category") or "").casefold()
+    role = str(template.get("role") or "").casefold()
+    return bool(
+        hostile is True
+        or boss
+        or "monster_" in source
+        or "enemy_" in source
+        or category in {"enemy", "monster", "enemy_npc", "wild_encounter"}
+        or role in {"enemy", "monster", "opponent", "boss"}
+    )
+
+
+def _cached_enemy_template_payload(
+    engine: GameEngine,
+    template: dict[str, Any],
+    *,
+    danger_level: int,
+    seed: str,
+    hostile: bool | None = None,
+    boss: bool = False,
+) -> dict[str, Any]:
+    template_id = str(template.get("id") or "").strip()
+    cache = engine.state.world_data.extra.setdefault("enemy_template_initial_cache", {})
+    if not isinstance(cache, dict):
+        cache = {}
+        engine.state.world_data.extra["enemy_template_initial_cache"] = cache
+    cached = cache.get(template_id)
+    if not isinstance(cached, dict):
+        cached = npc_template_to_character_payload(
+            template,
+            danger_level=1,
+            enemy_strength=engine._enemy_strength_setting(),
+            seed=f"{seed}:level1-cache",
+            hostile=hostile,
+            boss=boss,
+        )
+        cached.setdefault("extra", {})["cached_initial_state"] = True
+        cached.setdefault("extra", {})["cached_initial_level"] = 1
+        cached.setdefault("flags", {})["cached_initial_state"] = True
+        cache[template_id] = deepcopy(cached)
+    payload = deepcopy(cached)
+    fresh = npc_template_to_character_payload(
+        template,
+        danger_level=danger_level,
+        enemy_strength=engine._enemy_strength_setting(),
+        seed=seed,
+        hostile=hostile,
+        boss=boss,
+    )
+    if isinstance(fresh.get("skills"), list):
+        payload["skills"] = deepcopy(fresh.get("skills") or [])
+    payload_extra = payload.setdefault("extra", {})
+    fresh_extra = fresh.get("extra") if isinstance(fresh.get("extra"), dict) else {}
+    if isinstance(payload_extra, dict):
+        for key in ("random_skill", "random_skill_template_ids"):
+            if key in fresh_extra:
+                payload_extra[key] = deepcopy(fresh_extra[key])
+        payload_extra["spawn_danger_level"] = _clamp_world_danger(danger_level)
+    return payload
 
 
 def npc_template_selection_text(raw: Any) -> tuple[str, str, str, str]:
@@ -1104,6 +1178,79 @@ def generated_npc_level(
     return max(1, min(NPC_MAX_LEVEL, max(base_level, target_level)))
 
 
+def _level_one_generated_npc(engine: GameEngine, character: Character) -> None:
+    character.level = 1
+    character.exp = 0
+    character.extra["level"] = 1
+    character.extra["exp"] = 0
+    character.extra["experience"] = 0
+    engine._ensure_character_runtime_data(
+        character,
+        level=1,
+        sync_vitals_to_formula=True,
+    )
+
+
+def _raise_generated_npc_to_level(character: Character, target_level: int, *, seed: str) -> list[dict[str, Any]]:
+    target_level = max(1, min(NPC_MAX_LEVEL, _safe_int(target_level, 1)))
+    rng = random.Random(seed or f"generated-npc-level:{character.uuid}:{character.name}:{target_level}")
+    events: list[dict[str, Any]] = []
+    while _safe_int(character.level, 1) < target_level:
+        old_level = _safe_int(character.level, 1)
+        old_attack = max(0, _safe_int(character.attack, 0))
+        old_defense = max(0, _safe_int(character.defense, 0))
+        old_max_hp = max(1, _safe_int(character.max_hp, 1))
+        old_max_sp = max(1, _safe_int(character.max_sp, 1))
+        character.level = old_level + 1
+        gains = _raise_seeded_character_attributes(character, rng)
+        attack_gain = rng.randint(1, 2)
+        defense_gain = rng.randint(1, 2)
+        character.attack = old_attack + attack_gain
+        character.defense = old_defense + defense_gain
+        character.max_hp = max(old_max_hp + 1, _character_calculated_max_hp(character))
+        character.max_sp = max(old_max_sp + 1, _character_calculated_max_sp(character, max_hp=character.max_hp))
+        character.current_hp = character.max_hp
+        character.current_sp = character.max_sp
+        events.append(
+            {
+                "level": character.level,
+                "attribute_gains": gains,
+                "attack_gain": attack_gain,
+                "defense_gain": defense_gain,
+            }
+        )
+    character.extra["level"] = character.level
+    character.extra["exp"] = 0
+    character.extra["experience"] = 0
+    character.extra["next_exp"] = 0
+    character.extra["current_hp"] = character.current_hp
+    character.extra["max_hp"] = character.max_hp
+    character.extra["current_sp"] = character.current_sp
+    character.extra["max_sp"] = character.max_sp
+    character.extra["attack"] = character.attack
+    character.extra["defense"] = character.defense
+    return events
+
+
+def _raise_seeded_character_attributes(character: Character, rng: random.Random) -> dict[str, int]:
+    attrs = _character_runtime_attributes(character)
+    keys = ["str", "dex", "con", "int", "wis", "cha"]
+    count = rng.randint(1, 3)
+    selected = rng.sample(keys, k=min(count, len(keys)))
+    gains: dict[str, int] = {}
+    for key in selected:
+        attrs[key] = max(1, _safe_int(attrs.get(key), CHARACTER_DEFAULT_ATTRIBUTES.get(key, 10))) + 1
+        gains[key] = gains.get(key, 0) + 1
+    attrs["magic"] = max(_safe_int(attrs.get("magic"), attrs.get("int", 10)), attrs.get("int", 10))
+    attrs["will"] = max(_safe_int(attrs.get("will"), attrs.get("wis", 10)), attrs.get("wis", 10))
+    character.attributes.update(attrs)
+    character.extra["attributes"] = dict(attrs)
+    ability = character.extra.setdefault("ability", {})
+    if isinstance(ability, dict):
+        ability["attributes"] = dict(attrs)
+    return gains
+
+
 def finalize_generated_npc(
     engine: GameEngine,
     character: Character,
@@ -1118,7 +1265,7 @@ def finalize_generated_npc(
         danger_level if danger_level is not None else npc_template_danger_for_location(engine, location_name)
     )
     boss = bool(boss or _npc_is_boss_like(character))
-    character.level = generated_npc_level(
+    target_level = generated_npc_level(
         engine,
         character,
         location_name=location_name,
@@ -1126,7 +1273,23 @@ def finalize_generated_npc(
         role_hint=role_hint,
         boss=boss,
     )
-    _scale_character_for_danger(character, danger, boss=boss)
+    _level_one_generated_npc(engine, character)
+    character.extra["level_one_cache"] = {
+        "level": 1,
+        "exp": 0,
+        "current_hp": character.current_hp,
+        "max_hp": character.max_hp,
+        "current_sp": character.current_sp,
+        "max_sp": character.max_sp,
+        "attack": character.attack,
+        "defense": character.defense,
+        "attributes": deepcopy(character.attributes),
+    }
+    level_events = _raise_generated_npc_to_level(
+        character,
+        target_level,
+        seed=f"npc-danger-level:{engine.state.world_data.world_name}:{character.uuid}:{character.name}:{danger}:{role_hint}",
+    )
     engine._ensure_character_runtime_data(
         character,
         level=character.level,
@@ -1134,6 +1297,13 @@ def finalize_generated_npc(
     )
     character.flags["danger_level"] = danger
     character.extra["danger_level"] = danger
+    character.extra["spawn_danger_level"] = danger
+    character.extra["generated_from_level_one"] = True
+    if level_events:
+        character.extra["spawn_level_up_events"] = level_events
+    if boss:
+        character.flags["boss_npc"] = True
+        character.extra["boss_npc"] = True
 
 
 def _facility_npc_profile_context(

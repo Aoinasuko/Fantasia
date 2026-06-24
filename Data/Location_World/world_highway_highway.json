@@ -22,5 +22,17 @@
     "category": "highway",
     "type": "highway",
     "desc": "木が生い茂る街道。"
+  },
+  {
+    "name": "荒れた街道",
+    "category": "highway",
+    "type": "highway",
+    "desc": "整備されておらず、荒れている街道。"
+  },
+  {
+    "name": "静かな分岐路",
+    "category": "highway",
+    "type": "highway",
+    "desc": "静かな分岐路。"
   }
 ]

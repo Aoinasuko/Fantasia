@@ -10,12 +10,18 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from .paths import COMMON_SAVEDATA_PATH, USER_DATA_DIR, USER_EXPORTS_DIR, USER_SAVES_DIR, USER_WORLDS_DIR
+from .save_projection import (
+    PLAYER_WORLD_STATE_KEY,
+    game_state_payload_for_save,
+    runtime_world_from_save,
+    world_cache_for_save,
+)
 from .world_model import CommonSaveData, GameStateData, WorldData
 
 
 WORLD_EXPORT_FORMAT = "fantasia_world_export"
 WORLD_EXPORT_VERSION = 1
-CURRENT_SAVE_VERSION = 2
+CURRENT_SAVE_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -194,25 +200,33 @@ class SaveStore:
         state.world_name = state.world_data.world_name or state.world_name
         state.world_data.world_name = state.world_name
         state.last_saved_at = _now_iso()
-        self.save_world(state.world_data)
+        self.save_world(world_cache_for_save(state))
 
         slot_dir = self.save_dir(state.world_name, state.player_name)
         slot_dir.mkdir(parents=True, exist_ok=True)
         path = slot_dir / "save_data.json"
-        _write_json(path, state.to_dict())
+        _write_json(path, game_state_payload_for_save(state))
         return path
 
     def load_game(self, world_name: str, player_name: str) -> GameStateData:
         path = self.save_dir(world_name, player_name) / "save_data.json"
         data = _read_json(path)
-        return _game_state_from_current_save(data, path)
+        return _game_state_from_current_save(data, path, self.load_world(world_name))
+
+    def delete_game(self, world_name: str, player_name: str) -> None:
+        slot_dir = self.save_dir(world_name, player_name)
+        if not slot_dir.exists():
+            return
+        _remove_directory_inside(slot_dir, self.saves_dir)
 
     def load_latest(self) -> GameStateData:
         slots = self.list_saves()
         if not slots:
             raise FileNotFoundError(f"No Fantasia save files found in {self.saves_dir}")
-        data = _read_json(slots[0].path)
-        return _game_state_from_current_save(data, slots[0].path)
+        slot = slots[0]
+        data = _read_json(slot.path)
+        world_name = str(data.get("world_name") or slot.world_name) if isinstance(data, dict) else slot.world_name
+        return _game_state_from_current_save(data, slot.path, self.load_world(world_name))
 
     def list_saves(self) -> list[SaveSlot]:
         slots: list[SaveSlot] = []
@@ -359,7 +373,7 @@ def _write_generation_metadata(folder: Path, prompts: dict[str, Any]) -> None:
         _write_json(folder / "generation_metadata.json", metadata)
 
 
-def _game_state_from_current_save(data: Any, path: Path) -> GameStateData:
+def _game_state_from_current_save(data: Any, path: Path, base_world: WorldData) -> GameStateData:
     if not isinstance(data, dict):
         raise ValueError(f"Invalid save data: {path}")
     version = int(data.get("version") or 0)
@@ -368,7 +382,9 @@ def _game_state_from_current_save(data: Any, path: Path) -> GameStateData:
             f"Unsupported save version {version} in {path}. "
             f"Fantasia now expects save version {CURRENT_SAVE_VERSION}; start a new game or create a new save."
         )
-    return GameStateData.from_dict(data)
+    payload = dict(data)
+    payload["world_data"] = runtime_world_from_save(base_world, payload.get(PLAYER_WORLD_STATE_KEY))
+    return GameStateData.from_dict(payload)
 
 
 def _json_bytes(payload: Any) -> bytes:

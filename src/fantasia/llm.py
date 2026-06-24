@@ -134,6 +134,7 @@ class FixtureLlmBackend(BaseLlmBackend):
                     "generation_mode": "local_skeleton_llm_descriptions",
                 },
                 "final_destination_concept": "世界の外縁に眠る、灯火を封じた古代遺跡",
+                "final_destination_name": "",
                 "opening": "あなたは最初の街の入り口に立ち、霧の向こうへ続く道を見ている。",
             }
             try:

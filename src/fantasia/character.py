@@ -36,6 +36,7 @@ class Character:
     status_effects: list[dict[str, Any]] = field(default_factory=list)
     inventory: list[dict[str, Any]] = field(default_factory=list)
     equipment: dict[str, dict[str, Any]] = field(default_factory=dict)
+    vender_inventory: list[dict[str, Any]] = field(default_factory=list)
     gold: int = 0
     image_paths: dict[str, str] = field(default_factory=dict)
     prompts: dict[str, Any] = field(default_factory=dict)
@@ -65,6 +66,7 @@ class Character:
         kwargs["status_effects"] = _as_list(kwargs.get("status_effects"))
         kwargs["inventory"] = _as_list(kwargs.get("inventory"))
         kwargs["equipment"] = _as_dict(kwargs.get("equipment"))
+        kwargs["vender_inventory"] = _as_list(kwargs.get("vender_inventory"))
         kwargs["image_paths"] = _as_dict(kwargs.get("image_paths"))
         kwargs["prompts"] = _as_dict(kwargs.get("prompts"))
         kwargs["flags"] = _as_dict(kwargs.get("flags"))

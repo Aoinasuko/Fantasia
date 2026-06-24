@@ -256,6 +256,9 @@ class FantasiaApp(tk.Tk):
             PromptTemplateStore(resolve_prompt_template_dir(self.config_data.prompt_template_path)),
             allow_any_action_concept=self.config_data.allow_any_action_concept,
             reveal_world_map_on_generation=self.config_data.reveal_world_map_on_generation,
+            debug_free_location_travel=self.config_data.debug_free_location_travel,
+            debug_disable_movement_time_passage=self.config_data.debug_disable_movement_time_passage,
+            debug_disable_dungeon_random_encounters=self.config_data.debug_disable_dungeon_random_encounters,
         )
         self.preview_image: ImageTk.PhotoImage | None = None
         self.stage_source_image: Image.Image | None = None
@@ -373,6 +376,9 @@ class FantasiaApp(tk.Tk):
         self.ui_show_button_help_var = tk.BooleanVar(value=bool(self.config_data.ui_setting.get("show_game_button_help", True)))
         self.debug_allow_any_action_var = tk.BooleanVar(value=self.config_data.allow_any_action_concept)
         self.debug_reveal_world_map_on_generation_var = tk.BooleanVar(value=self.config_data.reveal_world_map_on_generation)
+        self.debug_free_location_travel_var = tk.BooleanVar(value=self.config_data.debug_free_location_travel)
+        self.debug_disable_movement_time_passage_var = tk.BooleanVar(value=self.config_data.debug_disable_movement_time_passage)
+        self.debug_disable_dungeon_random_encounters_var = tk.BooleanVar(value=self.config_data.debug_disable_dungeon_random_encounters)
         self.world_name_var = tk.StringVar(value="Misty Frontier")
         self.player_var = tk.StringVar(value="Nana")
         self.character_gender_var = tk.StringVar(value="female")
@@ -1209,7 +1215,7 @@ class FantasiaApp(tk.Tk):
         frame = self._settings_category_frame("debug")
         frame.columnconfigure(0, weight=1)
         frame.columnconfigure(1, weight=0)
-        frame.rowconfigure(8, weight=1)
+        frame.rowconfigure(14, weight=1)
         tk.Label(frame, text=_ui_text(self.config_data, "settings_debug_title"), bg=APP_PANEL_BG, fg="#f2f2f2", anchor="w", font=self.ui_fonts.bold(4)).grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
         self.device_info_text = tk.Text(
@@ -1269,8 +1275,65 @@ class FantasiaApp(tk.Tk):
             font=self.ui_fonts.normal(-4),
         ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(2, 12))
 
+        tk.Label(
+            frame,
+            text=_ui_text(self.config_data, "settings_debug_free_location_travel"),
+            bg=APP_PANEL_BG,
+            fg="#f2f2f2",
+            anchor="w",
+            font=self.ui_fonts.bold(-2),
+        ).grid(row=6, column=0, sticky="w", padx=(0, 8), pady=(2, 0))
+        self._settings_checkbutton(frame, self.debug_free_location_travel_var).grid(row=6, column=1, sticky="w", pady=(2, 0))
+        tk.Label(
+            frame,
+            text=_ui_text(self.config_data, "settings_debug_free_location_travel_hint"),
+            bg=APP_PANEL_BG,
+            fg="#b8c0d5",
+            anchor="w",
+            justify="left",
+            font=self.ui_fonts.normal(-4),
+        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(2, 12))
+
+        tk.Label(
+            frame,
+            text=_ui_text(self.config_data, "settings_debug_disable_movement_time_passage"),
+            bg=APP_PANEL_BG,
+            fg="#f2f2f2",
+            anchor="w",
+            font=self.ui_fonts.bold(-2),
+        ).grid(row=8, column=0, sticky="w", padx=(0, 8), pady=(2, 0))
+        self._settings_checkbutton(frame, self.debug_disable_movement_time_passage_var).grid(row=8, column=1, sticky="w", pady=(2, 0))
+        tk.Label(
+            frame,
+            text=_ui_text(self.config_data, "settings_debug_disable_movement_time_passage_hint"),
+            bg=APP_PANEL_BG,
+            fg="#b8c0d5",
+            anchor="w",
+            justify="left",
+            font=self.ui_fonts.normal(-4),
+        ).grid(row=9, column=0, columnspan=2, sticky="w", pady=(2, 12))
+
+        tk.Label(
+            frame,
+            text=_ui_text(self.config_data, "settings_debug_disable_dungeon_random_encounters"),
+            bg=APP_PANEL_BG,
+            fg="#f2f2f2",
+            anchor="w",
+            font=self.ui_fonts.bold(-2),
+        ).grid(row=10, column=0, sticky="w", padx=(0, 8), pady=(2, 0))
+        self._settings_checkbutton(frame, self.debug_disable_dungeon_random_encounters_var).grid(row=10, column=1, sticky="w", pady=(2, 0))
+        tk.Label(
+            frame,
+            text=_ui_text(self.config_data, "settings_debug_disable_dungeon_random_encounters_hint"),
+            bg=APP_PANEL_BG,
+            fg="#b8c0d5",
+            anchor="w",
+            justify="left",
+            font=self.ui_fonts.normal(-4),
+        ).grid(row=11, column=0, columnspan=2, sticky="w", pady=(2, 12))
+
         actions = tk.Frame(frame, bg=APP_PANEL_BG)
-        actions.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(0, 0))
+        actions.grid(row=12, column=0, columnspan=2, sticky="ew", pady=(0, 0))
         actions.columnconfigure(1, weight=1)
         self._grid_settings_button(actions, _ui_text(self.config_data, "settings_check_generation_logs"), self._open_generation_logs_screen, row=0, column=0, sticky="w", ipadx=52, ipady=8)
 
@@ -2916,6 +2979,32 @@ class FantasiaApp(tk.Tk):
         actions.columnconfigure(0, weight=1)
         self._instant_button(actions, "閉じる", dialog.destroy).grid(row=0, column=1, sticky="e")
 
+    def _status_item_character(self, item: dict[str, object]) -> Character | None:
+        kind = str(item.get("kind") or "")
+        if kind == "player":
+            return self.engine.player_character()
+        uuid = str(item.get("uuid") or item.get("character_uuid") or "").strip()
+        name = str(item.get("name") or item.get("character_name") or "").strip()
+        return self._world_character_by_uuid_or_non_player_name(uuid, name)
+
+    def _world_character_by_uuid_or_non_player_name(self, uuid: str = "", name: str = "") -> Character | None:
+        world = self.engine.state.world_data
+        uuid = str(uuid or "").strip()
+        if uuid:
+            character = world.character(uuid)
+            if character:
+                return character
+        name = str(name or "").strip()
+        if not name:
+            return None
+        for character in world.characters.values():
+            if character.name == name and not character.flags.get("is_player"):
+                return character
+        character = world.character(name)
+        if character and not character.flags.get("is_player"):
+            return character
+        return None
+
     def _actor_status_detail_text(self, item: dict[str, object]) -> str:
         language = self.config_data.language
         kind = str(item.get("kind") or "")
@@ -2923,16 +3012,19 @@ class FantasiaApp(tk.Tk):
         uuid = str(item.get("uuid") or "").strip()
         encounter = item.get("encounter") if isinstance(item.get("encounter"), dict) else {}
         if kind in {"player", "character", "companion"}:
-            character = self.engine.state.world_data.character(uuid or name)
+            character = self._status_item_character(item)
             if character and kind != "player":
                 self.engine._ensure_character_runtime_data(character)
             data = character.to_dict() if character else {}
             if kind == "companion":
-                companion = self._companion_character_dict(uuid or name)
+                companion_ref = uuid or str(data.get("uuid") or "") or name
+                companion = self._companion_character_dict(companion_ref)
                 data = {**data, **companion} if data else companion
             if kind == "player":
                 player = self._player_character_dict()
                 data = {**data, **player} if data else player
+                data["inventory"] = self._player_inventory()
+                data["equipment"] = self.engine._player_equipment()
                 encounter = self.engine.state.flags.get("active_encounter") if isinstance(self.engine.state.flags.get("active_encounter"), dict) else {}
             if not data:
                 return f"{name}\n\n{tr_enum('roster', 'no_character_data', language)}"
@@ -2952,14 +3044,10 @@ class FantasiaApp(tk.Tk):
                 return
             for effect in value:
                 if isinstance(effect, dict):
-                    key_source = (
-                        effect.get("effect_id")
-                        or effect.get("id")
-                        or effect.get("status_id")
-                        or effect.get("name")
-                        or effect.get("status")
-                        or json.dumps(effect, ensure_ascii=False, sort_keys=True, default=str)
-                    )
+                    effect_id = str(effect.get("effect_id") or effect.get("id") or effect.get("status_id") or "").strip()
+                    effect_name = str(effect.get("name") or effect.get("status") or "").strip()
+                    effect_text = str(effect.get("description") or effect.get("llm_effect") or effect.get("effect_text") or "").strip()
+                    key_source = "|".join(part for part in (effect_id, effect_name, effect_text) if part) or json.dumps(effect, ensure_ascii=False, sort_keys=True, default=str)
                     key = str(key_source).strip().casefold()
                     item: object = dict(effect)
                 else:
@@ -3001,7 +3089,7 @@ class FantasiaApp(tk.Tk):
             ):
                 add_all(encounter.get("opponent_status_effects"))
 
-        character = self.engine.state.world_data.character(data_uuid or data_name)
+        character = self._world_character_by_uuid_or_non_player_name(data_uuid, data_name)
         if character:
             add_all(character.status_effects)
         add_all(data.get("status_effects"))
@@ -3043,7 +3131,7 @@ class FantasiaApp(tk.Tk):
                 hp = entry.get("opponent_hp")
                 max_hp = entry.get("opponent_max_hp")
                 image: Image.Image | None = None
-                character = state.world_data.character(uuid or name)
+                character = self._world_character_by_uuid_or_non_player_name(uuid, name)
                 if character:
                     image = self._actor_image_from_paths(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image"))
                     opponent_type = self._character_roster_subtitle(character, fallback=opponent_type or "enemy")
@@ -3072,7 +3160,7 @@ class FantasiaApp(tk.Tk):
                 return
             if character.name in party_names or str(character.uuid) in party_uuids:
                 return
-            if any(str(item.get("name") or "") == character.name for item in items):
+            if any(str(item.get("uuid") or "") == str(character.uuid or "") for item in items):
                 return
             if not self._character_is_present_at(character, current_location):
                 return
@@ -3080,6 +3168,7 @@ class FantasiaApp(tk.Tk):
             items.append(
                 {
                     "name": character.name,
+                    "uuid": str(character.uuid or ""),
                     "subtitle": self._character_roster_subtitle(character),
                     "hp": "",
                     "image": self._actor_image_from_paths(character.image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image")),
@@ -3090,7 +3179,8 @@ class FantasiaApp(tk.Tk):
         active_conversation = state.flags.get("active_conversation")
         if isinstance(active_conversation, dict):
             name = str(active_conversation.get("character") or "")
-            character = state.world_data.character(name)
+            uuid = str(active_conversation.get("character_uuid") or active_conversation.get("uuid") or "")
+            character = self._world_character_by_uuid_or_non_player_name(uuid, name)
             if character:
                 append_character(character)
 
@@ -3139,7 +3229,7 @@ class FantasiaApp(tk.Tk):
             ref = str(ref or "").strip()
             if not ref:
                 return
-            character = state.world_data.character(ref)
+            character = self._world_character_by_uuid_or_non_player_name(ref, ref)
             if character:
                 key = str(character.uuid or character.name)
                 if key in seen:
@@ -3181,8 +3271,9 @@ class FantasiaApp(tk.Tk):
         player = character_data
         image_paths = player.get("image_paths")
         name = str(player.get("name") or (self.engine.state.player_name if kind == "player" else ""))
+        uuid = str(player.get("uuid") or "")
         if (not isinstance(image_paths, dict) or not _subject_image_path(image_paths, ("face_image", "add_border_image", "no_bg_image", "generated_image"))) and name:
-            character = self.engine.state.world_data.character(name)
+            character = self.engine.player_character() if kind == "player" else self._world_character_by_uuid_or_non_player_name(uuid, name)
             if character and character.image_paths:
                 image_paths = character.image_paths
         image = self._actor_image_from_paths(image_paths if isinstance(image_paths, dict) else {}, ("face_image", "add_border_image", "no_bg_image", "generated_image"))
@@ -3205,7 +3296,7 @@ class FantasiaApp(tk.Tk):
         subtitle = f"Lv:{level or '1'}"
         return {
             "name": name,
-            "uuid": str(player.get("uuid") or ""),
+            "uuid": uuid,
             "subtitle": subtitle,
             "hp": f"HP:{hp}",
             "sp": f"SP:{sp}",
@@ -3904,7 +3995,7 @@ class FantasiaApp(tk.Tk):
         if vendor_event.get("changed"):
             self._append_inventory_event(_ui_text(self.config_data, "trade_stock_changed").format(name=character.name))
             self.engine.save_game()
-        self._open_inventory_window(_ui_text(self.config_data, "trade_title"), character.name, character.inventory, mode="shop", target_character=character)
+        self._open_inventory_window(_ui_text(self.config_data, "trade_title"), character.name, character.vender_inventory, mode="shop", target_character=character)
 
     def _trade_target_character(self, action: str = "") -> Character | None:
         candidates = self._current_trade_candidates()
@@ -4523,13 +4614,13 @@ class FantasiaApp(tk.Tk):
         refresh()
 
     def _player_inventory(self) -> list[dict[str, object]]:
-        inventory = self.engine.state.inventory
+        inventory = self.engine._player_inventory()
         if not isinstance(inventory, list):
             inventory = []
-            self.engine.state.inventory = inventory
         if not inventory and not self.engine.state.flags.get("starter_inventory_seeded"):
             inventory.extend(starter_items())
             self.engine.state.flags["starter_inventory_seeded"] = True
+            self.engine._sync_player_inventory()
         return inventory
 
     def _player_gold(self) -> int:
@@ -4552,6 +4643,7 @@ class FantasiaApp(tk.Tk):
         character = self.engine.player_character()
         if character:
             character.inventory = inventory
+            character.equipment = self.engine._player_equipment()
         self.engine._sync_player_equipment()
         try:
             self.engine.save_game()
@@ -4816,6 +4908,9 @@ class FantasiaApp(tk.Tk):
     def _load_debug_settings_vars(self) -> None:
         self.debug_allow_any_action_var.set(self.config_data.allow_any_action_concept)
         self.debug_reveal_world_map_on_generation_var.set(self.config_data.reveal_world_map_on_generation)
+        self.debug_free_location_travel_var.set(self.config_data.debug_free_location_travel)
+        self.debug_disable_movement_time_passage_var.set(self.config_data.debug_disable_movement_time_passage)
+        self.debug_disable_dungeon_random_encounters_var.set(self.config_data.debug_disable_dungeon_random_encounters)
 
     def _apply_llm_backend_setting(self) -> None:
         backend = _llm_backend_from_label(self.llm_backend_label_var.get(), self.config_data.language)
@@ -4940,6 +5035,9 @@ class FantasiaApp(tk.Tk):
             PromptTemplateStore(resolve_prompt_template_dir(self.config_data.prompt_template_path)),
             allow_any_action_concept=self.config_data.allow_any_action_concept,
             reveal_world_map_on_generation=self.config_data.reveal_world_map_on_generation,
+            debug_free_location_travel=self.config_data.debug_free_location_travel,
+            debug_disable_movement_time_passage=self.config_data.debug_disable_movement_time_passage,
+            debug_disable_dungeon_random_encounters=self.config_data.debug_disable_dungeon_random_encounters,
         )
         self.engine.state = old_state
 
@@ -5243,11 +5341,17 @@ class FantasiaApp(tk.Tk):
         ui_setting = raw.setdefault("ui_setting", {})
         ui_setting["allow_any_action_concept"] = bool(self.debug_allow_any_action_var.get())
         ui_setting["reveal_world_map_on_generation"] = bool(self.debug_reveal_world_map_on_generation_var.get())
+        ui_setting["debug_free_location_travel"] = bool(self.debug_free_location_travel_var.get())
+        ui_setting["debug_disable_movement_time_passage"] = bool(self.debug_disable_movement_time_passage_var.get())
+        ui_setting["debug_disable_dungeon_random_encounters"] = bool(self.debug_disable_dungeon_random_encounters_var.get())
         try:
             CONFIG_PATH.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             self.config_data = load_config()
             self.engine.allow_any_action_concept = self.config_data.allow_any_action_concept
             self.engine.reveal_world_map_on_generation = self.config_data.reveal_world_map_on_generation
+            self.engine.debug_free_location_travel = self.config_data.debug_free_location_travel
+            self.engine.debug_disable_movement_time_passage = self.config_data.debug_disable_movement_time_passage
+            self.engine.debug_disable_dungeon_random_encounters = self.config_data.debug_disable_dungeon_random_encounters
         except Exception as exc:
             self._show_error(exc)
             return
@@ -6062,9 +6166,17 @@ class FantasiaApp(tk.Tk):
             return None
         return self._load_layer_image(path_text)
 
+    def _stage_actor_identity(self, character: Character) -> str:
+        return str(character.uuid or character.name or "").strip()
+
+    def _stage_actor_is_monster(self, character: Character) -> bool:
+        flags = character.flags if isinstance(character.flags, dict) else {}
+        category = str(character.category or "").strip()
+        return bool(flags.get("enemy_npc") or flags.get("hostile") or category in {"enemy_npc", "wild_encounter"})
+
     def _stage_character_layers(self) -> list[tuple[str, str]]:
         state = self.engine.state
-        names: list[str] = []
+        characters: list[Character] = []
         excluded_refs: set[str] = set()
         active_encounter = state.flags.get("active_encounter")
         if isinstance(active_encounter, dict) and active_encounter.get("status") != "ended":
@@ -6079,72 +6191,87 @@ class FantasiaApp(tk.Tk):
                     excluded_refs.add(name)
                 if uuid:
                     excluded_refs.add(uuid)
+
+        seen_refs: set[str] = set()
+        current_location = self._current_location_name()
+
+        def add_stage_character(character: Character | None, *, require_present: bool = True) -> None:
+            if character is None or character.flags.get("is_player"):
+                return
+            identity = self._stage_actor_identity(character)
+            if not identity or identity in seen_refs:
+                return
+            if character.name in excluded_refs or identity in excluded_refs:
+                return
+            if self._stage_actor_is_monster(character):
+                return
+            if require_present and not self._character_is_present_at(character, current_location):
+                return
+            seen_refs.add(identity)
+            seen_refs.add(character.name)
+            characters.append(character)
+
         active_conversation = state.flags.get("active_conversation")
         if isinstance(active_conversation, dict):
             conversation_name = str(active_conversation.get("character") or "")
-            if conversation_name not in excluded_refs:
-                names.append(conversation_name)
-        current_location = self._current_location_name()
-        names.extend(
-            character.name
-            for character in state.world_data.characters.values()
-            if not character.flags.get("is_player")
-            and character.name not in excluded_refs
-            and str(character.uuid or "") not in excluded_refs
-            and self._character_is_present_at(character, current_location)
-        )
+            conversation_uuid = str(active_conversation.get("character_uuid") or active_conversation.get("uuid") or "")
+            add_stage_character(self._world_character_by_uuid_or_non_player_name(conversation_uuid, conversation_name), require_present=False)
+        for character in state.world_data.characters.values():
+            add_stage_character(character)
+            if len(characters) >= 3:
+                break
+
         layers: list[tuple[str, str]] = []
-        seen: set[str] = set()
-        for name in names:
-            if not name or name in seen:
-                continue
-            character = state.world_data.character(name)
-            if not character:
-                continue
-            identity = str(character.uuid or character.name)
-            if identity in seen or character.name in excluded_refs or identity in excluded_refs:
-                continue
+        for character in characters:
             image_path = _subject_image_path(character.image_paths, ("no_bg_image", "add_border_image", "generated_image", "face_image"))
             if image_path:
                 layers.append((character.name, image_path))
-                seen.add(name)
-                seen.add(character.name)
-                seen.add(identity)
             if len(layers) >= 3:
                 break
         return layers
 
     def _stage_monster_layers(self) -> list[tuple[str, str]]:
         state = self.engine.state
-        names: list[str] = []
+        monsters: list[Character] = []
+        seen_refs: set[str] = set()
+        current_location = self._current_location_name()
+
+        def add_stage_monster(character: Character | None, *, force: bool = False, require_present: bool = True) -> None:
+            if character is None or character.flags.get("is_player"):
+                return
+            identity = self._stage_actor_identity(character)
+            if not identity or identity in seen_refs:
+                return
+            if not force and not self._stage_actor_is_monster(character):
+                return
+            if require_present and not self._character_is_present_at(character, current_location):
+                return
+            seen_refs.add(identity)
+            seen_refs.add(character.name)
+            monsters.append(character)
+
         active_encounter = state.flags.get("active_encounter")
         if isinstance(active_encounter, dict):
-            names.extend(str(entry.get("name") or "") for entry in self._battle_target_entries(active_encounter))
-        current_location = self._current_location_name()
-        names.extend(
-            character.name
-            for character in state.world_data.characters.values()
-            if not character.flags.get("is_player")
-            and (character.flags.get("enemy_npc") or character.flags.get("hostile") or character.category in {"enemy_npc", "wild_encounter"})
-            and self._character_is_present_at(character, current_location)
-        )
+            for entry in self._battle_target_entries(active_encounter):
+                character = entry.get("character")
+                if not isinstance(character, Character):
+                    character = self._world_character_by_uuid_or_non_player_name(str(entry.get("uuid") or ""), str(entry.get("name") or ""))
+                add_stage_monster(character, force=True, require_present=False)
+        active_conversation = state.flags.get("active_conversation")
+        if isinstance(active_conversation, dict):
+            conversation_name = str(active_conversation.get("character") or "")
+            conversation_uuid = str(active_conversation.get("character_uuid") or active_conversation.get("uuid") or "")
+            add_stage_monster(self._world_character_by_uuid_or_non_player_name(conversation_uuid, conversation_name), require_present=False)
+        for character in state.world_data.characters.values():
+            add_stage_monster(character)
+            if len(monsters) >= 2:
+                break
+
         layers: list[tuple[str, str]] = []
-        seen: set[str] = set()
-        for name in names:
-            if not name or name in seen:
-                continue
-            monster = state.world_data.character(name)
-            if not monster:
-                continue
-            identity = str(monster.uuid or monster.name)
-            if identity in seen:
-                continue
+        for monster in monsters:
             image_path = _subject_image_path(monster.image_paths, ("no_bg_image", "add_border_image", "base_image", "generated_image", "face_image"))
             if image_path:
                 layers.append((monster.name, image_path))
-                seen.add(name)
-                seen.add(monster.name)
-                seen.add(identity)
             if len(layers) >= 2:
                 break
         return layers
@@ -6512,6 +6639,8 @@ class FantasiaApp(tk.Tk):
         self._schedule_visual_updates()
         if self.engine.state.flags.get("pending_home_menu"):
             self.after(0, self._open_pending_home_menu)
+        if self.engine.state.flags.pop("return_to_title", False):
+            self.after(0, lambda: self._show_screen("title"))
 
     def _append_log(self, text: str) -> None:
         self._cancel_typewriter()
@@ -6935,6 +7064,9 @@ def run_smoke_test() -> None:
         PromptTemplateStore(resolve_prompt_template_dir(config_data.prompt_template_path)),
         allow_any_action_concept=config_data.allow_any_action_concept,
         reveal_world_map_on_generation=config_data.reveal_world_map_on_generation,
+        debug_free_location_travel=config_data.debug_free_location_travel,
+        debug_disable_movement_time_passage=config_data.debug_disable_movement_time_passage,
+        debug_disable_dungeon_random_encounters=config_data.debug_disable_dungeon_random_encounters,
     )
     try:
         print(engine.create_world("SmokeTest", "静かな森と古い遺跡"))
@@ -6955,6 +7087,9 @@ def run_save_smoke_test() -> None:
         PromptTemplateStore(resolve_prompt_template_dir(config_data.prompt_template_path)),
         allow_any_action_concept=config_data.allow_any_action_concept,
         reveal_world_map_on_generation=config_data.reveal_world_map_on_generation,
+        debug_free_location_travel=config_data.debug_free_location_travel,
+        debug_disable_movement_time_passage=config_data.debug_disable_movement_time_passage,
+        debug_disable_dungeon_random_encounters=config_data.debug_disable_dungeon_random_encounters,
     )
     try:
         print(engine.create_world("SaveSmokeWorld", "霧深い辺境と古い魔法", save_game=False))
@@ -7583,7 +7718,7 @@ def _format_character_status_detail(data: dict[str, object], encounter: dict[str
         or f"{data.get('current_hp', extra.get('current_hp', '-'))}/{data.get('max_hp', extra.get('max_hp', '-'))}"
     )
     sp_text = str(data.get("sp") or f"{data.get('current_sp', extra.get('current_sp', '-'))}/{data.get('max_sp', extra.get('max_sp', '-'))}")
-    equipment = data.get("equipment") if isinstance(data.get("equipment"), dict) else extra.get("equipment")
+    equipment = data.get("equipment") if isinstance(data.get("equipment"), dict) else {}
     equipment_lines: list[str] = []
     if isinstance(equipment, dict):
         for slot, item in equipment.items():
@@ -7606,7 +7741,7 @@ def _format_character_status_detail(data: dict[str, object], encounter: dict[str
         f"{field('sp')}: {sp_text}",
         f"{field('gold')}: {data.get('gold') or 0}",
         f"{field('affinity')}: {affinity_value} ({affinity_state})" if not is_player else "",
-        f"{field('equipment')}: " + (" / ".join(equipment_lines) if equipment_lines else "-") if is_player else "",
+        f"{field('equipment')}: " + (" / ".join(equipment_lines) if equipment_lines else "-"),
         f"{field('attributes')}: "
         + ", ".join(
             [
@@ -7660,7 +7795,7 @@ def _format_character_status_detail(data: dict[str, object], encounter: dict[str
     )
     lines.extend(_format_named_description_section(field("traits"), data.get("traits")))
     lines.extend(_format_skill_section(field("skills"), data.get("skills"), language=language))
-    lines.extend(_format_inventory_section(data.get("inventory"), language=language))
+    lines.extend(_format_inventory_section(_character_inventory_value(data), language=language))
     return "\n".join(line for line in lines if line is not None)
 
 
@@ -7699,9 +7834,12 @@ def _format_status_effect_section(title: str, value: object) -> list[str]:
         title,
         value,
         description_keys=(
-            "description",
-            "desc",
             "llm_effect",
+            "send_llm",
+            "send_llm_text",
+            "llm_text",
+            "desc",
+            "description",
             "remove_condition",
             "condition_cancell",
             "effect_text",
@@ -7714,6 +7852,11 @@ def _format_status_effect_section(title: str, value: object) -> list[str]:
             "details",
         ),
     )
+
+
+def _character_inventory_value(data: dict[str, object]) -> object:
+    value = data.get("inventory")
+    return value if isinstance(value, list) else []
 
 
 def _format_named_description_section(title: str, value: object) -> list[str]:
@@ -8757,12 +8900,24 @@ UI_TEXT["en"].update(
     {
         "settings_reveal_world_map_on_generation": "Reveal Full World Map On Generation",
         "settings_reveal_world_map_on_generation_hint": "Debug only. Newly generated worlds show every world-map node immediately.",
+        "settings_debug_free_location_travel": "Ignore Restrictions And Freely Move To All Locations",
+        "settings_debug_free_location_travel_hint": "Debug only. Allows travel to known world-map locations even from dangerous areas or blocked subnodes.",
+        "settings_debug_disable_movement_time_passage": "Disable Time Passage On Movement",
+        "settings_debug_disable_movement_time_passage_hint": "Debug only. Moving on the world map or inside dungeons does not advance time.",
+        "settings_debug_disable_dungeon_random_encounters": "Disable Dungeon Random Enemy Spawns",
+        "settings_debug_disable_dungeon_random_encounters_hint": "Debug only. First visits to dangerous dungeon subnodes do not roll random enemy encounters.",
     }
 )
 UI_TEXT["ja"].update(
     {
         "settings_reveal_world_map_on_generation": "生成時にすべてのワールドマップを表示する",
         "settings_reveal_world_map_on_generation_hint": "デバッグ用。新規ワールド生成完了時、全ロケーションを世界地図に表示します。",
+        "settings_debug_free_location_travel": "制限を無視してすべてのロケーションを自由に移動できるようにする",
+        "settings_debug_free_location_travel_hint": "デバッグ用。危険地帯やサブノード制限を無視して、登録済みロケーションへ移動できます。",
+        "settings_debug_disable_movement_time_passage": "移動時の時間経過無効化",
+        "settings_debug_disable_movement_time_passage_hint": "デバッグ用。ワールドマップ移動やダンジョン内移動で時間が経過しなくなります。",
+        "settings_debug_disable_dungeon_random_encounters": "ダンジョン内のランダム敵出現無効化",
+        "settings_debug_disable_dungeon_random_encounters_hint": "デバッグ用。危険なダンジョンサブノード初訪問時のランダム敵出現を無効化します。",
     }
 )
 
