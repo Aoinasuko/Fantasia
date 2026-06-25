@@ -21,6 +21,7 @@ class CombatToolName(str, Enum):
     CAPTURE_PLAYER = "capture_player"
     NPC_SURRENDER = "npc_surrender"
     NPC_FLEE = "npc_flee"
+    NPC_PACIFY = "npc_pacify"
     APPLY_COMBAT_STATUS = "apply_combat_status"
 
 
@@ -85,11 +86,13 @@ def combat_enemy_tool_instruction() -> str:
         "Return compact combat JSON. Use action_type only for local combat calculation: "
         "attack, status_attack, skill, free_action. Put every combat state side effect in tool_judgements. "
         "Supported combat tools: combat_end, player_surrender, accept_player_surrender, "
-        "reject_player_surrender, capture_player, npc_surrender, npc_flee, apply_combat_status. "
+        "reject_player_surrender, capture_player, npc_surrender, npc_flee, npc_pacify, apply_combat_status. "
         "For each possible combat tool, return confidence from 0.0 to 1.0. The game executes only "
         "tools with confidence exactly 1.0. When the player is surrendering, set exactly one of "
         "accept_player_surrender, capture_player, or reject_player_surrender to confidence 1.0 "
-        "before any attack. Normal attacks and hostile single-target skills choose their target "
+        "before any attack. If the player offered food, bait, money, goods, a promise, or a calming deal "
+        "that this opponent accepts and therefore loses hostility, use npc_pacify with confidence 1.0 "
+        "instead of attacking. Normal attacks and hostile single-target skills choose their target "
         "locally at random from the player side. For status_attack or other special actions, choose "
         "target_name from player_side_targets. Do not set HP/SP/resource deltas; the game calculates them locally."
     )
@@ -107,8 +110,11 @@ def combat_tool_prompt_instruction() -> str:
         "or waiting helplessly for the enemy's decision. Do not rely on exact wording. "
         "Use accept_player_surrender or capture_player to end combat after accepting surrender. "
         "Use reject_player_surrender only when combat continues. Use npc_surrender when the "
-        "opponent yields, npc_flee when the opponent escapes, apply_combat_status for combat-only "
-        "conditions, and combat_end for a final truce, capture, or other non-damage end. "
+        "opponent yields, npc_flee when the opponent escapes, npc_pacify when a bribe, food, bait, "
+        "offering, promise, negotiation, or calming act makes the opponent lose hostility and leave combat, "
+        "For npc_pacify, put the offered item or payment name in arguments.item, arguments.offering, "
+        "arguments.bribe, or arguments.bait when the player gives something; matching inventory is consumed. "
+        "apply_combat_status for combat-only conditions, and combat_end for a final truce, capture, or other non-damage end. "
         "For apply_combat_status, arguments must contain status_effects or status_effect with explicit effect_id; "
         "status effects without effect_id are ignored."
     )
@@ -203,6 +209,8 @@ def run_combat_tool(engine: Any, call: CombatToolCall) -> CombatToolResult:
         return _tool_npc_surrender(engine, encounter, call.opponent)
     if call.name == CombatToolName.NPC_FLEE:
         return _tool_npc_flee(engine, encounter, call.opponent)
+    if call.name == CombatToolName.NPC_PACIFY:
+        return _tool_npc_pacify(engine, encounter, call.payload, call.opponent)
     if call.name == CombatToolName.APPLY_COMBAT_STATUS:
         return _tool_apply_combat_status(engine, encounter, call.payload, call.opponent, call.source, call.action)
     if call.name == CombatToolName.COMBAT_END:
@@ -407,6 +415,84 @@ def _tool_npc_flee(engine: Any, encounter: dict[str, Any], opponent: Character |
         acted=True,
         finished=True,
     )
+
+
+def _tool_npc_pacify(
+    engine: Any,
+    encounter: dict[str, Any],
+    payload: dict[str, Any],
+    opponent: Character | None = None,
+) -> CombatToolResult:
+    target = opponent if isinstance(opponent, Character) else engine._encounter_opponent(encounter)
+    reason = str(payload.get("reason") or payload.get("cause") or "pacified").strip()
+    item_name = str(payload.get("item") or payload.get("offering") or payload.get("bribe") or payload.get("bait") or "").strip()
+    consumed = _consume_pacify_offering(engine, payload, item_name)
+    if consumed:
+        item_name = str(consumed.get("name") or item_name)
+    if not isinstance(target, Character):
+        encounter["opponent_status"] = "pacified"
+        encounter["status"] = "ended"
+        line = str(payload.get("line") or "> [戦闘] 相手は敵意を失い、戦闘から離脱した。")
+        return CombatToolResult(
+            CombatToolName.NPC_PACIFY,
+            lines=[line],
+            event={"kind": "npc_pacify", "reason": reason, "item": item_name},
+            acted=True,
+            finished=True,
+        )
+    target.flags["hostile"] = False
+    target.extra["hostile"] = False
+    target.flags["pacified_from_combat"] = True
+    target.extra["pacified_from_combat"] = True
+    target.extra["pacified_reason"] = reason
+    if item_name:
+        target.extra["pacified_by"] = item_name
+    engine._set_encounter_opponent_combat_status(encounter, target, "pacified")
+    location = str(encounter.get("location") or target.location or engine.state.current_location)
+    destination = engine._npc_flee_destination(target, location)
+    if destination.get("location"):
+        engine._set_character_presence(
+            target,
+            str(destination["location"]),
+            "present",
+            subnode_id=str(destination.get("subnode") or ""),
+        )
+        label = str(destination.get("label") or destination.get("location") or "")
+        default_line = f"> [戦闘] {target.name}は敵意を失い、{label}へ離れていった。"
+    else:
+        default_line = f"> [戦闘] {target.name}は敵意を失い、戦闘から離脱した。"
+    finished = not bool(engine._acting_encounter_opponents(encounter))
+    if finished:
+        encounter["status"] = "ended"
+    line = str(payload.get("line") or default_line)
+    lines = []
+    if consumed:
+        lines.append(f"> [譲渡] {item_name}を差し出した。")
+    lines.append(line)
+    return CombatToolResult(
+        CombatToolName.NPC_PACIFY,
+        lines=lines,
+        event={"kind": "npc_pacify", "opponent": target.name, "reason": reason, "item": item_name, "destination": destination},
+        acted=True,
+        finished=finished,
+    )
+
+
+def _consume_pacify_offering(engine: Any, payload: dict[str, Any], item_name: str) -> dict[str, Any] | None:
+    item_payload = payload.get("item_remove") or payload.get("consume_item") or payload.get("consume_items")
+    if isinstance(item_payload, list):
+        item_payload = item_payload[0] if item_payload else None
+    if item_payload is None and item_name:
+        item_payload = {"item": item_name, "quantity": 1}
+    if item_payload is None:
+        return None
+    remover = getattr(engine, "_remove_player_item_reference", None)
+    if not callable(remover):
+        return None
+    try:
+        return remover(item_payload, source="combat_npc_pacify", reason=str(payload.get("reason") or "pacify_offering"))
+    except Exception:
+        return None
 
 
 def _tool_apply_combat_status(

@@ -1284,15 +1284,15 @@ SCHEMAS: dict[str, ManagerSchema] = {
             FieldRule("tool_judgements", (list,), non_empty=False, string_items=False),
         ),
         example={
-            "intent": "surrender",
-            "narration": "あなたは武器を下ろし、無抵抗の姿勢を保った。",
-            "choices": ["相手の反応を待つ", "事情を説明する"],
+            "intent": "pacify",
+            "narration": "あなたは荷物から食料を差し出し、争う意思がないことを示した。",
+            "choices": ["相手の反応を待つ", "距離を取る"],
             "tool_judgements": [
                 {
-                    "name": "player_surrender",
+                    "name": "npc_pacify",
                     "confidence": 1.0,
-                    "arguments": {"reason": "player maintains nonresistance"},
-                    "reason": "プレイヤーが無抵抗を示しているため。",
+                    "arguments": {"reason": "food offering removes hostility", "item": "食料"},
+                    "reason": "餌や賄賂によって敵が敵意を失い、戦闘から離脱するため。",
                 }
             ],
         },

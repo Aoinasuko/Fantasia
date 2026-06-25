@@ -5994,7 +5994,7 @@ class GameEngine:
         for character in self._encounter_opponents(encounter):
             entry = self._sync_encounter_opponent_entry(encounter, character)
             combat_status = str(entry.get("status") or entry.get("opponent_status") or character.extra.get("combat_status") or "").strip().lower()
-            if combat_status in {FLED_STATUS_ID, "escaped", "retreated", "surrender_accepted"}:
+            if combat_status in {FLED_STATUS_ID, "escaped", "retreated", "surrender_accepted", "pacified"}:
                 continue
             if any(_status_effect_id(_normalise_status_effect(effect)) == FLED_STATUS_ID for effect in character.status_effects):
                 continue
@@ -17853,7 +17853,7 @@ class GameEngine:
             if _character_state_is_dead(character) or requested_state in {"dead", "corpse", "killed"} or entry_status in {"defeated", "dead", "corpse", "killed"}:
                 self._set_character_presence(character, location, "dead")
                 continue
-            if requested_state in {FLED_STATUS_ID, "fled", "escaped", "retreated"} or entry_status in {FLED_STATUS_ID, "fled", "escaped", "retreated"}:
+            if requested_state in {FLED_STATUS_ID, "fled", "escaped", "retreated", "pacified"} or entry_status in {FLED_STATUS_ID, "fled", "escaped", "retreated", "pacified"}:
                 continue
             visible_state = requested_state or "present"
             if visible_state in {"gone", "left", "ended", "inactive", "removed", "surrender_accepted"}:

@@ -733,6 +733,30 @@ def _combat_character_payload(character: Character) -> dict[str, Any]:
     }
 
 
+def _combat_inventory_payload(engine: Any, *, limit: int = 18) -> list[dict[str, Any]]:
+    try:
+        inventory = engine._player_inventory()
+    except Exception:
+        inventory = []
+    result: list[dict[str, Any]] = []
+    for item in inventory:
+        if not isinstance(item, dict):
+            continue
+        data: dict[str, Any] = {
+            "name": str(item.get("name") or ""),
+            "category": str(item.get("category") or ""),
+            "quantity": max(1, safe_int(item.get("quantity"), 1)),
+            "item_uuid": str(item.get("item_uuid") or ""),
+        }
+        effects = item.get("effects")
+        if isinstance(effects, list) and effects:
+            data["effects"] = effects[:4]
+        result.append(data)
+        if len(result) >= limit:
+            break
+    return result
+
+
 def _ally_skill_from_decision(companion: Character, decision: dict[str, Any]) -> dict[str, Any]:
     wanted = str(decision.get("skill_name") or decision.get("skill") or "").strip()
     skills = _usable_ally_skills(companion)
@@ -1228,6 +1252,7 @@ def _combat_player_action_intent(engine: Any, action: str, input_type: str, enco
         "encounter": engine._strip_encounter_log_for_combat(encounter),
         "player": engine._encounter_player_payload(encounter),
         "opponent": engine._encounter_opponent_payload(encounter),
+        "player_inventory": _combat_inventory_payload(engine, limit=18),
         "recent_log": engine.state.log_text(6),
     }
     try:
@@ -1237,7 +1262,8 @@ def _combat_player_action_intent(engine: Any, action: str, input_type: str, enco
                 {
                     "role": "system",
                     "content": (
-                        "戦闘中の自由行動intent担当です。HP/SP/所持品の変更は決めず、短いnarrationとintentとchoicesを返してください。"
+                        "戦闘中の自由行動intent担当です。HP/SPの変更や通常のitem_removeは決めず、短いnarrationとintentとchoicesを返してください。"
+                        "賄賂、餌、食料、供物、説得、なだめる行動で敵が敵意を失って離脱するなら、npc_pacifyを使い、渡す品がある場合はarguments.itemに入れてください。"
                         "\n" + combat_tool_prompt_instruction()
                     ),
                 },
