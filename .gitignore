@@ -12,3 +12,5 @@ crashlog/
 output_data/
 runtime/
 bin/
+model_create/
+unsloth_compiled_cache/
