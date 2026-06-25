@@ -6,9 +6,6 @@
     "level": 0,
     "value": 10,
     "desc": "鍛冶に使う精錬済みの金属。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": "金属インゴット"
   },
   {
@@ -18,9 +15,6 @@
     "level": 0,
     "value": 20,
     "desc": "鍛冶に使う精錬済みの金属。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": "金属インゴット"
   },
   {
@@ -30,9 +24,6 @@
     "level": 0,
     "value": 30,
     "desc": "魔術品にも使われる銀の塊。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": "金属インゴット"
   },
   {
@@ -42,9 +33,6 @@
     "level": 0,
     "value": 30,
     "desc": "魔術品にも使われる銀の塊。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": "金属インゴット"
   },
   {
@@ -54,9 +42,6 @@
     "level": 0,
     "value": 50,
     "desc": "武具を強化できる金属片。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": "武具の強化素材"
   }
 ]

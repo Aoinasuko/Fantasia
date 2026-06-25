@@ -6,10 +6,13 @@
     "level": 0,
     "value": 10,
     "desc": "浅い傷の出血を止める薬。",
-    "use_effect": "HP_Heal",
-    "power": 5,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "effects": [
+      {
+        "type": "heal_hp",
+        "power": 5
+      }
+    ]
   },
   {
     "id": "medicine_poison",
@@ -18,10 +21,18 @@
     "level": 0,
     "value": 20,
     "desc": "毒やしびれを和らげる薬。",
-    "use_effect": "Send_LLM",
-    "power": 5,
-    "send_llm": "毒や麻痺を治癒する。",
-    "element": ""
+    "element": "",
+    "effects": [
+      {
+        "type": "remove_status",
+        "extra": {
+          "status_type": [
+            "HP_Damage",
+            "Paralysis"
+          ]
+        }
+      }
+    ]
   },
   {
     "id": "medicine_calm",
@@ -29,10 +40,18 @@
     "category": "medicine",
     "level": 0,
     "value": 20,
-    "desc": "精神系の異常を抑え、しばらくの間精神耐性を得ることが出来る薬。",
-    "use_effect": "Send_LLM",
-    "power": 5,
-    "send_llm": "精神系の状態異常を回復して、しばらくの間精神耐性を得る。",
-    "element": ""
+    "desc": "精神系の異常を抑える薬。",
+    "element": "",
+    "effects": [
+      {
+        "type": "remove_status",
+        "extra": {
+          "status_type": [
+            "Psychosis",
+            "Silence"
+          ]
+        }
+      }
+    ]
   }
 ]

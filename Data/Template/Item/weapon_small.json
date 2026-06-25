@@ -6,10 +6,8 @@
     "level": 0,
     "value": 10,
     "desc": "ないよりはマシな近接武器。",
-    "use_effect": "None",
-    "power": 1,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 1
   },
   {
     "id": "weapon_small_axe_wood",
@@ -18,10 +16,8 @@
     "level": 0,
     "value": 20,
     "desc": "片手で扱える小さな斧。",
-    "use_effect": "None",
-    "power": 2,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 2
   },
   {
     "id": "weapon_small_dagger_iron",
@@ -30,10 +26,8 @@
     "level": 10,
     "value": 30,
     "desc": "実用性十分な短剣。",
-    "use_effect": "None",
-    "power": 3,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 3
   },
   {
     "id": "weapon_small_axe_iron",
@@ -42,10 +36,8 @@
     "level": 10,
     "value": 50,
     "desc": "実用性十分な小型斧。",
-    "use_effect": "None",
-    "power": 5,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 5
   },
   {
     "id": "weapon_small_dagger_diamond",
@@ -54,10 +46,8 @@
     "level": 20,
     "value": 50,
     "desc": "十分頑丈な近接武器。",
-    "use_effect": "None",
-    "power": 50,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 50
   },
   {
     "id": "weapon_small_axe_diamond",
@@ -66,9 +56,7 @@
     "level": 20,
     "value": 70,
     "desc": "十分頑丈な小型斧。",
-    "use_effect": "None",
-    "power": 7,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 7
   }
 ]

@@ -6,10 +6,24 @@
     "level": 0,
     "value": 1,
     "desc": "汚れた水。腹を多少は満たせるが食中毒になる可能性がある。",
-    "use_effect": "Hunger_Heal",
-    "power": 1,
-    "send_llm": "食中毒になる可能性がある。",
-    "element": "水"
+    "element": "水",
+    "effects": [
+      {
+        "type": "heal_hunger",
+        "power": 1
+      },
+      {
+        "type": "add_status",
+        "power": 3,
+        "extra": {
+          "status_type": "HP_Damage",
+          "status_name": "腹痛",
+          "status_desc": "食中毒により、少しの間ダメージを受ける",
+          "status_duration": 5,
+          "gain_rate": 0.25
+        }
+      }
+    ]
   },
   {
     "id": "drink_clear_water",
@@ -18,10 +32,13 @@
     "level": 0,
     "value": 5,
     "desc": "飲料に適した水。スープなどの料理の材料にもなる。",
-    "use_effect": "Hunger_Heal",
-    "power": 3,
-    "send_llm": "",
-    "element": "水"
+    "element": "水",
+    "effects": [
+      {
+        "type": "heal_hunger",
+        "power": 3
+      }
+    ]
   },
   {
     "id": "drink_harb_tea",
@@ -30,10 +47,24 @@
     "level": 0,
     "value": 10,
     "desc": "体を温める香りのよい茶。気持ちを少し落ち着かせることが出来る。",
-    "use_effect": "Hunger_Heal",
-    "power": 3,
-    "send_llm": "気持ちを少し落ち着かせる。",
-    "element": ""
+    "element": "",
+    "effects": [
+      {
+        "type": "heal_hunger",
+        "power": 3
+      },
+      {
+        "type": "add_status",
+        "power": 1,
+        "extra": {
+          "status_type": "wis_mod",
+          "status_name": "安らぎ",
+          "status_desc": "気持ちを少し落ち着かせる。",
+          "status_duration": 2,
+          "gain_rate": 1.0
+        }
+      }
+    ]
   },
   {
     "id": "drink_small_beer",
@@ -42,9 +73,23 @@
     "level": 0,
     "value": 15,
     "desc": "短い休憩に向いた軽い酒。",
-    "use_effect": "Hunger_Heal",
-    "power": 3,
-    "send_llm": "少し酔っぱらう。",
-    "element": "お酒"
+    "element": "お酒",
+    "effects": [
+      {
+        "type": "heal_hunger",
+        "power": 3
+      },
+      {
+        "type": "add_status",
+        "power": -3,
+        "extra": {
+          "status_type": "dex_mod",
+          "status_name": "酔い",
+          "status_desc": "酔いにより、しばらくの間器用が少し低下する。",
+          "status_duration": 2,
+          "gain_rate": 0.5
+        }
+      }
+    ]
   }
 ]

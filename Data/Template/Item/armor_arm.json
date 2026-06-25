@@ -6,10 +6,8 @@
     "level": 0,
     "value": 20,
     "desc": "手を守る厚手の手袋。",
-    "use_effect": "None",
-    "power": 2,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 2
   },
   {
     "id": "armor_arm_armor_iron",
@@ -18,10 +16,8 @@
     "level": 10,
     "value": 40,
     "desc": "前腕まで覆う金属防具。",
-    "use_effect": "None",
-    "power": 4,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 4
   },
   {
     "id": "armor_arm_armor_diamond",
@@ -30,9 +26,7 @@
     "level": 20,
     "value": 60,
     "desc": "最大限の防御を発揮する金剛石の籠手。",
-    "use_effect": "None",
-    "power": 6,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 6
   }
 ]

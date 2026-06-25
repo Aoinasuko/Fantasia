@@ -39,9 +39,6 @@ from .items import (
     add_item_stack,
     can_add_item_stack,
     inventory_slot_count,
-    item_hunger_delta,
-    item_hp_delta,
-    item_sp_delta,
     item_label as format_item_label,
     item_rarity_color,
     item_tooltip_text,
@@ -4570,38 +4567,77 @@ class FantasiaApp(tk.Tk):
             else:
                 update_detail()
 
+        def select_item_target(item: dict[str, object]) -> str | None:
+            options = self.engine.item_use_target_options(item)
+            if len(options) <= 1:
+                return "player"
+            result = {"target": None}
+            dialog = self._create_modal_dialog("対象選択", 420, 360)
+            dialog.title("対象選択")
+            dialog.grid_columnconfigure(0, weight=1)
+            dialog.grid_rowconfigure(1, weight=1)
+            tk.Label(
+                dialog,
+                text=f"{item.get('name') or 'アイテム'} の使用対象",
+                bg=APP_DEEP_BG,
+                fg="#f2f2f2",
+                font=self.ui_fonts.bold(-2),
+                anchor="w",
+            ).grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 8))
+            target_list = tk.Listbox(
+                dialog,
+                bg=APP_PANEL_BG,
+                fg="#f2f2f2",
+                selectbackground="#263654",
+                relief="solid",
+                bd=1,
+                font=self.ui_fonts.normal(-2),
+            )
+            target_list.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 10))
+            for option in options:
+                target_list.insert("end", str(option.get("label") or option.get("name") or option.get("id") or "target"))
+            target_list.selection_set(0)
+            actions = tk.Frame(dialog, bg=APP_DEEP_BG)
+            actions.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 14))
+            actions.grid_columnconfigure(0, weight=1)
+
+            def choose() -> None:
+                selection = target_list.curselection()
+                if not selection:
+                    return
+                result["target"] = str(options[int(selection[0])].get("id") or "player")
+                dialog.destroy()
+
+            def cancel() -> None:
+                result["target"] = None
+                dialog.destroy()
+
+            self._instant_button(actions, "決定", choose).grid(row=0, column=1, sticky="e", padx=(0, 8))
+            self._instant_button(actions, "キャンセル", cancel).grid(row=0, column=2, sticky="e")
+            target_list.bind("<Double-Button-1>", lambda _event: choose())
+            self.wait_window(dialog)
+            return result["target"]
+
         def use_selected_item() -> None:
             index = selected_index(player_list)
             if index is None:
+                return
+            item = normalise_item(player_inventory[index])
+            target_id = select_item_target(item)
+            if target_id is None:
                 return
             used, message = use_inventory_item(player_inventory, index, language=language)
             if message:
                 self._append_inventory_event(f"> [使用] {message}")
             if used:
-                hp_event = self.engine.apply_player_hp_delta(
-                    item_hp_delta(used),
+                self.engine.apply_item_effects_to_target(
+                    used,
+                    target_id=target_id,
                     source="item",
-                    reason=str(used.get("name") or ""),
                     save_game=False,
                 )
-                if hp_event.get("line"):
-                    self._append_inventory_event(str(hp_event["line"]))
-                sp_event = self.engine.apply_player_sp_delta(
-                    item_sp_delta(used),
-                    source="item",
-                    reason=str(used.get("name") or ""),
-                    save_game=False,
-                )
-                if sp_event.get("line"):
-                    self._append_inventory_event(str(sp_event["line"]))
-                hunger_event = self.engine.apply_player_hunger_delta(
-                    item_hunger_delta(used),
-                    source="item",
-                    reason=str(used.get("name") or ""),
-                    save_game=False,
-                )
-                if hunger_event.get("line"):
-                    self._append_inventory_event(str(hunger_event["line"]))
+                if hasattr(self, "log_text"):
+                    self._set_log(self.engine.state.log_text(16))
                 self._save_inventory_change()
                 refresh()
 

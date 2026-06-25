@@ -6,10 +6,8 @@
     "level": 0,
     "value": 40,
     "desc": "耐久力は心もとないが、動きやすい胴防具。",
-    "use_effect": "None",
-    "power": 4,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 4
   },
   {
     "id": "armor_body_armor_bikini",
@@ -17,11 +15,9 @@
     "category": "armor_body",
     "level": 5,
     "value": 60,
-    "desc": "少しセクシーだが、十分な防御力を持つ。",
-    "use_effect": "None",
-    "power": 6,
-    "send_llm": "",
-    "element": ""
+    "desc": "少しセクシーだが、十分な防御力を持つアーマー。",
+    "element": "",
+    "defense": 6
   },
   {
     "id": "armor_body_armor_chain",
@@ -30,10 +26,8 @@
     "level": 5,
     "value": 60,
     "desc": "刃を受け流す金属鎧。",
-    "use_effect": "None",
-    "power": 6,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 6
   },
   {
     "id": "armor_body_armor_plate",
@@ -42,10 +36,8 @@
     "level": 5,
     "value": 60,
     "desc": "胴をしっかり守る胸当て。",
-    "use_effect": "None",
-    "power": 6,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 6
   },
   {
     "id": "armor_body_armor_iron",
@@ -54,10 +46,8 @@
     "level": 10,
     "value": 80,
     "desc": "十分な防御力を確保できる胴防具。",
-    "use_effect": "None",
-    "power": 8,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 8
   },
   {
     "id": "armor_body_armor_diamond",
@@ -66,9 +56,7 @@
     "level": 20,
     "value": 120,
     "desc": "最上級の耐久性を持つ胴防具。",
-    "use_effect": "None",
-    "power": 12,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 12
   }
 ]

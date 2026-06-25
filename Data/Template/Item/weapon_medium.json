@@ -6,10 +6,8 @@
     "level": 0,
     "value": 30,
     "desc": "標準的な木の片手剣。",
-    "use_effect": "None",
-    "power": 3,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 3
   },
   {
     "id": "weapon_medium_hammar_wood",
@@ -18,10 +16,8 @@
     "level": 0,
     "value": 40,
     "desc": "鎧越しに衝撃を通す鈍器。",
-    "use_effect": "None",
-    "power": 4,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 4
   },
   {
     "id": "weapon_medium_sword_iron",
@@ -30,10 +26,8 @@
     "level": 10,
     "value": 50,
     "desc": "標準的な鉄の片手剣。",
-    "use_effect": "None",
-    "power": 5,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 5
   },
   {
     "id": "weapon_medium_hammar_iron",
@@ -42,10 +36,8 @@
     "level": 10,
     "value": 60,
     "desc": "鎧越しに衝撃を通す鈍器。",
-    "use_effect": "None",
-    "power": 6,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 6
   },
   {
     "id": "weapon_medium_sword_diamond",
@@ -54,10 +46,8 @@
     "level": 20,
     "value": 70,
     "desc": "標準的な鉄の片手剣。",
-    "use_effect": "None",
-    "power": 7,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 7
   },
   {
     "id": "weapon_medium_hammar_diamond",
@@ -66,9 +56,7 @@
     "level": 20,
     "value": 80,
     "desc": "鎧越しに衝撃を通す鈍器。",
-    "use_effect": "None",
-    "power": 8,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 8
   }
 ]

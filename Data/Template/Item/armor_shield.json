@@ -6,10 +6,8 @@
     "level": 0,
     "value": 30,
     "desc": "扱いやすい標準的な小盾。",
-    "use_effect": "None",
-    "power": 3,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 3
   },
   {
     "id": "armor_shield_middle_wood",
@@ -18,10 +16,8 @@
     "level": 0,
     "value": 40,
     "desc": "扱いやすい標準的な盾。",
-    "use_effect": "None",
-    "power": 4,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 4
   },
   {
     "id": "armor_shield_big_wood",
@@ -30,10 +26,8 @@
     "level": 0,
     "value": 50,
     "desc": "扱いやすい標準的な大盾。",
-    "use_effect": "None",
-    "power": 5,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 5
   },
   {
     "id": "armor_shield_small_iron",
@@ -42,10 +36,8 @@
     "level": 10,
     "value": 50,
     "desc": "重いが頼れる金属の小盾。",
-    "use_effect": "None",
-    "power": 5,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 5
   },
   {
     "id": "armor_shield_middle_iron",
@@ -54,10 +46,8 @@
     "level": 10,
     "value": 70,
     "desc": "重いが頼れる金属の盾。",
-    "use_effect": "None",
-    "power": 7,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 7
   },
   {
     "id": "armor_shield_big_iron",
@@ -66,10 +56,8 @@
     "level": 10,
     "value": 90,
     "desc": "重いが頼れる金属の大盾。",
-    "use_effect": "None",
-    "power": 9,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 9
   },
   {
     "id": "armor_shield_small_diamond",
@@ -78,10 +66,8 @@
     "level": 20,
     "value": 80,
     "desc": "頑丈な小盾。",
-    "use_effect": "None",
-    "power": 8,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 8
   },
   {
     "id": "armor_shield_middle_diamond",
@@ -90,10 +76,8 @@
     "level": 20,
     "value": 100,
     "desc": "頑丈な盾。",
-    "use_effect": "None",
-    "power": 10,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 10
   },
   {
     "id": "armor_shield_big_diamond",
@@ -102,9 +86,7 @@
     "level": 20,
     "value": 120,
     "desc": "頑丈な大盾。",
-    "use_effect": "None",
-    "power": 12,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 12
   }
 ]

@@ -6,34 +6,55 @@
     "level": 0,
     "value": 20,
     "desc": "その場をしのぐことが出来る、保存食を召喚する巻物。",
-    "use_effect": "Send_LLM",
-    "power": 5,
-    "send_llm": "お腹を満たすことが出来る保存食を召喚する。",
-    "element": ""
+    "element": "",
+    "effects": [
+      {
+        "type": "spawn_item",
+        "power": 1,
+        "extra": {
+          "spawn_category": [
+            "food"
+          ],
+          "spawn_amount_min": 1,
+          "spawn_amount_max": 2,
+          "spawn_rate": 1.0
+        }
+      },
+      {
+        "type": "spawn_item",
+        "power": 1,
+        "extra": {
+          "spawn_category": [
+            "food"
+          ],
+          "spawn_amount_min": 1,
+          "spawn_amount_max": 2,
+          "spawn_rate": 0.5
+        }
+      }
+    ]
   },
   {
-    "id": "scroll_spark",
-    "name": "火花の巻物",
+    "id": "scroll_power",
+    "name": "力の巻物",
     "category": "scroll",
     "level": 0,
-    "value": 10,
-    "desc": "小さな炎を呼ぶ使い捨ての巻物。",
-    "use_effect": "Send_LLM",
-    "power": 5,
-    "send_llm": "小さな炎を発生させる。",
-    "element": ""
-  },
-  {
-    "id": "scroll_unlock",
-    "name": "解錠の巻物",
-    "category": "scroll",
-    "level": 0,
-    "value": 30,
-    "desc": "単純な鍵や封印に働きかける巻物。",
-    "use_effect": "Send_LLM",
-    "power": 5,
-    "send_llm": "単純な鍵や封印を解除する。",
-    "element": ""
+    "value": 50,
+    "desc": "一時的な力を与える巻物。",
+    "element": "",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 10,
+        "extra": {
+          "status_type": "Atk_Mod",
+          "status_name": "強化",
+          "status_desc": "攻撃力を一時的に増加する。",
+          "status_duration": 5,
+          "gain_rate": 1.0
+        }
+      }
+    ]
   },
   {
     "id": "scroll_protect",
@@ -42,9 +63,19 @@
     "level": 0,
     "value": 50,
     "desc": "一時的な守りを与える巻物。",
-    "use_effect": "Send_LLM",
-    "power": 5,
-    "send_llm": "一時的な守りを与える。",
-    "element": ""
+    "element": "",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 10,
+        "extra": {
+          "status_type": "Def_Mod",
+          "status_name": "防護",
+          "status_desc": "防御力を一時的に増加する。",
+          "status_duration": 5,
+          "gain_rate": 1.0
+        }
+      }
+    ]
   }
 ]

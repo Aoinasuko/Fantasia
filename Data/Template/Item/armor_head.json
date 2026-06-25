@@ -6,10 +6,8 @@
     "level": 0,
     "value": 10,
     "desc": "ないよりはマシな革の帽子。",
-    "use_effect": "None",
-    "power": 1,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 1
   },
   {
     "id": "armor_head_hat_silk",
@@ -18,10 +16,8 @@
     "level": 0,
     "value": 10,
     "desc": "見た目重視なシルクの帽子。",
-    "use_effect": "None",
-    "power": 1,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 1
   },
   {
     "id": "armor_head_wood",
@@ -30,10 +26,8 @@
     "level": 0,
     "value": 20,
     "desc": "帽子よりはマシな木のヘルム。",
-    "use_effect": "None",
-    "power": 2,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 2
   },
   {
     "id": "armor_head_wood_full",
@@ -42,10 +36,8 @@
     "level": 0,
     "value": 30,
     "desc": "顔全体を守る木のヘルム。",
-    "use_effect": "None",
-    "power": 3,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 3
   },
   {
     "id": "armor_head_iron",
@@ -54,10 +46,8 @@
     "level": 10,
     "value": 40,
     "desc": "十分な耐久性を持つ鉄のヘルム。",
-    "use_effect": "None",
-    "power": 4,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 4
   },
   {
     "id": "armor_head_iron_full",
@@ -66,10 +56,8 @@
     "level": 10,
     "value": 60,
     "desc": "顔全体を守る鉄のヘルム。",
-    "use_effect": "None",
-    "power": 6,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 6
   },
   {
     "id": "armor_head_diamond",
@@ -78,10 +66,8 @@
     "level": 20,
     "value": 60,
     "desc": "圧倒的な耐久力を持つ金剛石のヘルム。",
-    "use_effect": "None",
-    "power": 6,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 6
   },
   {
     "id": "armor_head_diamond_full",
@@ -90,9 +76,7 @@
     "level": 20,
     "value": 80,
     "desc": "顔全体を守る金剛石のヘルム。",
-    "use_effect": "None",
-    "power": 8,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 8
   }
 ]

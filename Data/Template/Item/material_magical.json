@@ -6,9 +6,6 @@
     "level": 0,
     "value": 20,
     "desc": "術式の触媒になる細かな粉。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": ""
   },
   {
@@ -18,9 +15,6 @@
     "level": 0,
     "value": 40,
     "desc": "自然魔力を宿した液状の結晶。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": ""
   },
   {
@@ -30,9 +24,6 @@
     "level": 0,
     "value": 55,
     "desc": "淡い星明かりのような魔力を宿した結晶。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": "光"
   }
 ]

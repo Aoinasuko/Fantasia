@@ -6,9 +6,6 @@
     "level": 0,
     "value": 5,
     "desc": "何かが書かれたメモ。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": ""
   },
   {
@@ -18,9 +15,6 @@
     "level": 0,
     "value": 20,
     "desc": "周辺の地形が大まかに描かれた地図。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": ""
   },
   {
@@ -30,9 +24,6 @@
     "level": 0,
     "value": 15,
     "desc": "道中の噂と記録が書かれた日誌。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": ""
   },
   {
@@ -42,9 +33,6 @@
     "level": 0,
     "value": 100,
     "desc": "恐らく宝のありかが書かれた地図。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": ""
   }
 ]

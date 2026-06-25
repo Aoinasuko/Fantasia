@@ -6,10 +6,8 @@
     "level": 0,
     "value": 10,
     "desc": "投げるのにちょうどいい石が詰まった袋。",
-    "use_effect": "None",
-    "power": 1,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 1
   },
   {
     "id": "weapon_range_bow",
@@ -18,10 +16,8 @@
     "level": 0,
     "value": 40,
     "desc": "離れた相手を狙える遠距離武器。",
-    "use_effect": "None",
-    "power": 4,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 4
   },
   {
     "id": "weapon_range_crossbow",
@@ -30,10 +26,8 @@
     "level": 0,
     "value": 60,
     "desc": "強い弦で矢を撃ち出す武器。",
-    "use_effect": "None",
-    "power": 6,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 6
   },
   {
     "id": "weapon_range_knife",
@@ -42,9 +36,7 @@
     "level": 0,
     "value": 30,
     "desc": "複数本を束ねた投擲武器。",
-    "use_effect": "None",
-    "power": 3,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 3
   }
 ]

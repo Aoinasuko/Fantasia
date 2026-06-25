@@ -14,13 +14,10 @@ from .items import (
     WEAPON_CATEGORIES,
     equipment_slot_for_category,
     is_equipment_item,
-    item_hp_delta,
-    item_hunger_delta,
-    item_label,
-    item_sp_delta,
     item_value,
     make_item,
     normalise_category,
+    normalise_item_effects,
     normalise_item,
     normalise_rarity,
 )
@@ -518,9 +515,7 @@ def _build_consumable_result(
     if category not in CONSUMABLE_CATEGORIES or category in COOKING_CATEGORIES:
         category = "potion"
     rarity = _upgrade_result_rarity(plan.base_rarity, craft_roll)
-    power_base = _ingredient_power_total(items)
-    power = _scaled_power(power_base, craft_roll, failure_min=0.5, failure_max=1.0, success_min=1.5, success_max=2.0, critical=3.0)
-    effect = _primary_effect_from_response(raw, category, items, prefer_hunger=False)
+    effects = _combined_consumable_effects(items, craft_roll)
     name = _safe_name(raw, "合成消耗品")
     description = str(raw.get("description") or raw.get("desc") or "素材を調合して作られた消耗品。")
     value = _scaled_price(_ingredient_value_total(items), craft_roll)
@@ -532,16 +527,12 @@ def _build_consumable_result(
         rarity=rarity,
         quantity=1,
         source="craft",
-        effects=[_effect_with_power(effect, power)] if power > 0 else [],
+        effects=effects,
     )
-    result["use_effect"] = _use_effect_for_effect(effect)
-    result["power"] = power
-    result["craft_power_base"] = power_base
-    result["craft_power_delta"] = power
+    result["craft_effect_multiplier"] = _consumable_effect_multiplier(craft_roll)
     result["craft_result_kind"] = plan.kind
     result["craft_ingredients"] = _collect_item_uuids(items)
     result["craft_roll"] = dict(craft_roll)
-    _copy_non_power_effects(raw, result)
     return normalise_item(result, source="craft", fallback_category=category)
 
 
@@ -556,8 +547,7 @@ def _build_cooking_result(
     if category not in COOKING_CATEGORIES:
         category = "food"
     rarity = _upgrade_result_rarity(plan.base_rarity, craft_roll)
-    power_base = _ingredient_power_total(items, prefer_hunger=True)
-    hunger_delta = _scaled_power(power_base, craft_roll, failure_min=1.0, failure_max=1.0, success_min=1.5, success_max=2.0, critical=3.0)
+    effects = _combined_consumable_effects(items, craft_roll)
     name = _safe_name(raw, "料理")
     description = str(raw.get("description") or raw.get("desc") or "素材を調理して作られた料理。")
     value = _scaled_price(_ingredient_value_total(items), craft_roll)
@@ -569,16 +559,12 @@ def _build_cooking_result(
         rarity=rarity,
         quantity=1,
         source="craft",
-        effects=[{"type": "hunger", "value": hunger_delta}] if hunger_delta > 0 else [],
+        effects=effects,
     )
-    result["use_effect"] = "Hunger_Heal"
-    result["power"] = hunger_delta
-    result["craft_hunger_base"] = power_base
-    result["craft_hunger_delta"] = hunger_delta
+    result["craft_effect_multiplier"] = _consumable_effect_multiplier(craft_roll)
     result["craft_result_kind"] = plan.kind
     result["craft_ingredients"] = _collect_item_uuids(items)
     result["craft_roll"] = dict(craft_roll)
-    _copy_non_power_effects(raw, result)
     return normalise_item(result, source="craft", fallback_category=category)
 
 
@@ -593,8 +579,6 @@ def _response_item(response: dict[str, Any]) -> dict[str, Any]:
         "category": str(response.get("category") or ""),
         "description": str(response.get("description") or response.get("narration") or ""),
         "rarity": str(response.get("rarity") or ""),
-        "use_effect": response.get("use_effect"),
-        "effects": response.get("effects"),
     }
 
 
@@ -622,28 +606,6 @@ def _shift_rarity(rarity: str, steps: int) -> str:
     return RARITY_ORDER[index]
 
 
-def _scaled_power(
-    base: int,
-    craft_roll: dict[str, Any],
-    *,
-    failure_min: float,
-    failure_max: float,
-    success_min: float,
-    success_max: float,
-    critical: float,
-) -> int:
-    base = max(0, int(base or 0))
-    if base <= 0:
-        return 0
-    if bool(craft_roll.get("critical_success")):
-        return max(1, int(base * critical + 0.5))
-    if bool(craft_roll.get("success")):
-        factor = _roll_margin_factor(craft_roll, success_min, success_max)
-    else:
-        factor = _roll_failure_factor(craft_roll, failure_min, failure_max)
-    return max(1, int(base * factor + 0.5))
-
-
 def _scaled_price(base_value: int, craft_roll: dict[str, Any]) -> int:
     base_value = max(0, int(base_value or 0))
     if bool(craft_roll.get("critical_success")):
@@ -655,125 +617,93 @@ def _scaled_price(base_value: int, craft_roll: dict[str, Any]) -> int:
     return max(1, int(base_value * factor + 0.5))
 
 
-def _roll_margin_factor(craft_roll: dict[str, Any], minimum: float, maximum: float) -> float:
-    target = _safe_int(craft_roll.get("target"), 10)
-    total = _safe_int(craft_roll.get("total"), target)
-    margin = max(0, total - target)
-    return min(maximum, minimum + (maximum - minimum) * min(margin, 6) / 6.0)
-
-
-def _roll_failure_factor(craft_roll: dict[str, Any], minimum: float, maximum: float) -> float:
-    target = max(1, _safe_int(craft_roll.get("target"), 10))
-    total = max(0, _safe_int(craft_roll.get("total"), 0))
-    ratio = min(1.0, total / target)
-    return min(maximum, minimum + (maximum - minimum) * ratio)
-
-
-def _ingredient_power_total(items: list[dict[str, Any]], *, prefer_hunger: bool = False) -> int:
-    total = 0
-    for item in items:
-        quantity = max(1, _safe_int(item.get("quantity"), 1))
-        power = _safe_int(item.get("power"), 0)
-        if power <= 0:
-            if prefer_hunger:
-                power = item_hunger_delta(item)
-            else:
-                power = max(item_hp_delta(item), item_sp_delta(item), item_hunger_delta(item))
-        total += max(0, power) * quantity
-    return total
-
-
 def _ingredient_value_total(items: list[dict[str, Any]]) -> int:
     return sum(item_value(item) * max(1, _safe_int(item.get("quantity"), 1)) for item in items)
 
 
-def _primary_effect_from_response(raw: dict[str, Any], category: str, items: list[dict[str, Any]], *, prefer_hunger: bool) -> str:
-    use_effect = str(raw.get("use_effect") or "").strip()
-    lowered = use_effect.casefold()
-    if "sp" in lowered or "mana" in lowered:
-        return "restore_sp"
-    if "hunger" in lowered or "meal" in lowered or "food" in lowered:
-        return "hunger"
-    if "hp" in lowered or "heal" in lowered or "cure" in lowered:
-        return "heal"
-    effects = raw.get("effects")
-    if isinstance(effects, list):
-        for effect in effects:
-            if not isinstance(effect, dict):
+def _consumable_effect_multiplier(craft_roll: dict[str, Any]) -> int:
+    if bool(craft_roll.get("critical_success")):
+        return 3
+    if bool(craft_roll.get("success")):
+        return 2
+    return 1
+
+
+def _combined_consumable_effects(items: list[dict[str, Any]], craft_roll: dict[str, Any]) -> list[dict[str, Any]]:
+    multiplier = _consumable_effect_multiplier(craft_roll)
+    heal_totals: dict[str, int] = {}
+    damage_effects: dict[str, dict[str, Any]] = {}
+    add_status: dict[str, dict[str, Any]] = {}
+    remove_status_types: list[str] = []
+    spawn_effects: list[dict[str, Any]] = []
+    for item in items:
+        quantity = max(1, _safe_int(item.get("quantity"), 1))
+        for effect in normalise_item_effects(item.get("effects")):
+            effect_type = str(effect.get("type") or "")
+            if effect_type in {"heal_hp", "heal_sp", "heal_hunger"}:
+                heal_totals[effect_type] = heal_totals.get(effect_type, 0) + max(0, _safe_int(effect.get("power"), 0)) * quantity
                 continue
-            effect_type = str(effect.get("type") or effect.get("name") or effect.get("kind") or "").strip().casefold()
-            if effect_type in {"restore_sp", "recover_sp", "sp_restore", "mana"}:
-                return "restore_sp"
-            if effect_type in {"hunger", "hunger_heal", "restore_hunger", "food", "meal"}:
-                return "hunger"
-            if effect_type in {"heal", "healing", "restore_hp", "recover_hp", "cure"}:
-                return "heal"
-    if prefer_hunger or category in COOKING_CATEGORIES:
-        return "hunger"
-    hp = sum(max(0, item_hp_delta(item)) for item in items)
-    sp = sum(max(0, item_sp_delta(item)) for item in items)
-    hunger = sum(max(0, item_hunger_delta(item)) for item in items)
-    if sp > hp and sp >= hunger:
-        return "restore_sp"
-    if hunger > hp and hunger >= sp:
-        return "hunger"
-    return "heal"
-
-
-def _effect_with_power(effect: str, power: int) -> dict[str, Any]:
-    if effect == "restore_sp":
-        return {"type": "restore_sp", "value": power}
-    if effect == "hunger":
-        return {"type": "hunger", "value": power}
-    return {"type": "heal", "value": power}
-
-
-def _use_effect_for_effect(effect: str) -> str:
-    if effect == "restore_sp":
-        return "SP_Heal"
-    if effect == "hunger":
-        return "Hunger_Heal"
-    return "HP_Heal"
-
-
-def _copy_non_power_effects(raw: dict[str, Any], result: dict[str, Any]) -> None:
-    effects = result.get("effects") if isinstance(result.get("effects"), list) else []
-    raw_effects = raw.get("effects") if isinstance(raw.get("effects"), list) else []
-    for effect in raw_effects:
-        if not isinstance(effect, dict) or _effect_is_primary_power(effect):
-            continue
-        effects.append(dict(effect))
-    result["effects"] = _dedupe_effects(effects)[:8]
-    if raw.get("send_llm"):
-        result["send_llm"] = str(raw.get("send_llm") or "")
-
-
-def _effect_is_primary_power(effect: dict[str, Any]) -> bool:
-    effect_type = str(effect.get("type") or effect.get("name") or effect.get("kind") or "").strip().casefold()
-    return (
-        effect_type in {
-            "heal",
-            "healing",
-            "restore_hp",
-            "recover_hp",
-            "restore_sp",
-            "recover_sp",
-            "sp_restore",
-            "hunger",
-            "hunger_heal",
-            "restore_hunger",
-            "recover_hunger",
-            "hunger_restore",
-            "meal",
-            "food",
-        }
-        or "hp_delta" in effect
-        or "sp_delta" in effect
-        or "hunger_delta" in effect
-        or "player_hp_delta" in effect
-        or "player_sp_delta" in effect
-        or "player_hunger_delta" in effect
-    )
+            if effect_type == "damage_hp":
+                extra = effect.get("extra") if isinstance(effect.get("extra"), dict) else {}
+                key = f"{extra.get('damage_type') or 'physical'}|{extra.get('dependency_status') or ''}"
+                current = damage_effects.setdefault(
+                    key,
+                    {"type": "damage_hp", "power": 0, "extra": dict(extra)},
+                )
+                current["power"] = _safe_int(current.get("power"), 0) + max(0, _safe_int(effect.get("power"), 0)) * quantity
+                continue
+            if effect_type == "spawn_item":
+                spawn_effects.append(deepcopy(effect))
+                continue
+            if effect_type == "add_status":
+                extra = effect.get("extra") if isinstance(effect.get("extra"), dict) else {}
+                status_type = str(extra.get("status_type") or "").strip()
+                if not status_type:
+                    continue
+                current = add_status.setdefault(
+                    status_type,
+                    {
+                        "type": "add_status",
+                        "power": 0,
+                        "extra": dict(extra),
+                    },
+                )
+                current["power"] = _safe_int(current.get("power"), 0) + _safe_int(effect.get("power"), 0) * quantity
+                current_extra = current.get("extra") if isinstance(current.get("extra"), dict) else {}
+                current_extra["status_duration"] = max(
+                    _safe_int(current_extra.get("status_duration"), 0),
+                    _safe_int(extra.get("status_duration"), 0),
+                )
+                current_extra["gain_rate"] = max(
+                    _safe_float(current_extra.get("gain_rate"), 1.0),
+                    _safe_float(extra.get("gain_rate"), 1.0),
+                )
+                current["extra"] = current_extra
+                continue
+            if effect_type == "remove_status":
+                extra = effect.get("extra") if isinstance(effect.get("extra"), dict) else {}
+                status_types = extra.get("status_type")
+                if isinstance(status_types, list):
+                    remove_status_types.extend(str(value) for value in status_types if str(value).strip())
+    combined: list[dict[str, Any]] = []
+    for effect_type, power in heal_totals.items():
+        if power > 0:
+            combined.append({"type": effect_type, "power": max(1, power * multiplier)})
+    for effect in damage_effects.values():
+        power = max(0, _safe_int(effect.get("power"), 0))
+        if power > 0:
+            effect["power"] = max(1, power * multiplier)
+            combined.append(effect)
+    for effect in add_status.values():
+        power = _safe_int(effect.get("power"), 0)
+        if power:
+            effect["power"] = power * multiplier
+        combined.append(effect)
+    unique_removals = _dedupe_texts(remove_status_types)
+    if unique_removals:
+        combined.append({"type": "remove_status", "extra": {"status_type": unique_removals}})
+    combined.extend(_dedupe_effects(spawn_effects))
+    return normalise_item_effects(combined)
 
 
 def _safe_name(raw: dict[str, Any], fallback: str) -> str:
@@ -828,6 +758,19 @@ def _dedupe_effects(values: list[Any]) -> list[Any]:
     return result
 
 
+def _dedupe_texts(values: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value or "").strip()
+        key = text.casefold()
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        result.append(text)
+    return result
+
+
 def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
@@ -837,5 +780,14 @@ def _safe_int(value: Any, default: int = 0) -> int:
         if value is None or value == "":
             return default
         return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
     except (TypeError, ValueError):
         return default

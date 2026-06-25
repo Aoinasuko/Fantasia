@@ -6,9 +6,6 @@
     "level": 0,
     "value": 10,
     "desc": "武具や薬の材料になる鋭い爪。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": ""
   },
   {
@@ -18,9 +15,6 @@
     "level": 0,
     "value": 10,
     "desc": "防具や服の素材になる皮。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": ""
   },
   {
@@ -30,9 +24,6 @@
     "level": 0,
     "value": 20,
     "desc": "薄く魔力を帯びた生物素材。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": ""
   },
   {
@@ -42,9 +33,6 @@
     "level": 0,
     "value": 20,
     "desc": "魔術の材料にもなる魔物の体液。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": ""
   }
 ]

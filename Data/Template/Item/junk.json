@@ -6,9 +6,6 @@
     "level": 0,
     "value": 2,
     "desc": "売るか素材にする程度の古い釘。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": ""
   },
   {
@@ -18,9 +15,6 @@
     "level": 0,
     "value": 2,
     "desc": "何かの器だった陶器の破片。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": ""
   },
   {
@@ -30,9 +24,6 @@
     "level": 0,
     "value": 4,
     "desc": "修理すれば使えるかもしれない部品。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": ""
   },
   {
@@ -42,9 +33,6 @@
     "level": 0,
     "value": 10,
     "desc": "壊れた武器。修理すれば使えそうだ。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": "武器の素材"
   },
   {
@@ -54,9 +42,6 @@
     "level": 0,
     "value": 10,
     "desc": "壊れた防具。修理すれば使えそうだ。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": "防具の素材"
   },
   {
@@ -66,9 +51,6 @@
     "level": 0,
     "value": 15,
     "desc": "壊れた護符。修理すれば使えそうだ。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": "護符の素材"
   },
   {
@@ -78,9 +60,6 @@
     "level": 0,
     "value": 15,
     "desc": "壊れた指輪。修理すれば使えそうだ。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": "指輪の素材"
   }
 ]

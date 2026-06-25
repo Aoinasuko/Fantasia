@@ -6,9 +6,6 @@
     "level": 0,
     "value": 10,
     "desc": "動きやすく丈夫な服。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": ""
   },
   {
@@ -18,10 +15,8 @@
     "level": 0,
     "value": 20,
     "desc": "寒さと小傷を防ぐ外套。",
-    "use_effect": "None",
-    "power": 1,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 1
   },
   {
     "id": "armor_cloth_robe",
@@ -30,9 +25,7 @@
     "level": 0,
     "value": 40,
     "desc": "十分な守りを授けるローブ。",
-    "use_effect": "None",
-    "power": 2,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 2
   }
 ]

@@ -64,7 +64,15 @@ from .items import (
     is_equipment_item,
     choose_item_template,
     item_template_by_id,
+    item_add_status_effects,
+    item_damage_hp_delta,
+    item_has_single_target_effect,
     item_label,
+    item_remove_status_effects,
+    item_spawn_effects,
+    item_hunger_delta,
+    item_hp_delta,
+    item_sp_delta,
     make_item,
     make_item_from_template_id,
     normalise_item,
@@ -144,6 +152,7 @@ from .status_effects import (
     SURRENDERED_STATUS_ID,
     STATUS_IMMUNITY_EFFECT_IDS,
     canonical_status_effect_id,
+    status_effect_label,
     _contextual_incapacitated_status_details,
     _global_status_target,
     _merge_status_effect,
@@ -4197,9 +4206,9 @@ class GameEngine:
                     "戻り値は narration と item を中心にします。item は name, category, description を返してください。"
                     "category は次のIDから選んでください: "
                     f"{categories}。"
-                    "レアリティ、価格、攻撃力、防御力、効果量、空腹回復量、power はゲーム側が決定します。"
+                    "レアリティ、価格、攻撃力、防御力、効果量、空腹回復量はゲーム側が決定します。"
                     "武具強化では item に name と description だけを返し、元装備のカテゴリや能力値を変更しないでください。"
-                    "消耗品と料理では、必要であれば use_effect または effects で効果種別だけを示してください。効果量は書かないでください。"
+                    "消耗品と料理の使用効果は素材の effects からゲーム側が合成するため、item に effects を書かないでください。"
                     "存在しない素材を勝手に足さず、素材から自然に作れる物にしてください。"
                 ),
             },
@@ -15697,6 +15706,341 @@ class GameEngine:
     ) -> list[str]:
         return self.remove_status_effect(target, status, source=source, reason="treatment", treatment=treatment, save_game=save_game)
 
+    def item_use_target_options(self, item: dict[str, Any]) -> list[dict[str, Any]]:
+        options = [
+            {
+                "id": "player",
+                "type": "player",
+                "name": self.state.player_name or "Player",
+                "label": self.state.player_name or "Player",
+            }
+        ]
+        if not item_has_single_target_effect(item):
+            return options
+        location_name = self.state.current_location or self.state.world_data.starting_location
+        for character in self.state.world_data.characters.values():
+            if not isinstance(character, Character) or character.flags.get("is_player"):
+                continue
+            if _character_state_is_dead(character):
+                continue
+            if not _actor_present_at(character.location, character.state, character.flags, location_name):
+                continue
+            if not self._character_matches_active_facility(character):
+                continue
+            hostile = bool(character.flags.get("hostile") or character.extra.get("hostile"))
+            role = str(character.role or character.category or "").strip()
+            suffix = " / 敵対" if hostile else (f" / {role}" if role else "")
+            options.append(
+                {
+                    "id": character.uuid,
+                    "type": "npc",
+                    "name": character.name,
+                    "label": f"{character.name}{suffix}",
+                    "hostile": hostile,
+                    "role": role,
+                }
+            )
+        return options
+
+    def apply_item_effects_to_target(
+        self,
+        item: dict[str, Any],
+        *,
+        target_id: str = "player",
+        source: str = "item",
+        save_game: bool = True,
+    ) -> list[str]:
+        target = self._item_use_target_character(target_id)
+        target_is_player = target is None or bool(target.flags.get("is_player")) or target.uuid == self.state.player_uuid
+        target_label = self.state.player_name or "Player" if target_is_player else target.name
+        user_attributes = self._player_attributes()
+        lines: list[str] = []
+        hp_delta = item_hp_delta(item) + item_damage_hp_delta(item, user_attributes=user_attributes)
+        sp_delta = item_sp_delta(item)
+        hunger_delta = item_hunger_delta(item)
+        if target_is_player:
+            if hp_delta:
+                event = self.apply_player_hp_delta(hp_delta, source=source, reason=str(item.get("name") or ""), save_game=False)
+                if event.get("line"):
+                    lines.append(str(event["line"]))
+            if sp_delta:
+                event = self.apply_player_sp_delta(sp_delta, source=source, reason=str(item.get("name") or ""), save_game=False)
+                if event.get("line"):
+                    lines.append(str(event["line"]))
+            if hunger_delta:
+                event = self.apply_player_hunger_delta(hunger_delta, source=source, reason=str(item.get("name") or ""), save_game=False)
+                if event.get("line"):
+                    lines.append(str(event["line"]))
+            lines.extend(self._apply_item_status_effects_to_player(item, source=source, reason=str(item.get("name") or "")))
+        elif target is not None:
+            if hunger_delta > 0:
+                hp_delta += hunger_delta
+                hunger_delta = 0
+            if hp_delta:
+                lines.extend(self._apply_character_hp_delta(target, hp_delta, source=source))
+            if sp_delta:
+                lines.extend(self._apply_character_sp_delta(target, sp_delta, source=source))
+            if hunger_delta:
+                lines.extend(self._apply_character_hunger_delta(target, hunger_delta, source=source))
+            lines.extend(self._apply_item_status_effects_to_character(target, item, source=source, reason=str(item.get("name") or "")))
+            harmful = self._item_harmful_confidence(item, target, applied_lines=lines)
+            self.state.world_data.extra.setdefault("item_harmful_judgements", []).append(
+                {
+                    "item": str(item.get("name") or ""),
+                    "target_uuid": target.uuid,
+                    "target": target.name,
+                    "harmful": harmful,
+                    "location": self.state.current_location,
+                    "day": self.state.day,
+                }
+            )
+            if harmful >= 0.5:
+                lines.extend(self._apply_npc_affinity_delta(target, -10, source="item_harm", reason=str(item.get("name") or "")))
+            if harmful >= 0.75 and not target.flags.get("is_player"):
+                target.flags["hostile"] = True
+                target.extra["hostile"] = True
+                lines.append(f"> [敵対] {target.name} はあなたを敵とみなした。")
+        spawn_lines = self._apply_item_spawn_effects(item, source=source)
+        lines.extend(spawn_lines)
+        if not lines:
+            lines.append(f"> [使用] {target_label}には目立った変化がなかった。")
+        self.state.display_log.extend(line for line in lines if str(line).strip())
+        if save_game:
+            self.save_game()
+        return lines
+
+    def _item_use_target_character(self, target_id: str) -> Character | None:
+        text = str(target_id or "").strip()
+        if not text or text == "player":
+            return None
+        return self.state.world_data.character(text)
+
+    def _apply_character_hp_delta(self, character: Character, delta: int, *, source: str) -> list[str]:
+        max_hp = max(1, _safe_int(character.max_hp, _character_calculated_max_hp(character)))
+        old_hp = max(0, min(max_hp, _safe_int(character.current_hp, max_hp)))
+        character.max_hp = max_hp
+        character.current_hp = max(0, min(max_hp, old_hp + _safe_int(delta, 0)))
+        character.extra["current_hp"] = character.current_hp
+        character.extra["max_hp"] = max_hp
+        sign = f"+{character.current_hp - old_hp}" if character.current_hp >= old_hp else str(character.current_hp - old_hp)
+        lines = [f"> [HP] {character.name}: {old_hp}/{max_hp} -> {character.current_hp}/{max_hp} ({sign})"]
+        if character.current_hp <= 0:
+            self._mark_character_dead(character, source=source)
+            lines.append(f"> [戦闘不能] {character.name} は倒れた。")
+        else:
+            self._sync_companion_party_entry(character)
+        return lines
+
+    def _apply_character_sp_delta(self, character: Character, delta: int, *, source: str) -> list[str]:
+        max_sp = max(1, _safe_int(character.max_sp, _character_calculated_max_sp(character)))
+        old_sp = max(0, min(max_sp, _safe_int(character.current_sp, max_sp)))
+        character.max_sp = max_sp
+        character.current_sp = max(0, min(max_sp, old_sp + _safe_int(delta, 0)))
+        character.extra["current_sp"] = character.current_sp
+        character.extra["max_sp"] = max_sp
+        sign = f"+{character.current_sp - old_sp}" if character.current_sp >= old_sp else str(character.current_sp - old_sp)
+        self._sync_companion_party_entry(character)
+        return [f"> [SP] {character.name}: {old_sp}/{max_sp} -> {character.current_sp}/{max_sp} ({sign})"]
+
+    def _apply_character_hunger_delta(self, character: Character, delta: int, *, source: str) -> list[str]:
+        max_hunger = max(1, _safe_int(character.max_hunger, 50))
+        old_hunger = max(0, min(max_hunger, _safe_int(character.hunger, max_hunger)))
+        character.max_hunger = max_hunger
+        character.hunger = max(0, min(max_hunger, old_hunger + _safe_int(delta, 0)))
+        character.extra["hunger"] = character.hunger
+        sign = f"+{character.hunger - old_hunger}" if character.hunger >= old_hunger else str(character.hunger - old_hunger)
+        self._sync_companion_party_entry(character)
+        return [f"> [空腹度] {character.name}: {old_hunger}/{max_hunger} -> {character.hunger}/{max_hunger} ({sign})"]
+
+    def _apply_item_status_effects_to_player(self, item: dict[str, Any], *, source: str, reason: str = "") -> list[str]:
+        applied, removed = self._apply_item_status_effect_entries("player", None, item, source=source, reason=reason)
+        return [_status_effect_applied_line(entry) for entry in applied] + [_status_effect_removed_line(entry) for entry in removed]
+
+    def _apply_item_status_effects_to_character(self, character: Character, item: dict[str, Any], *, source: str, reason: str = "") -> list[str]:
+        applied, removed = self._apply_item_status_effect_entries("character", character, item, source=source, reason=reason)
+        return [_status_effect_applied_line(entry) for entry in applied] + [_status_effect_removed_line(entry) for entry in removed]
+
+    def _apply_item_status_effect_entries(
+        self,
+        kind: str,
+        character: Character | None,
+        item: dict[str, Any],
+        *,
+        source: str,
+        reason: str,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        if kind == "player":
+            target_name = "player"
+            status_list = self.state.status_effects
+            label = self.state.player_name or "Player"
+        elif character is not None:
+            target_name = character.name
+            status_list = character.status_effects
+            label = character.name
+        else:
+            return [], []
+        payloads: list[dict[str, Any]] = []
+        for effect in item_add_status_effects(item):
+            extra = effect.get("extra") if isinstance(effect.get("extra"), dict) else {}
+            gain_rate = max(0.0, min(1.0, _safe_float(extra.get("gain_rate"), 1.0)))
+            if gain_rate < 1.0 and random.random() > gain_rate:
+                continue
+            status_type = canonical_status_effect_id(extra.get("status_type")) or str(extra.get("status_type") or "").strip()
+            if not status_type:
+                continue
+            power = _safe_int(effect.get("power"), 0)
+            payload = {
+                "effect_id": status_type,
+                "name": str(extra.get("status_name") or status_effect_label(status_type)),
+                "description": str(extra.get("status_desc") or ""),
+                "duration": _safe_int(extra.get("status_duration"), 0),
+                "power": power,
+                "amount": power,
+                "source": source,
+            }
+            for key in ("element", "target_element", "element_type"):
+                if extra.get(key) not in (None, "", [], {}):
+                    payload[key] = extra.get(key)
+            payloads.append(payload)
+        effects = [_normalise_status_effect(payload, source=source) for payload in payloads]
+        effects = [self._enrich_persistent_status_effect(effect) for effect in effects if effect]
+        if kind == "player":
+            effects = [effect for effect in effects if not self._player_is_immune_to_status(effect)]
+        for effect in effects:
+            _merge_status_effect(status_list, effect)
+        remove_payloads: list[dict[str, Any]] = []
+        for effect in item_remove_status_effects(item):
+            extra = effect.get("extra") if isinstance(effect.get("extra"), dict) else {}
+            status_types = extra.get("status_type")
+            if not isinstance(status_types, list):
+                status_types = [status_types]
+            for status_type in status_types:
+                text = str(status_type or "").strip()
+                if text:
+                    remove_payloads.append({"effect_id": canonical_status_effect_id(text) or text, "name": status_effect_label(text)})
+        remove_effects = [_normalise_status_effect(payload) for payload in remove_payloads]
+        remove_keys = {_status_effect_merge_key(effect) for effect in remove_effects if effect.get("name")}
+        remove_ids = {_status_effect_id(effect) for effect in remove_effects}
+        remove_ids.discard("")
+        removed = [
+            effect
+            for effect in status_list
+            if _status_effect_merge_key(effect) in remove_keys or (not remove_keys and _status_effect_id(effect) in remove_ids)
+        ]
+        if removed:
+            kept = [
+                effect
+                for effect in status_list
+                if _status_effect_merge_key(effect) not in remove_keys and (remove_keys or _status_effect_id(effect) not in remove_ids)
+            ]
+            status_list[:] = kept
+        if kind == "player":
+            self._sync_status_target("player", target_name, status_list)
+        elif character is not None:
+            character.status_effects = list(status_list)
+            self._sync_companion_party_entry(character)
+        applied_entries = [{"target_type": kind, "target": target_name, "label": label, "effect": effect} for effect in effects]
+        removed_entries = [
+            {
+                "target_type": kind,
+                "target": target_name,
+                "label": label,
+                "effect": effect,
+                "source": source,
+                "reason": reason,
+                "treatment": str(item.get("name") or ""),
+            }
+            for effect in removed
+        ]
+        return applied_entries, removed_entries
+
+    def _apply_item_spawn_effects(self, item: dict[str, Any], *, source: str) -> list[str]:
+        effects = item_spawn_effects(item)
+        if not effects:
+            return []
+        location_name = self.state.current_location or self.state.world_data.starting_location
+        subnode_id = self._current_subnode_id(location_name) if location_name else ""
+        inventory = self._bone_file_drop_inventory(location_name, subnode_id)
+        lines: list[str] = []
+        for effect_index, effect in enumerate(effects):
+            extra = effect.get("extra") if isinstance(effect.get("extra"), dict) else {}
+            spawn_rate = max(0.0, min(1.0, _safe_float(extra.get("spawn_rate"), 1.0)))
+            if random.random() > spawn_rate:
+                continue
+            categories = [str(value) for value in _as_list(extra.get("spawn_category")) if str(value).strip()]
+            if not categories:
+                continue
+            amount_min = max(1, _safe_int(extra.get("spawn_amount_min"), 1))
+            amount_max = max(amount_min, _safe_int(extra.get("spawn_amount_max"), amount_min))
+            amount = random.randint(amount_min, amount_max)
+            danger = max(0, _safe_int(effect.get("power"), 0))
+            spawned: list[dict[str, Any]] = []
+            for index in range(amount):
+                category = random.choice(categories)
+                spawned_item = generate_reward_item(
+                    category,
+                    context=f"item_spawn:{item.get('name') or ''}",
+                    danger_level=danger,
+                    seed=f"{self.state.world_name}:{location_name}:{subnode_id}:{self.state.day}:{effect_index}:{index}",
+                )
+                add_item_stack(inventory, spawned_item, source="item_spawn")
+                spawned.append(spawned_item)
+            if spawned:
+                names = "、".join(str(entry.get("name") or "アイテム") for entry in spawned)
+                lines.append(f"> [アイテム出現] {names} が周囲に現れた。")
+        return lines
+
+    def _item_harmful_confidence(self, item: dict[str, Any], target: Character, *, applied_lines: list[str]) -> float:
+        fallback = 1.0 if item_damage_hp_delta(item, user_attributes=self._player_attributes()) < 0 else 0.0
+        context = {
+            "item": _compact_item_for_ai(item),
+            "target": _character_ai_context(target),
+            "applied_lines": applied_lines[-6:],
+            "current_location": self.state.current_location,
+        }
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "あなたはRPGのNPC反応判定AIです。"
+                    "プレイヤーがNPCにアイテムを使った行為が対象NPCにとって有害かを0.0から1.0で返してください。"
+                    "0.0は完全に無害または有益、0.5以上は害意または危険、1.0は明確な攻撃です。"
+                    "JSONのみで {\"harmful\": 0.0} の形式で返してください。"
+                ),
+            },
+            {"role": "user", "content": _ai_json(context)},
+        ]
+        try:
+            response = self._chat_json(
+                "item_harmful_judgement",
+                messages,
+                max_tokens=120,
+                world_name=self.state.world_name,
+                player_name=self.state.player_name,
+                retries=1,
+            )
+        except Exception as exc:
+            self.state.world_data.extra.setdefault("item_harmful_judgement_errors", []).append(
+                {
+                    "item": str(item.get("name") or ""),
+                    "target": target.name,
+                    "error": str(exc),
+                }
+            )
+            return fallback
+        value = response.get("harmful", response.get("harmful_confidence", response.get("confidence", fallback))) if isinstance(response, dict) else fallback
+        return max(0.0, min(1.0, _safe_float(value, fallback)))
+
+    def apply_player_item_status_effects(
+        self,
+        item: dict[str, Any],
+        *,
+        source: str = "item",
+        reason: str = "",
+        save_game: bool = True,
+    ) -> list[str]:
+        return self.apply_item_effects_to_target(item, target_id="player", source=source, save_game=save_game)
+
     def _response_status_effect_entries(
         self,
         response: dict[str, Any],
@@ -21436,9 +21780,6 @@ def _compact_item_for_ai(item: dict[str, Any]) -> dict[str, Any]:
         "quantity": normalised.get("quantity"),
         "rarity": normalised.get("rarity"),
         "value": normalised.get("value"),
-        "use_effect": normalised.get("use_effect"),
-        "power": normalised.get("power"),
-        "send_llm": normalised.get("send_llm"),
         "element": normalised.get("element"),
         "effects": normalised.get("effects"),
         "llm_effects": normalised.get("llm_effects"),

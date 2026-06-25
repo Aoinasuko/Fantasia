@@ -6,10 +6,8 @@
     "level": 0,
     "value": 30,
     "desc": "間合いを取って突く長武器。",
-    "use_effect": "None",
-    "power": 3,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 3
   },
   {
     "id": "weapon_long_naginata_wood",
@@ -18,10 +16,8 @@
     "level": 0,
     "value": 40,
     "desc": "斬撃にも突きにも使える長柄武器。",
-    "use_effect": "None",
-    "power": 4,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 4
   },
   {
     "id": "weapon_long_spear_iron",
@@ -30,10 +26,8 @@
     "level": 0,
     "value": 50,
     "desc": "間合いを取って突く長武器。",
-    "use_effect": "None",
-    "power": 5,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 5
   },
   {
     "id": "weapon_long_naginata_iron",
@@ -42,10 +36,8 @@
     "level": 0,
     "value": 60,
     "desc": "斬撃にも突きにも使える長柄武器。",
-    "use_effect": "None",
-    "power": 6,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 6
   },
   {
     "id": "weapon_long_spear_diamond",
@@ -54,10 +46,8 @@
     "level": 0,
     "value": 60,
     "desc": "間合いを取って突く長武器。",
-    "use_effect": "None",
-    "power": 6,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 6
   },
   {
     "id": "weapon_long_naginata_diamond",
@@ -66,9 +56,7 @@
     "level": 0,
     "value": 70,
     "desc": "斬撃にも突きにも使える長柄武器。",
-    "use_effect": "None",
-    "power": 7,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "attack": 7
   }
 ]

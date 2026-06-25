@@ -6,10 +6,17 @@
     "level": 0,
     "value": 50,
     "desc": "相手に向かって火球を発射できる短い杖。",
-    "use_effect": "Send_LLM",
-    "power": 5,
-    "send_llm": "相手に向かって火球を発射できる。",
-    "element": ""
+    "element": "fire",
+    "effects": [
+      {
+        "type": "damage_hp",
+        "power": 10,
+        "extra": {
+          "damage_type": "fire",
+          "dependency_status": "int"
+        }
+      }
+    ]
   },
   {
     "id": "magicrod_heal",
@@ -18,10 +25,13 @@
     "level": 0,
     "value": 70,
     "desc": "使用者を癒すことが出来る杖。",
-    "use_effect": "Send_LLM",
-    "power": 5,
-    "send_llm": "使用者を癒すことが出来る。",
-    "element": ""
+    "element": "",
+    "effects": [
+      {
+        "type": "heal_hp",
+        "power": 10
+      }
+    ]
   },
   {
     "id": "magicrod_appraisal",
@@ -30,9 +40,6 @@
     "level": 0,
     "value": 30,
     "desc": "よくわからない物を鑑定することが出来る杖。",
-    "use_effect": "Send_LLM",
-    "power": 5,
-    "send_llm": "よくわからない物を鑑定することが出来る。",
     "element": ""
   }
 ]

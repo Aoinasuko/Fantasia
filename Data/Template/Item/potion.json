@@ -6,10 +6,13 @@
     "level": 0,
     "value": 20,
     "desc": "HPを少し回復する薄い赤いポーション。",
-    "use_effect": "HP_Heal",
-    "power": 15,
-    "send_llm": "",
-    "element": "回復薬"
+    "element": "回復薬",
+    "effects": [
+      {
+        "type": "heal_hp",
+        "power": 15
+      }
+    ]
   },
   {
     "id": "potion_hp_middle",
@@ -18,10 +21,13 @@
     "level": 5,
     "value": 35,
     "desc": "HPを回復する赤いポーション。",
-    "use_effect": "HP_Heal",
-    "power": 35,
-    "send_llm": "",
-    "element": "回復薬"
+    "element": "回復薬",
+    "effects": [
+      {
+        "type": "heal_hp",
+        "power": 35
+      }
+    ]
   },
   {
     "id": "potion_hp_big",
@@ -30,10 +36,13 @@
     "level": 15,
     "value": 60,
     "desc": "HPを大きく回復する濃い赤いポーション。",
-    "use_effect": "HP_Heal",
-    "power": 70,
-    "send_llm": "",
-    "element": "回復薬"
+    "element": "回復薬",
+    "effects": [
+      {
+        "type": "heal_hp",
+        "power": 70
+      }
+    ]
   },
   {
     "id": "potion_sp_mini",
@@ -42,10 +51,13 @@
     "level": 0,
     "value": 30,
     "desc": "SPを少し回復する薄い青いポーション。",
-    "use_effect": "SP_Heal",
-    "power": 15,
-    "send_llm": "",
-    "element": "回復薬"
+    "element": "回復薬",
+    "effects": [
+      {
+        "type": "heal_sp",
+        "power": 15
+      }
+    ]
   },
   {
     "id": "potion_sp_middle",
@@ -54,10 +66,13 @@
     "level": 5,
     "value": 30,
     "desc": "SPを回復する青いポーション。",
-    "use_effect": "SP_Heal",
-    "power": 35,
-    "send_llm": "",
-    "element": "回復薬"
+    "element": "回復薬",
+    "effects": [
+      {
+        "type": "heal_sp",
+        "power": 35
+      }
+    ]
   },
   {
     "id": "potion_sp_big",
@@ -66,10 +81,13 @@
     "level": 15,
     "value": 60,
     "desc": "SPを大きく回復する濃い青いポーション。",
-    "use_effect": "SP_Heal",
-    "power": 70,
-    "send_llm": "",
-    "element": "回復薬"
+    "element": "回復薬",
+    "effects": [
+      {
+        "type": "heal_sp",
+        "power": 70
+      }
+    ]
   },
   {
     "id": "potion_power",
@@ -78,10 +96,20 @@
     "level": 0,
     "value": 30,
     "desc": "攻撃力を一時的に上昇させる黄色いポーション。",
-    "use_effect": "HP_Heal",
-    "power": 10,
-    "send_llm": "攻撃力を一時的に上昇させる。",
-    "element": ""
+    "element": "",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 10,
+        "extra": {
+          "status_type": "Atk_Mod",
+          "status_name": "怪力",
+          "status_desc": "攻撃力を一時的に増加する。",
+          "status_duration": 5,
+          "gain_rate": 1.0
+        }
+      }
+    ]
   },
   {
     "id": "potion_defence",
@@ -90,21 +118,19 @@
     "level": 0,
     "value": 30,
     "desc": "防御力を一時的に上昇させる緑色のポーション。",
-    "use_effect": "HP_Heal",
-    "power": 10,
-    "send_llm": "防御力を一時的に上昇させる。",
-    "element": ""
-  },
-  {
-    "id": "potion_amplification",
-    "name": "増幅のポーション",
-    "category": "potion",
-    "level": 0,
-    "value": 50,
-    "desc": "クラフトに使うことで、アイテムの効果を強化することが出来る灰色のポーション。",
-    "use_effect": "None",
-    "power": 10,
-    "send_llm": "",
-    "element": "アイテムの効果強化"
+    "element": "",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 10,
+        "extra": {
+          "status_type": "Def_Mod",
+          "status_name": "防護",
+          "status_desc": "防御力を一時的に増加する。",
+          "status_duration": 5,
+          "gain_rate": 1.0
+        }
+      }
+    ]
   }
 ]

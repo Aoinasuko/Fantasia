@@ -6,10 +6,13 @@
     "level": 0,
     "value": 10,
     "desc": "薬の材料になる野草。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
-    "element": "回復薬の素材"
+    "element": "回復薬の素材",
+    "effects": [
+      {
+        "type": "heal_hp",
+        "power": 5
+      }
+    ]
   },
   {
     "id": "material_plant_smell_harb",
@@ -18,9 +21,6 @@
     "level": 0,
     "value": 15,
     "desc": "食事や薬に香りを加える草。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
     "element": ""
   },
   {
@@ -30,10 +30,20 @@
     "level": 0,
     "value": 20,
     "desc": "夜に淡く光る希少な花。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
-    "element": "媚薬の素材"
+    "element": "媚薬の素材",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 1,
+        "extra": {
+          "status_type": "cha_mod",
+          "status_name": "高揚",
+          "status_desc": "気分を高揚させる。",
+          "status_duration": 2,
+          "gain_rate": 1.0
+        }
+      }
+    ]
   },
   {
     "id": "material_plant_sun_harb",
@@ -42,10 +52,13 @@
     "level": 0,
     "value": 20,
     "desc": "朝に力強く光る希少な花。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
-    "element": "活力薬の素材"
+    "element": "活力薬の素材",
+    "effects": [
+      {
+        "type": "heal_sp",
+        "power": 5
+      }
+    ]
   },
   {
     "id": "material_plant_fairy_harb",
@@ -54,10 +67,13 @@
     "level": 0,
     "value": 30,
     "desc": "妖精のように小さく生える、珍しい薬草。",
-    "use_effect": "None",
-    "power": 0,
-    "send_llm": "",
-    "element": "回復薬の素材"
+    "element": "回復薬の素材",
+    "effects": [
+      {
+        "type": "heal_hp",
+        "power": 5
+      }
+    ]
   },
   {
     "id": "material_plant_mini_mushroom",
@@ -66,10 +82,13 @@
     "level": 0,
     "value": 5,
     "desc": "料理に使える、小さなキノコ。",
-    "use_effect": "Hunger_Heal",
-    "power": 5,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "effects": [
+      {
+        "type": "heal_hunger",
+        "power": 5
+      }
+    ]
   },
   {
     "id": "material_plant_big_mushroom",
@@ -78,9 +97,12 @@
     "level": 0,
     "value": 10,
     "desc": "料理に使える、大きなキノコ。",
-    "use_effect": "Hunger_Heal",
-    "power": 10,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "effects": [
+      {
+        "type": "heal_hunger",
+        "power": 10
+      }
+    ]
   }
 ]

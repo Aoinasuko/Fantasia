@@ -6,10 +6,8 @@
     "level": 0,
     "value": 20,
     "desc": "旅に向いた丈夫なブーツ。",
-    "use_effect": "None",
-    "power": 2,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 2
   },
   {
     "id": "armor_leg_armor_iron",
@@ -18,10 +16,8 @@
     "level": 0,
     "value": 40,
     "desc": "脚を守る金属防具。",
-    "use_effect": "None",
-    "power": 4,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 4
   },
   {
     "id": "armor_leg_armor_diamond",
@@ -30,9 +26,7 @@
     "level": 20,
     "value": 60,
     "desc": "最大限の防御を発揮する金剛石の脚甲。",
-    "use_effect": "None",
-    "power": 6,
-    "send_llm": "",
-    "element": ""
+    "element": "",
+    "defense": 6
   }
 ]
