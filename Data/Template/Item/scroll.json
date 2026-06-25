@@ -77,5 +77,264 @@
         }
       }
     ]
+  },
+  {
+    "id": "scroll_spark",
+    "name": "火花の巻物",
+    "category": "scroll",
+    "level": 0,
+    "value": 25,
+    "desc": "小さな炎を呼び出して対象を焼く巻物。",
+    "element": "fire",
+    "effects": [
+      {
+        "type": "damage_hp",
+        "power": 10,
+        "extra": {
+          "damage_type": "fire",
+          "dependency_status": "int"
+        }
+      }
+    ]
+  },
+  {
+    "id": "scroll_frost",
+    "name": "霜の巻物",
+    "category": "scroll",
+    "level": 2,
+    "value": 35,
+    "desc": "冷たい霜を走らせて対象を凍えさせる巻物。",
+    "element": "ice",
+    "effects": [
+      {
+        "type": "damage_hp",
+        "power": 12,
+        "extra": {
+          "damage_type": "ice",
+          "dependency_status": "int"
+        }
+      },
+      {
+        "type": "add_status",
+        "power": -1,
+        "extra": {
+          "status_type": "dex_mod",
+          "status_name": "霜付き",
+          "status_desc": "冷気で動きが鈍る。",
+          "status_duration": 2,
+          "gain_rate": 0.4
+        }
+      }
+    ]
+  },
+  {
+    "id": "scroll_thunder",
+    "name": "雷光の巻物",
+    "category": "scroll",
+    "level": 4,
+    "value": 55,
+    "desc": "雷光を落として対象を打つ巻物。",
+    "element": "lightning",
+    "effects": [
+      {
+        "type": "damage_hp",
+        "power": 16,
+        "extra": {
+          "damage_type": "lightning",
+          "dependency_status": "int"
+        }
+      }
+    ]
+  },
+  {
+    "id": "scroll_heal",
+    "name": "治癒の巻物",
+    "category": "scroll",
+    "level": 1,
+    "value": 35,
+    "desc": "古い治癒術式が記された巻物。",
+    "element": "light",
+    "effects": [
+      {
+        "type": "heal_hp",
+        "power": 25
+      }
+    ]
+  },
+  {
+    "id": "scroll_mana",
+    "name": "魔力回復の巻物",
+    "category": "scroll",
+    "level": 2,
+    "value": 40,
+    "desc": "精神の疲労を拭う術式が記された巻物。",
+    "element": "arcane",
+    "effects": [
+      {
+        "type": "heal_sp",
+        "power": 25
+      }
+    ]
+  },
+  {
+    "id": "scroll_cleanse",
+    "name": "浄化の巻物",
+    "category": "scroll",
+    "level": 4,
+    "value": 60,
+    "desc": "悪い状態を祓う清らかな文字が並ぶ巻物。",
+    "element": "light",
+    "effects": [
+      {
+        "type": "remove_status",
+        "extra": {
+          "status_type": [
+            "decrease_hp",
+            "decrease_sp",
+            "stun",
+            "damage_taken_mod"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "scroll_haste",
+    "name": "速歩の巻物",
+    "category": "scroll",
+    "level": 3,
+    "value": 45,
+    "desc": "体の動きを軽くする風の術式が記された巻物。",
+    "element": "wind",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 3,
+        "extra": {
+          "status_type": "dex_mod",
+          "status_name": "速歩",
+          "status_desc": "一時的に器用が上昇する。",
+          "status_duration": 4,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "scroll_barrier",
+    "name": "結界の巻物",
+    "category": "scroll",
+    "level": 5,
+    "value": 70,
+    "desc": "薄い守りの膜を張る術式が記された巻物。",
+    "element": "arcane",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": -2,
+        "extra": {
+          "status_type": "damage_taken_mod",
+          "status_name": "結界",
+          "status_desc": "一時的に受けるダメージが減少する。",
+          "status_duration": 4,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "scroll_material",
+    "name": "素材招来の巻物",
+    "category": "scroll",
+    "level": 3,
+    "value": 55,
+    "desc": "周囲に使えそうな素材を呼び寄せる巻物。",
+    "element": "",
+    "effects": [
+      {
+        "type": "spawn_item",
+        "power": 5,
+        "extra": {
+          "spawn_category": [
+            "material_common",
+            "material_plant",
+            "material_magical"
+          ],
+          "spawn_amount_min": 1,
+          "spawn_amount_max": 3,
+          "spawn_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "scroll_weapon_cache",
+    "name": "武具招来の巻物",
+    "category": "scroll",
+    "level": 8,
+    "value": 120,
+    "desc": "危険な場所に眠る武具を呼び寄せる高価な巻物。",
+    "element": "",
+    "effects": [
+      {
+        "type": "spawn_item",
+        "power": 10,
+        "extra": {
+          "spawn_category": [
+            "weapon_small",
+            "weapon_medium",
+            "armor_body",
+            "armor_head"
+          ],
+          "spawn_amount_min": 1,
+          "spawn_amount_max": 2,
+          "spawn_rate": 0.75
+        }
+      }
+    ]
+  },
+  {
+    "id": "scroll_weakness",
+    "name": "弱体の巻物",
+    "category": "scroll",
+    "level": 5,
+    "value": 65,
+    "desc": "対象の力を一時的に削ぐ呪文が記された巻物。",
+    "element": "dark",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": -4,
+        "extra": {
+          "status_type": "str_mod",
+          "status_name": "弱体",
+          "status_desc": "一時的に筋力が低下する。",
+          "status_duration": 4,
+          "gain_rate": 0.8
+        }
+      }
+    ]
+  },
+  {
+    "id": "scroll_mirror_skin",
+    "name": "反射皮膜の巻物",
+    "category": "scroll",
+    "level": 7,
+    "value": 95,
+    "desc": "魔力の薄膜で受けた痛みの一部を返す巻物。",
+    "element": "arcane",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 2,
+        "extra": {
+          "status_type": "thorns",
+          "status_name": "反射皮膜",
+          "status_desc": "受けたダメージの一部を反射する。",
+          "status_duration": 4,
+          "gain_rate": 1.0
+        }
+      }
+    ]
   }
 ]

@@ -132,5 +132,167 @@
         }
       }
     ]
+  },
+  {
+    "id": "potion_regeneration",
+    "name": "再生のポーション",
+    "category": "potion",
+    "level": 6,
+    "value": 70,
+    "desc": "体の治癒力を一時的に高める淡い緑のポーション。",
+    "element": "回復薬",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 4,
+        "extra": {
+          "status_type": "regen_hp",
+          "status_name": "再生",
+          "status_desc": "しばらくの間、HPが少しずつ回復する。",
+          "status_duration": 5,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "potion_mana_regeneration",
+    "name": "精神再生のポーション",
+    "category": "potion",
+    "level": 6,
+    "value": 75,
+    "desc": "精神の消耗をゆっくり補う紫色のポーション。",
+    "element": "回復薬",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 3,
+        "extra": {
+          "status_type": "regen_sp",
+          "status_name": "精神再生",
+          "status_desc": "しばらくの間、SPが少しずつ回復する。",
+          "status_duration": 5,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "potion_swiftness",
+    "name": "俊敏のポーション",
+    "category": "potion",
+    "level": 4,
+    "value": 45,
+    "desc": "体の動きを軽くする銀色のポーション。",
+    "element": "",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 4,
+        "extra": {
+          "status_type": "dex_mod",
+          "status_name": "俊敏",
+          "status_desc": "一時的に器用が上昇する。",
+          "status_duration": 5,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "potion_wisdom",
+    "name": "賢者のポーション",
+    "category": "potion",
+    "level": 8,
+    "value": 90,
+    "desc": "思考を澄ませる透明なポーション。",
+    "element": "",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 5,
+        "extra": {
+          "status_type": "int_mod",
+          "status_name": "賢者",
+          "status_desc": "一時的に知力が上昇する。",
+          "status_duration": 5,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "potion_element_guard",
+    "name": "耐元素のポーション",
+    "category": "potion",
+    "level": 8,
+    "value": 95,
+    "desc": "元素の力への抵抗を高める虹色のポーション。",
+    "element": "",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 2,
+        "extra": {
+          "status_type": "element_res_mod",
+          "status_name": "耐元素",
+          "status_desc": "一時的に属性耐性が上昇する。",
+          "status_duration": 5,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "potion_berserk",
+    "name": "狂戦士のポーション",
+    "category": "potion",
+    "level": 10,
+    "value": 110,
+    "desc": "攻撃性を高めるが守りが甘くなる赤黒いポーション。",
+    "element": "",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 6,
+        "extra": {
+          "status_type": "str_mod",
+          "status_name": "狂戦士",
+          "status_desc": "一時的に筋力が上昇する。",
+          "status_duration": 4,
+          "gain_rate": 1.0
+        }
+      },
+      {
+        "type": "add_status",
+        "power": 1,
+        "extra": {
+          "status_type": "damage_taken_mod",
+          "status_name": "防御低下",
+          "status_desc": "一時的に受けるダメージが増加する。",
+          "status_duration": 4,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "potion_life",
+    "name": "生命のポーション",
+    "category": "potion",
+    "level": 20,
+    "value": 200,
+    "desc": "HPとSPを同時に大きく回復する貴重なポーション。",
+    "element": "回復薬",
+    "effects": [
+      {
+        "type": "heal_hp",
+        "power": 100
+      },
+      {
+        "type": "heal_sp",
+        "power": 100
+      }
+    ]
   }
 ]

@@ -34,12 +34,283 @@
     ]
   },
   {
-    "id": "magicrod_appraisal",
-    "name": "鑑定の魔法杖",
+    "id": "magicrod_ice",
+    "name": "氷槍の魔法杖",
     "category": "magicrod",
-    "level": 0,
-    "value": 30,
-    "desc": "よくわからない物を鑑定することが出来る杖。",
-    "element": ""
+    "level": 3,
+    "value": 65,
+    "desc": "冷気を凝らした氷の槍を放つ魔法杖。",
+    "element": "ice",
+    "effects": [
+      {
+        "type": "damage_hp",
+        "power": 12,
+        "extra": {
+          "damage_type": "ice",
+          "dependency_status": "int"
+        }
+      }
+    ]
+  },
+  {
+    "id": "magicrod_lightning",
+    "name": "雷鳴の魔法杖",
+    "category": "magicrod",
+    "level": 5,
+    "value": 90,
+    "desc": "短い詠唱で稲妻を走らせる魔法杖。",
+    "element": "lightning",
+    "effects": [
+      {
+        "type": "damage_hp",
+        "power": 15,
+        "extra": {
+          "damage_type": "lightning",
+          "dependency_status": "int"
+        }
+      }
+    ]
+  },
+  {
+    "id": "magicrod_light",
+    "name": "浄光の魔法杖",
+    "category": "magicrod",
+    "level": 4,
+    "value": 80,
+    "desc": "澄んだ光を一点に集めて撃ち出す魔法杖。",
+    "element": "light",
+    "effects": [
+      {
+        "type": "damage_hp",
+        "power": 13,
+        "extra": {
+          "damage_type": "light",
+          "dependency_status": "int"
+        }
+      }
+    ]
+  },
+  {
+    "id": "magicrod_dark",
+    "name": "影縫いの魔法杖",
+    "category": "magicrod",
+    "level": 6,
+    "value": 95,
+    "desc": "足元の影を尖らせ、闇の痛みを与える魔法杖。",
+    "element": "dark",
+    "effects": [
+      {
+        "type": "damage_hp",
+        "power": 16,
+        "extra": {
+          "damage_type": "dark",
+          "dependency_status": "int"
+        }
+      },
+      {
+        "type": "add_status",
+        "power": -2,
+        "extra": {
+          "status_type": "dex_mod",
+          "status_name": "影縫い",
+          "status_desc": "影に縫い止められ、器用が低下する。",
+          "status_duration": 2,
+          "gain_rate": 0.5
+        }
+      }
+    ]
+  },
+  {
+    "id": "magicrod_wind",
+    "name": "風刃の魔法杖",
+    "category": "magicrod",
+    "level": 3,
+    "value": 60,
+    "desc": "見えない風の刃で相手を切り裂く魔法杖。",
+    "element": "wind",
+    "effects": [
+      {
+        "type": "damage_hp",
+        "power": 11,
+        "extra": {
+          "damage_type": "wind",
+          "dependency_status": "int"
+        }
+      }
+    ]
+  },
+  {
+    "id": "magicrod_earth",
+    "name": "石礫の魔法杖",
+    "category": "magicrod",
+    "level": 2,
+    "value": 55,
+    "desc": "地面の小石を硬く束ねて撃ち出す魔法杖。",
+    "element": "earth",
+    "effects": [
+      {
+        "type": "damage_hp",
+        "power": 10,
+        "extra": {
+          "damage_type": "earth",
+          "dependency_status": "int"
+        }
+      }
+    ]
+  },
+  {
+    "id": "magicrod_regen",
+    "name": "再生の魔法杖",
+    "category": "magicrod",
+    "level": 5,
+    "value": 100,
+    "desc": "傷の治りを早める穏やかな光を放つ魔法杖。",
+    "element": "light",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 3,
+        "extra": {
+          "status_type": "regen_hp",
+          "status_name": "再生",
+          "status_desc": "少しの間、HPが自然に回復する。",
+          "status_duration": 4,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "magicrod_mana",
+    "name": "魔力補填の魔法杖",
+    "category": "magicrod",
+    "level": 4,
+    "value": 85,
+    "desc": "精神を澄ませ、失ったSPを補う魔法杖。",
+    "element": "arcane",
+    "effects": [
+      {
+        "type": "heal_sp",
+        "power": 18
+      }
+    ]
+  },
+  {
+    "id": "magicrod_focus",
+    "name": "集中の魔法杖",
+    "category": "magicrod",
+    "level": 4,
+    "value": 80,
+    "desc": "術者の思考を研ぎ澄ませる青白い杖。",
+    "element": "arcane",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 3,
+        "extra": {
+          "status_type": "int_mod",
+          "status_name": "集中",
+          "status_desc": "一時的に知力が上昇する。",
+          "status_duration": 4,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "magicrod_charm",
+    "name": "魅惑の魔法杖",
+    "category": "magicrod",
+    "level": 5,
+    "value": 90,
+    "desc": "淡い香気と光で相手の気をそらす魔法杖。",
+    "element": "mind",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": -3,
+        "extra": {
+          "status_type": "wis_mod",
+          "status_name": "惑乱",
+          "status_desc": "判断が鈍り、一時的に判断が低下する。",
+          "status_duration": 3,
+          "gain_rate": 0.7
+        }
+      }
+    ]
+  },
+  {
+    "id": "magicrod_accuracy",
+    "name": "導きの魔法杖",
+    "category": "magicrod",
+    "level": 3,
+    "value": 70,
+    "desc": "手元を安定させ、狙いを定めやすくする魔法杖。",
+    "element": "arcane",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 2,
+        "extra": {
+          "status_type": "accuracy_mod",
+          "status_name": "導き",
+          "status_desc": "一時的に命中補正が上昇する。",
+          "status_duration": 4,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "magicrod_thorns",
+    "name": "棘返しの魔法杖",
+    "category": "magicrod",
+    "level": 7,
+    "value": 120,
+    "desc": "薄い魔力の棘をまとわせ、受けた痛みを返す魔法杖。",
+    "element": "arcane",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 2,
+        "extra": {
+          "status_type": "thorns",
+          "status_name": "棘返し",
+          "status_desc": "受けたダメージの一部を反射する。",
+          "status_duration": 4,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "magicrod_stun",
+    "name": "震撃の魔法杖",
+    "category": "magicrod",
+    "level": 8,
+    "value": 130,
+    "desc": "強い衝撃波で相手の動きを止める魔法杖。",
+    "element": "force",
+    "effects": [
+      {
+        "type": "damage_hp",
+        "power": 14,
+        "extra": {
+          "damage_type": "force",
+          "dependency_status": "int"
+        }
+      },
+      {
+        "type": "add_status",
+        "power": 1,
+        "extra": {
+          "status_type": "stun",
+          "status_name": "震え",
+          "status_desc": "衝撃で一時的に行動しづらくなる。",
+          "status_duration": 1,
+          "gain_rate": 0.35
+        }
+      }
+    ]
   }
 ]

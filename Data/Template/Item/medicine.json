@@ -53,5 +53,248 @@
         }
       }
     ]
+  },
+  {
+    "id": "medicine_burn",
+    "name": "火傷軟膏",
+    "category": "medicine",
+    "level": 0,
+    "value": 18,
+    "desc": "火傷と熱による痛みを和らげる軟膏。",
+    "element": "",
+    "effects": [
+      {
+        "type": "heal_hp",
+        "power": 8
+      },
+      {
+        "type": "remove_status",
+        "extra": {
+          "status_type": [
+            "decrease_hp",
+            "burn"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "medicine_frost",
+    "name": "凍傷薬",
+    "category": "medicine",
+    "level": 0,
+    "value": 18,
+    "desc": "凍えた手足の感覚を戻すための薬。",
+    "element": "",
+    "effects": [
+      {
+        "type": "remove_status",
+        "extra": {
+          "status_type": [
+            "dex_mod",
+            "stun"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "medicine_wound",
+    "name": "傷薬",
+    "category": "medicine",
+    "level": 0,
+    "value": 16,
+    "desc": "切り傷や擦り傷に塗る基本的な薬。",
+    "element": "",
+    "effects": [
+      {
+        "type": "heal_hp",
+        "power": 12
+      }
+    ]
+  },
+  {
+    "id": "medicine_strong_wound",
+    "name": "上等な傷薬",
+    "category": "medicine",
+    "level": 4,
+    "value": 32,
+    "desc": "深い傷にも効く、濃く練られた傷薬。",
+    "element": "",
+    "effects": [
+      {
+        "type": "heal_hp",
+        "power": 24
+      }
+    ]
+  },
+  {
+    "id": "medicine_mana_salve",
+    "name": "魔力軟膏",
+    "category": "medicine",
+    "level": 3,
+    "value": 30,
+    "desc": "こめかみに塗って精神の疲れを和らげる薬。",
+    "element": "",
+    "effects": [
+      {
+        "type": "heal_sp",
+        "power": 18
+      }
+    ]
+  },
+  {
+    "id": "medicine_recovery_powder",
+    "name": "回復粉",
+    "category": "medicine",
+    "level": 5,
+    "value": 45,
+    "desc": "水に溶かして飲むと体力の戻りを早める粉薬。",
+    "element": "",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 2,
+        "extra": {
+          "status_type": "regen_hp",
+          "status_name": "回復促進",
+          "status_desc": "しばらくの間、HPが少しずつ回復する。",
+          "status_duration": 4,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "medicine_focus_drops",
+    "name": "覚醒滴",
+    "category": "medicine",
+    "level": 2,
+    "value": 24,
+    "desc": "眠気や意識のぼやけを払う刺激の強い薬。",
+    "element": "",
+    "effects": [
+      {
+        "type": "remove_status",
+        "extra": {
+          "status_type": [
+            "stun",
+            "wis_mod",
+            "int_mod"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "medicine_antidote_strong",
+    "name": "強力解毒薬",
+    "category": "medicine",
+    "level": 6,
+    "value": 48,
+    "desc": "強い毒や体を蝕む症状に対処する薬。",
+    "element": "",
+    "effects": [
+      {
+        "type": "remove_status",
+        "extra": {
+          "status_type": [
+            "decrease_hp",
+            "damage_taken_mod",
+            "con_mod"
+          ]
+        }
+      },
+      {
+        "type": "heal_hp",
+        "power": 10
+      }
+    ]
+  },
+  {
+    "id": "medicine_voice",
+    "name": "喉薬",
+    "category": "medicine",
+    "level": 0,
+    "value": 14,
+    "desc": "喉の痛みや声のかすれに効く甘い薬。",
+    "element": "",
+    "effects": [
+      {
+        "type": "remove_status",
+        "extra": {
+          "status_type": [
+            "silence",
+            "cha_mod"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "medicine_eye",
+    "name": "目薬",
+    "category": "medicine",
+    "level": 1,
+    "value": 18,
+    "desc": "かすんだ視界を澄ませ、狙いをつけやすくする薬。",
+    "element": "",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 1,
+        "extra": {
+          "status_type": "accuracy_mod",
+          "status_name": "視界良好",
+          "status_desc": "一時的に命中補正が上昇する。",
+          "status_duration": 3,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "medicine_body_warmer",
+    "name": "温身薬",
+    "category": "medicine",
+    "level": 2,
+    "value": 26,
+    "desc": "冷えた体を内側から温める薬。",
+    "element": "",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 2,
+        "extra": {
+          "status_type": "con_mod",
+          "status_name": "温身",
+          "status_desc": "一時的に耐久が上昇する。",
+          "status_duration": 3,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "medicine_painkiller",
+    "name": "鎮痛薬",
+    "category": "medicine",
+    "level": 4,
+    "value": 34,
+    "desc": "痛みへの反応を鈍らせる即効性の薬。",
+    "element": "",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": -1,
+        "extra": {
+          "status_type": "damage_taken_mod",
+          "status_name": "鎮痛",
+          "status_desc": "一時的に受けるダメージが減少する。",
+          "status_duration": 3,
+          "gain_rate": 1.0
+        }
+      }
+    ]
   }
 ]

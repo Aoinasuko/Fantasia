@@ -21,7 +21,13 @@
     "level": 0,
     "value": 15,
     "desc": "食事や薬に香りを加える草。",
-    "element": ""
+    "element": "",
+    "effects": [
+      {
+        "type": "heal_hunger",
+        "power": 1
+      }
+    ]
   },
   {
     "id": "material_plant_moon_harb",
@@ -34,11 +40,11 @@
     "effects": [
       {
         "type": "add_status",
-        "power": 1,
+        "power": 3,
         "extra": {
           "status_type": "cha_mod",
-          "status_name": "高揚",
-          "status_desc": "気分を高揚させる。",
+          "status_name": "魅力的",
+          "status_desc": "一時的に魅力が上昇する。",
           "status_duration": 2,
           "gain_rate": 1.0
         }
@@ -102,6 +108,162 @@
       {
         "type": "heal_hunger",
         "power": 10
+      }
+    ]
+  },
+  {
+    "id": "material_plant_bitterleaf",
+    "name": "苦葉草",
+    "category": "material_plant",
+    "level": 0,
+    "value": 12,
+    "desc": "強い苦味を持つ葉。薬の下地に使われる。",
+    "element": "薬の素材",
+    "effects": [
+      {
+        "type": "remove_status",
+        "extra": {
+          "status_type": [
+            "decrease_hp"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "material_plant_blue_mint",
+    "name": "青ミント",
+    "category": "material_plant",
+    "level": 0,
+    "value": 12,
+    "desc": "清涼感のある香りを放つ青いミント。",
+    "element": "活力薬の素材",
+    "effects": [
+      {
+        "type": "heal_sp",
+        "power": 4
+      }
+    ]
+  },
+  {
+    "id": "material_plant_red_root",
+    "name": "赤根",
+    "category": "material_plant",
+    "level": 1,
+    "value": 16,
+    "desc": "赤い汁を含む根。傷薬の材料になる。",
+    "element": "回復薬の素材",
+    "effects": [
+      {
+        "type": "heal_hp",
+        "power": 8
+      }
+    ]
+  },
+  {
+    "id": "material_plant_silverleaf",
+    "name": "銀葉草",
+    "category": "material_plant",
+    "level": 2,
+    "value": 24,
+    "desc": "月明かりを受けると銀色に光る葉。",
+    "element": "防護薬の素材",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": -1,
+        "extra": {
+          "status_type": "damage_taken_mod",
+          "status_name": "銀葉の守り",
+          "status_desc": "一時的に受けるダメージが減少する。",
+          "status_duration": 2,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "material_plant_thornvine",
+    "name": "棘蔓",
+    "category": "material_plant",
+    "level": 2,
+    "value": 22,
+    "desc": "細かな棘を持つしなやかな蔓。",
+    "element": "反射薬の素材",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 1,
+        "extra": {
+          "status_type": "thorns",
+          "status_name": "棘肌",
+          "status_desc": "受けたダメージの一部を反射する。",
+          "status_duration": 2,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "material_plant_ghostcap",
+    "name": "幽灯茸",
+    "category": "material_plant",
+    "level": 3,
+    "value": 28,
+    "desc": "暗い場所でぼんやり光るキノコ。",
+    "element": "魔法薬の素材",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": 2,
+        "extra": {
+          "status_type": "int_mod",
+          "status_name": "幽灯の明晰",
+          "status_desc": "一時的に知力が上昇する。",
+          "status_duration": 2,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "material_plant_sleep_poppy",
+    "name": "眠り芥子",
+    "category": "material_plant",
+    "level": 2,
+    "value": 20,
+    "desc": "眠気を誘う甘い香りの花。",
+    "element": "鎮静薬の素材",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": -2,
+        "extra": {
+          "status_type": "wis_mod",
+          "status_name": "眠気",
+          "status_desc": "眠気で判断が鈍る。",
+          "status_duration": 2,
+          "gain_rate": 0.5
+        }
+      }
+    ]
+  },
+  {
+    "id": "material_plant_starfruit",
+    "name": "星実",
+    "category": "material_plant",
+    "level": 4,
+    "value": 35,
+    "desc": "星形の断面を持つ甘い果実。",
+    "element": "料理素材",
+    "effects": [
+      {
+        "type": "heal_hunger",
+        "power": 12
+      },
+      {
+        "type": "heal_sp",
+        "power": 3
       }
     ]
   }

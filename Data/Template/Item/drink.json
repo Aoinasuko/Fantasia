@@ -91,5 +91,249 @@
         }
       }
     ]
+  },
+  {
+    "id": "drink_goat_milk",
+    "name": "山羊ミルク",
+    "category": "drink",
+    "level": 0,
+    "value": 8,
+    "desc": "濃くて腹持ちのよいミルク。",
+    "element": "乳",
+    "effects": [
+      {
+        "type": "heal_hunger",
+        "power": 5
+      }
+    ]
+  },
+  {
+    "id": "drink_honey_water",
+    "name": "蜂蜜水",
+    "category": "drink",
+    "level": 0,
+    "value": 12,
+    "desc": "蜂蜜を溶かした甘い飲み物。",
+    "element": "水",
+    "effects": [
+      {
+        "type": "heal_hunger",
+        "power": 4
+      },
+      {
+        "type": "heal_sp",
+        "power": 3
+      }
+    ]
+  },
+  {
+    "id": "drink_bitter_tonic",
+    "name": "苦味トニック",
+    "category": "drink",
+    "level": 1,
+    "value": 18,
+    "desc": "苦味の強い薬草入りの飲み物。",
+    "element": "薬酒",
+    "effects": [
+      {
+        "type": "remove_status",
+        "extra": {
+          "status_type": [
+            "decrease_hp",
+            "decrease_sp"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "drink_spiced_wine",
+    "name": "香辛ワイン",
+    "category": "drink",
+    "level": 2,
+    "value": 25,
+    "desc": "体を温める香辛料を加えたワイン。",
+    "element": "お酒",
+    "effects": [
+      {
+        "type": "heal_hunger",
+        "power": 4
+      },
+      {
+        "type": "add_status",
+        "power": 2,
+        "extra": {
+          "status_type": "cha_mod",
+          "status_name": "陽気",
+          "status_desc": "一時的に魅力が上昇する。",
+          "status_duration": 3,
+          "gain_rate": 0.8
+        }
+      }
+    ]
+  },
+  {
+    "id": "drink_mana_soda",
+    "name": "魔力ソーダ",
+    "category": "drink",
+    "level": 3,
+    "value": 30,
+    "desc": "細かな泡が魔力を刺激する青い炭酸飲料。",
+    "element": "魔法飲料",
+    "effects": [
+      {
+        "type": "heal_sp",
+        "power": 15
+      }
+    ]
+  },
+  {
+    "id": "drink_stamina_broth",
+    "name": "滋養スープ",
+    "category": "drink",
+    "level": 2,
+    "value": 24,
+    "desc": "野菜と骨を煮込んだ腹持ちのよいスープ。",
+    "element": "料理",
+    "effects": [
+      {
+        "type": "heal_hunger",
+        "power": 10
+      },
+      {
+        "type": "heal_hp",
+        "power": 5
+      }
+    ]
+  },
+  {
+    "id": "drink_clear_spirit",
+    "name": "透明蒸留酒",
+    "category": "drink",
+    "level": 3,
+    "value": 28,
+    "desc": "強い酒精を持つ透明な蒸留酒。",
+    "element": "お酒",
+    "effects": [
+      {
+        "type": "heal_hunger",
+        "power": 3
+      },
+      {
+        "type": "add_status",
+        "power": 3,
+        "extra": {
+          "status_type": "str_mod",
+          "status_name": "高揚",
+          "status_desc": "一時的に筋力が上昇する。",
+          "status_duration": 3,
+          "gain_rate": 0.6
+        }
+      },
+      {
+        "type": "add_status",
+        "power": -2,
+        "extra": {
+          "status_type": "wis_mod",
+          "status_name": "酔い",
+          "status_desc": "酔いにより、一時的に判断が低下する。",
+          "status_duration": 3,
+          "gain_rate": 0.6
+        }
+      }
+    ]
+  },
+  {
+    "id": "drink_guard_tea",
+    "name": "守り茶",
+    "category": "drink",
+    "level": 4,
+    "value": 35,
+    "desc": "渋みの奥に魔力の膜を感じる薬茶。",
+    "element": "薬茶",
+    "effects": [
+      {
+        "type": "add_status",
+        "power": -1,
+        "extra": {
+          "status_type": "damage_taken_mod",
+          "status_name": "守り茶",
+          "status_desc": "一時的に受けるダメージが減少する。",
+          "status_duration": 3,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "drink_focus_coffee",
+    "name": "濃煎り珈琲",
+    "category": "drink",
+    "level": 2,
+    "value": 20,
+    "desc": "強い苦味で頭を覚ます黒い飲み物。",
+    "element": "嗜好品",
+    "effects": [
+      {
+        "type": "heal_sp",
+        "power": 8
+      },
+      {
+        "type": "add_status",
+        "power": 2,
+        "extra": {
+          "status_type": "int_mod",
+          "status_name": "覚醒",
+          "status_desc": "一時的に知力が上昇する。",
+          "status_duration": 2,
+          "gain_rate": 1.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "drink_fairy_dew",
+    "name": "妖精の雫",
+    "category": "drink",
+    "level": 5,
+    "value": 55,
+    "desc": "花弁に集まった朝露を瓶詰めした希少な飲み物。",
+    "element": "妖精",
+    "effects": [
+      {
+        "type": "heal_hp",
+        "power": 12
+      },
+      {
+        "type": "heal_sp",
+        "power": 12
+      }
+    ]
+  },
+  {
+    "id": "drink_moon_sake",
+    "name": "月影酒",
+    "category": "drink",
+    "level": 6,
+    "value": 70,
+    "desc": "月夜に仕込まれる、魔力を帯びた淡い酒。",
+    "element": "お酒",
+    "effects": [
+      {
+        "type": "heal_hunger",
+        "power": 5
+      },
+      {
+        "type": "add_status",
+        "power": 2,
+        "extra": {
+          "status_type": "element_res_mod",
+          "status_name": "月影の加護",
+          "status_desc": "一時的に属性耐性が上昇する。",
+          "status_duration": 4,
+          "gain_rate": 1.0
+        }
+      }
+    ]
   }
 ]
